@@ -97,7 +97,7 @@ function ImportPage() {
       for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize);
         const res = await importFn({ data: { rows: chunk } });
-        if (!res.ok) throw new Error(res.error ?? "import_failed");
+        if (!res.ok) throw new Error("import_failed");
         created += res.created;
         matchedByCard += res.matchedByCard;
         needsReview += res.needsReview;
