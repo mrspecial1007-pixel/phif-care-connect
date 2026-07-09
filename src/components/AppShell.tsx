@@ -6,6 +6,7 @@ import { Pill, LayoutDashboard, Upload, LogOut, Users } from "lucide-react";
 import { lockPharmacy } from "@/lib/auth.functions";
 import { useSession } from "@/lib/queries";
 import type { ReactNode } from "react";
+import { UnlockScreen } from "./UnlockScreen";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
@@ -94,10 +95,6 @@ export function Gate({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (!data?.unlocked) {
-    // Lazy import to keep bundle small
-    const { UnlockScreen } = require("./UnlockScreen") as typeof import("./UnlockScreen");
-    return <UnlockScreen />;
-  }
+  if (!data?.unlocked) return <UnlockScreen />;
   return <AppShell>{children}</AppShell>;
 }
