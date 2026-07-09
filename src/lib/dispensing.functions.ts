@@ -64,7 +64,11 @@ export const recordDispensing = createServerFn({ method: "POST" })
     // - Partial: cycle -> Partial
     // - Remaining or Completed: cycle -> Completed, set completed_at=today, next_due_date=today+28
     let nextStatus: "Waiting" | "Partial" | "Completed" = cycle.status as any;
-    const updates: Record<string, unknown> = {};
+    const updates: {
+      status: "Partial" | "Completed";
+      completed_at?: string | null;
+      next_due_date?: string | null;
+    } = { status: "Partial" };
     if (data.transaction_type === "Partial") {
       nextStatus = "Partial";
       updates.status = "Partial";
