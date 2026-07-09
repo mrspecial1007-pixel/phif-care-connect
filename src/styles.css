@@ -42,6 +42,12 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -146,5 +152,7 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: "Cairo", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
+  html { direction: rtl; }
 }
