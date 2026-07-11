@@ -6,6 +6,8 @@ const createDispensingSchema = z.object({
   transaction_type: z.enum(["Partial", "Remaining", "Completed"]),
   items_dispensed: z.number().int().nonnegative().nullable().optional(),
   notes: z.string().max(1000).optional().nullable(),
+  pharmacy_id: z.string().uuid().optional().nullable(),
+  dispensing_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
 });
 
 function addDays(iso: string, days: number): string {
@@ -22,9 +24,23 @@ export const recordDispensing = createServerFn({ method: "POST" })
     const { writeAudit } = await import("@/lib/audit.server");
     const { getRequestIP } = await import("@tanstack/react-start/server");
 
-    const { pharmacy_id } = await requirePharmacySession();
+    const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
     const ip = getRequestIP({ xForwardedFor: true }) ?? null;
     const today = new Date().toISOString().slice(0, 10);
+    const effectiveDate = data.dispensing_date ?? today;
+    // Prevent future-dated dispensing.
+    const pharmacy_id = data.pharmacy_id ?? sessionPharmacyId;
+    if (data.pharmacy_id) {
+      const { data: p } = await supabaseAdmin
+        .from("pharmacies")
+        .select("id")
+        .eq("id", data.pharmacy_id)
+        .maybeSingle();
+      if (!p) return { ok: false as const, error: "pharmacy_not_found" };
+    }
+    if (effectiveDate > today) {
+      return { ok: false as const, error: "future_date_not_allowed" };
+    }
 
     // Load patient + latest non-completed cycle
     const { data: patient, error: pErr } = await supabaseAdmin
@@ -45,7 +61,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
 
     // If no open cycle, create one starting today
     if (!cycle) {
-      const started = today;
+      const started = effectiveDate;
       const { data: newCycle, error: cErr } = await supabaseAdmin
         .from("dispensing_cycles")
         .insert({
@@ -75,8 +91,8 @@ export const recordDispensing = createServerFn({ method: "POST" })
     } else {
       nextStatus = "Completed";
       updates.status = "Completed";
-      updates.completed_at = today;
-      updates.next_due_date = addDays(today, 28);
+      updates.completed_at = effectiveDate;
+      updates.next_due_date = addDays(effectiveDate, 28);
     }
     const { error: uErr } = await supabaseAdmin
       .from("dispensing_cycles")
@@ -93,6 +109,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
         transaction_type: data.transaction_type,
         items_dispensed: data.items_dispensed ?? null,
         notes: data.notes ?? null,
+        dispensing_date: `${effectiveDate}T12:00:00Z`,
       })
       .select("id")
       .single();
@@ -100,7 +117,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
 
     // If completed, open a new Waiting cycle starting when next dispensing is due
     if (nextStatus === "Completed") {
-      const nextStart = addDays(today, 28);
+      const nextStart = addDays(effectiveDate, 28);
       await supabaseAdmin.from("dispensing_cycles").insert({
         patient_id: data.patient_id,
         status: "Waiting",
