@@ -27,6 +27,15 @@ function pickColumn(row: Record<string, unknown>, candidates: string[]): string 
   return null;
 }
 
+function normalizeCard(raw: string | null): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  // Preserve leading zeros; if it's a pure-digit card shorter than 13, left-pad.
+  if (/^\d+$/.test(s) && s.length < 13) return s.padStart(13, "0");
+  return s;
+}
+
 function parseDates(raw: string | null): string[] {
   if (!raw) return [];
   const parts = String(raw)
@@ -67,10 +76,12 @@ function ImportPage() {
     setFileName(f.name);
     const buf = await f.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array" });
+    // raw:false forces cell formatting to strings so leading zeros are preserved
+    // for card numbers stored as text in Excel.
     const parsed: ParsedRow[] = [];
     for (const sn of wb.SheetNames) {
       const ws = wb.Sheets[sn];
-      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
+      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "", raw: false });
       for (const r of json) {
         const name = pickColumn(r, ["اسم المشترك", "الاسم", "Name", "patient_name"]);
         if (!name || !String(name).trim()) continue;
@@ -78,7 +89,7 @@ function ImportPage() {
         const dates = pickColumn(r, ["تواريخ الصرف", "كل التواريخ", "التواريخ", "dispensing_dates"]);
         parsed.push({
           patient_name: String(name).trim(),
-          insurance_card_number: card ? String(card).trim() : null,
+          insurance_card_number: normalizeCard(card),
           dispensing_dates: parseDates(dates),
         });
       }
