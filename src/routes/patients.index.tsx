@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { normalizeArabicName } from "@/lib/name-normalize";
 import { PatientCard } from "./index";
 
-export const Route = createFileRoute("/patients")({
+export const Route = createFileRoute("/patients/")({
   component: () => (
     <Gate>
       <List />
