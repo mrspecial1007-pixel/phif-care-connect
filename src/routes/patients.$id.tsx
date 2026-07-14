@@ -5,7 +5,6 @@ import {
   usePatientHistory,
   usePatientCycles,
   usePatientStatuses,
-  usePharmacies,
   useSession,
 } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
@@ -20,31 +19,20 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { recordDispensing, upsertPatient } from "@/lib/dispensing.functions";
+import { upsertPatient } from "@/lib/dispensing.functions";
 import { toast } from "sonner";
+import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
+import { PhoneSheet } from "@/components/PhoneSheet";
 import {
   ArrowRight,
-  Calendar,
   Pill,
   Building2,
   Share2,
   AlertTriangle,
-  Check,
   Copy,
   Pencil,
   Plus,
@@ -82,7 +70,6 @@ function Detail() {
   const { data: history } = usePatientHistory(id);
   const { data: cycles } = usePatientCycles(id);
   const { data: statuses } = usePatientStatuses();
-  const { data: pharmacies } = usePharmacies();
   const { data: session } = useSession();
   const status = statuses?.find((s) => s.patient_id === id);
 
@@ -93,6 +80,7 @@ function Detail() {
   const [editFocus, setEditFocus] = useState<string | null>(null);
   const [dispenseOpen, setDispenseOpen] = useState(false);
   const [remainingConfirmOpen, setRemainingConfirmOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
 
   if (isLoading) return <div className="text-center py-10">جاري التحميل…</div>;
   if (!patient) return <div className="text-center py-10">المريض غير موجود</div>;
@@ -156,7 +144,8 @@ function Detail() {
             icon={<Phone className="h-4 w-4" />}
             label="رقم الهاتف"
             value={patient.phone}
-            onCopy={() => patient.phone && copy(patient.phone, "رقم الهاتف")}
+            onAction={() => patient.phone && setPhoneOpen(true)}
+            actionLabel="إجراءات الاتصال"
             onAdd={() => {
               setEditFocus("phone");
               setEditOpen(true);
@@ -282,8 +271,8 @@ function Detail() {
         open={dispenseOpen}
         onOpenChange={setDispenseOpen}
         patientId={patient.id}
-        pharmacies={pharmacies ?? []}
-        defaultPharmacyId={session?.unlocked ? session.pharmacy.id : undefined}
+        patientName={patient.patient_name}
+        cardNumber={patient.insurance_card_number}
       />
 
       <RemainingConfirmDialog
@@ -291,6 +280,13 @@ function Detail() {
         onOpenChange={setRemainingConfirmOpen}
         patientId={patient.id}
         defaultPharmacyId={session?.unlocked ? session.pharmacy.id : undefined}
+      />
+
+      <PhoneSheet
+        open={phoneOpen}
+        onOpenChange={setPhoneOpen}
+        phone={patient.phone}
+        patientName={patient.patient_name}
       />
     </div>
   );
@@ -344,6 +340,8 @@ function InfoRow({
   label,
   value,
   onCopy,
+  onAction,
+  actionLabel,
   onAdd,
   emptyLabel,
   addLabel,
@@ -352,6 +350,8 @@ function InfoRow({
   label: string;
   value: string | null | undefined;
   onCopy?: () => void;
+  onAction?: () => void;
+  actionLabel?: string;
   onAdd: () => void;
   emptyLabel: string;
   addLabel: string;
@@ -360,15 +360,24 @@ function InfoRow({
     return (
       <div className="flex items-center gap-2 rounded-lg border p-2">
         <span className="text-muted-foreground">{icon}</span>
-        <div className="flex-1 min-w-0">
+        <button
+          onClick={onAction}
+          disabled={!onAction}
+          className="flex-1 min-w-0 text-right disabled:cursor-default"
+        >
           <div className="text-[11px] text-muted-foreground">{label}</div>
-          <div className="text-sm font-medium truncate" dir="ltr">
+          <div className={`text-sm font-medium truncate ${onAction ? "text-cyan-700 dark:text-cyan-400" : ""}`} dir="ltr">
             {value}
           </div>
-        </div>
+        </button>
         {onCopy && (
           <Button size="icon" variant="ghost" onClick={onCopy} aria-label={`نسخ ${label}`}>
             <Copy className="h-4 w-4" />
+          </Button>
+        )}
+        {actionLabel && onAction && (
+          <Button size="icon" variant="ghost" onClick={onAction} aria-label={actionLabel}>
+            <Phone className="h-4 w-4" />
           </Button>
         )}
       </div>
@@ -500,207 +509,3 @@ function EditPatientDialog({
   );
 }
 
-function DispenseDialog({
-  open,
-  onOpenChange,
-  patientId,
-  pharmacies,
-  defaultPharmacyId,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  patientId: string;
-  pharmacies: { id: string; name: string }[];
-  defaultPharmacyId?: string;
-}) {
-  const [pharmacyId, setPharmacyId] = useState<string>(defaultPharmacyId ?? "");
-  const [date, setDate] = useState<string>(todayISO());
-  const [allDispensed, setAllDispensed] = useState<boolean | null>(null);
-  const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState(false);
-  const qc = useQueryClient();
-  const dispense = useServerFn(recordDispensing);
-
-  useEffect(() => {
-    if (open) {
-      setPharmacyId(defaultPharmacyId ?? pharmacies[0]?.id ?? "");
-      setDate(todayISO());
-      setAllDispensed(null);
-      setNotes("");
-    }
-  }, [open, defaultPharmacyId, pharmacies]);
-
-  const canSave = pharmacyId && date && allDispensed !== null && !busy;
-
-  async function save() {
-    if (!pharmacyId || allDispensed === null) return;
-    setBusy(true);
-    try {
-      const res = await dispense({
-        data: {
-          patient_id: patientId,
-          transaction_type: allDispensed ? "Completed" : "Partial",
-          pharmacy_id: pharmacyId,
-          dispensing_date: date,
-          notes: notes || null,
-        },
-      });
-      if (!res.ok) {
-        toast.error("تعذر تسجيل الصرف");
-        return;
-      }
-      toast.success(allDispensed ? "تم تسجيل الصرف الكامل" : "تم تسجيل الصرف الجزئي");
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["patient_history", patientId] }),
-        qc.invalidateQueries({ queryKey: ["patient_cycles", patientId] }),
-        qc.invalidateQueries({ queryKey: ["patient_status"] }),
-      ]);
-      onOpenChange(false);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>تم الصرف</DialogTitle>
-          <DialogDescription>سجل عملية الصرف الجديدة</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label>الصيدلية</Label>
-            <div className="grid grid-cols-2 gap-2 mt-1">
-              {pharmacies.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPharmacyId(p.id)}
-                  className={`rounded-lg border p-3 text-sm font-medium transition ${
-                    pharmacyId === p.id
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/40"
-                  }`}
-                >
-                  <Building2 className="h-4 w-4 inline ml-1" />
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <Label>تاريخ الصرف</Label>
-            <Input
-              type="date"
-              value={date}
-              max={todayISO()}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label>هل تم صرف جميع الأصناف؟</Label>
-            <div className="grid grid-cols-2 gap-2 mt-1">
-              <button
-                type="button"
-                onClick={() => setAllDispensed(true)}
-                className={`rounded-lg border p-3 text-sm font-medium transition ${
-                  allDispensed === true
-                    ? "border-success bg-success/10 text-success"
-                    : "border-border hover:border-success/40"
-                }`}
-              >
-                <Check className="h-4 w-4 inline ml-1" /> نعم، اكتمل الصرف
-              </button>
-              <button
-                type="button"
-                onClick={() => setAllDispensed(false)}
-                className={`rounded-lg border p-3 text-sm font-medium transition ${
-                  allDispensed === false
-                    ? "border-info bg-info/10 text-info"
-                    : "border-border hover:border-info/40"
-                }`}
-              >
-                <Clock className="h-4 w-4 inline ml-1" /> لا، صرف جزئي
-              </button>
-            </div>
-          </div>
-          <div>
-            <Label>ملاحظات (اختياري)</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} />
-          </div>
-        </div>
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            إلغاء
-          </Button>
-          <Button onClick={save} disabled={!canSave}>
-            {busy ? "جاري التسجيل…" : "تسجيل"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function RemainingConfirmDialog({
-  open,
-  onOpenChange,
-  patientId,
-  defaultPharmacyId,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  patientId: string;
-  defaultPharmacyId?: string;
-}) {
-  const [busy, setBusy] = useState(false);
-  const qc = useQueryClient();
-  const dispense = useServerFn(recordDispensing);
-
-  async function confirmYes() {
-    setBusy(true);
-    try {
-      const res = await dispense({
-        data: {
-          patient_id: patientId,
-          transaction_type: "Remaining",
-          pharmacy_id: defaultPharmacyId,
-          dispensing_date: todayISO(),
-        },
-      });
-      if (!res.ok) {
-        toast.error("تعذر تسجيل الصرف");
-        return;
-      }
-      toast.success("تم إكمال الصرف وبدء دورة جديدة");
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["patient_history", patientId] }),
-        qc.invalidateQueries({ queryKey: ["patient_cycles", patientId] }),
-        qc.invalidateQueries({ queryKey: ["patient_status"] }),
-      ]);
-      onOpenChange(false);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>هل تم الآن صرف باقي الأصناف؟</AlertDialogTitle>
-          <AlertDialogDescription>
-            عند التأكيد يكتمل الصرف وتبدأ دورة الـ28 يوماً القادمة.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className="gap-2">
-          <AlertDialogCancel disabled={busy}>لا</AlertDialogCancel>
-          <AlertDialogAction onClick={confirmYes} disabled={busy}>
-            {busy ? "جاري التسجيل…" : "نعم"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}

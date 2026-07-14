@@ -119,7 +119,9 @@ export type Database = {
           cycle_id: string
           dispensing_date: string
           id: string
+          idempotency_key: string | null
           items_dispensed: number | null
+          items_remaining: number | null
           notes: string | null
           patient_id: string
           pharmacy_id: string
@@ -130,7 +132,9 @@ export type Database = {
           cycle_id: string
           dispensing_date?: string
           id?: string
+          idempotency_key?: string | null
           items_dispensed?: number | null
+          items_remaining?: number | null
           notes?: string | null
           patient_id: string
           pharmacy_id: string
@@ -141,7 +145,9 @@ export type Database = {
           cycle_id?: string
           dispensing_date?: string
           id?: string
+          idempotency_key?: string | null
           items_dispensed?: number | null
+          items_remaining?: number | null
           notes?: string | null
           patient_id?: string
           pharmacy_id?: string

@@ -2,11 +2,12 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Pill, LayoutDashboard, Upload, LogOut, Users } from "lucide-react";
+import { Pill, LayoutDashboard, Upload, LogOut, Users, Activity, ShieldCheck, Settings } from "lucide-react";
 import { lockPharmacy } from "@/lib/auth.functions";
 import { useSession } from "@/lib/queries";
 import type { ReactNode } from "react";
 import { UnlockScreen } from "./UnlockScreen";
+import { QuickSearchFab } from "./QuickSearchFab";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
@@ -22,7 +23,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const nav = [
     { to: "/", label: "الرئيسية", icon: LayoutDashboard },
     { to: "/patients", label: "المرضى", icon: Users },
+    { to: "/activity", label: "نشاط اليوم", icon: Activity },
+    { to: "/quality", label: "جودة البيانات", icon: ShieldCheck },
     { to: "/import", label: "استيراد", icon: Upload },
+    { to: "/settings", label: "الإعدادات", icon: Settings },
   ] as const;
 
   return (
@@ -63,15 +67,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="max-w-6xl mx-auto px-4 py-4">{children}</main>
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t bg-card">
-        <div className="grid grid-cols-3">
-          {nav.map((n) => {
+        <div className="grid grid-cols-5">
+          {nav.slice(0, 5).map((n) => {
             const Icon = n.icon;
             const active = loc.pathname === n.to || (n.to !== "/" && loc.pathname.startsWith(n.to));
             return (
               <Link
                 key={n.to}
                 to={n.to}
-                className={`flex flex-col items-center py-2 text-xs ${
+                className={`flex flex-col items-center py-2 text-[10px] ${
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
@@ -82,6 +86,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </div>
       </nav>
+
+      <QuickSearchFab />
     </div>
   );
 }
