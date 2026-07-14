@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as QualityRouteImport } from './routes/quality'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as ActivityRouteImport } from './routes/activity'
@@ -16,6 +17,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const QualityRoute = QualityRouteImport.update({
   id: '/quality',
   path: '/quality',
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/quality': typeof QualityRoute
+  '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/': typeof PatientsIndexRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/quality': typeof QualityRoute
+  '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients': typeof PatientsIndexRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/quality': typeof QualityRoute
+  '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/': typeof PatientsIndexRoute
 }
@@ -79,16 +88,25 @@ export interface FileRouteTypes {
     | '/activity'
     | '/import'
     | '/quality'
+    | '/settings'
     | '/patients/$id'
     | '/patients/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/activity' | '/import' | '/quality' | '/patients/$id' | '/patients'
+  to:
+    | '/'
+    | '/activity'
+    | '/import'
+    | '/quality'
+    | '/settings'
+    | '/patients/$id'
+    | '/patients'
   id:
     | '__root__'
     | '/'
     | '/activity'
     | '/import'
     | '/quality'
+    | '/settings'
     | '/patients/$id'
     | '/patients/'
   fileRoutesById: FileRoutesById
@@ -98,12 +116,20 @@ export interface RootRouteChildren {
   ActivityRoute: typeof ActivityRoute
   ImportRoute: typeof ImportRoute
   QualityRoute: typeof QualityRoute
+  SettingsRoute: typeof SettingsRoute
   PatientsIdRoute: typeof PatientsIdRoute
   PatientsIndexRoute: typeof PatientsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/quality': {
       id: '/quality'
       path: '/quality'
@@ -154,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   ActivityRoute: ActivityRoute,
   ImportRoute: ImportRoute,
   QualityRoute: QualityRoute,
+  SettingsRoute: SettingsRoute,
   PatientsIdRoute: PatientsIdRoute,
   PatientsIndexRoute: PatientsIndexRoute,
 }
