@@ -5,7 +5,6 @@ import {
   usePatientHistory,
   usePatientCycles,
   usePatientStatuses,
-  usePharmacies,
   useSession,
 } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
@@ -20,31 +19,20 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { recordDispensing, upsertPatient } from "@/lib/dispensing.functions";
+import { upsertPatient } from "@/lib/dispensing.functions";
 import { toast } from "sonner";
+import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
+import { PhoneSheet } from "@/components/PhoneSheet";
 import {
   ArrowRight,
-  Calendar,
   Pill,
   Building2,
   Share2,
   AlertTriangle,
-  Check,
   Copy,
   Pencil,
   Plus,
@@ -82,7 +70,6 @@ function Detail() {
   const { data: history } = usePatientHistory(id);
   const { data: cycles } = usePatientCycles(id);
   const { data: statuses } = usePatientStatuses();
-  const { data: pharmacies } = usePharmacies();
   const { data: session } = useSession();
   const status = statuses?.find((s) => s.patient_id === id);
 
@@ -93,6 +80,7 @@ function Detail() {
   const [editFocus, setEditFocus] = useState<string | null>(null);
   const [dispenseOpen, setDispenseOpen] = useState(false);
   const [remainingConfirmOpen, setRemainingConfirmOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
 
   if (isLoading) return <div className="text-center py-10">جاري التحميل…</div>;
   if (!patient) return <div className="text-center py-10">المريض غير موجود</div>;
@@ -156,7 +144,8 @@ function Detail() {
             icon={<Phone className="h-4 w-4" />}
             label="رقم الهاتف"
             value={patient.phone}
-            onCopy={() => patient.phone && copy(patient.phone, "رقم الهاتف")}
+            onAction={() => patient.phone && setPhoneOpen(true)}
+            actionLabel="إجراءات الاتصال"
             onAdd={() => {
               setEditFocus("phone");
               setEditOpen(true);
@@ -282,8 +271,8 @@ function Detail() {
         open={dispenseOpen}
         onOpenChange={setDispenseOpen}
         patientId={patient.id}
-        pharmacies={pharmacies ?? []}
-        defaultPharmacyId={session?.unlocked ? session.pharmacy.id : undefined}
+        patientName={patient.patient_name}
+        cardNumber={patient.insurance_card_number}
       />
 
       <RemainingConfirmDialog
@@ -291,6 +280,13 @@ function Detail() {
         onOpenChange={setRemainingConfirmOpen}
         patientId={patient.id}
         defaultPharmacyId={session?.unlocked ? session.pharmacy.id : undefined}
+      />
+
+      <PhoneSheet
+        open={phoneOpen}
+        onOpenChange={setPhoneOpen}
+        phone={patient.phone}
+        patientName={patient.patient_name}
       />
     </div>
   );
