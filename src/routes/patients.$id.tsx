@@ -340,6 +340,8 @@ function InfoRow({
   label,
   value,
   onCopy,
+  onAction,
+  actionLabel,
   onAdd,
   emptyLabel,
   addLabel,
@@ -348,6 +350,8 @@ function InfoRow({
   label: string;
   value: string | null | undefined;
   onCopy?: () => void;
+  onAction?: () => void;
+  actionLabel?: string;
   onAdd: () => void;
   emptyLabel: string;
   addLabel: string;
@@ -356,15 +360,24 @@ function InfoRow({
     return (
       <div className="flex items-center gap-2 rounded-lg border p-2">
         <span className="text-muted-foreground">{icon}</span>
-        <div className="flex-1 min-w-0">
+        <button
+          onClick={onAction}
+          disabled={!onAction}
+          className="flex-1 min-w-0 text-right disabled:cursor-default"
+        >
           <div className="text-[11px] text-muted-foreground">{label}</div>
-          <div className="text-sm font-medium truncate" dir="ltr">
+          <div className={`text-sm font-medium truncate ${onAction ? "text-cyan-700 dark:text-cyan-400" : ""}`} dir="ltr">
             {value}
           </div>
-        </div>
+        </button>
         {onCopy && (
           <Button size="icon" variant="ghost" onClick={onCopy} aria-label={`نسخ ${label}`}>
             <Copy className="h-4 w-4" />
+          </Button>
+        )}
+        {actionLabel && onAction && (
+          <Button size="icon" variant="ghost" onClick={onAction} aria-label={actionLabel}>
+            <Phone className="h-4 w-4" />
           </Button>
         )}
       </div>
