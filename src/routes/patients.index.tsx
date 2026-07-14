@@ -4,7 +4,7 @@ import { usePatientStatuses } from "@/lib/queries";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
 import { normalizeArabicName } from "@/lib/name-normalize";
-import { PatientCard } from "./index";
+import { PatientCard } from "@/components/PatientCard";
 
 export const Route = createFileRoute("/patients/")({
   component: () => (
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/patients/")({
 function List() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial">("all");
+  const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone">("all");
 
   const items = useMemo(() => {
     if (!rows) return [];
@@ -27,6 +27,8 @@ function List() {
       if (filter === "review" && r.review_status !== "needs_review") return false;
       if (filter === "overdue" && !(r.remaining_days !== null && r.remaining_days < 0)) return false;
       if (filter === "partial" && r.current_cycle_status !== "Partial") return false;
+      if (filter === "has_phone" && !(r.phone && r.phone.trim())) return false;
+      if (filter === "no_phone" && r.phone && r.phone.trim()) return false;
       if (!qn) return true;
       return (
         normalizeArabicName(r.patient_name).includes(qn) ||
@@ -41,6 +43,8 @@ function List() {
     { k: "overdue", label: "متأخر" },
     { k: "partial", label: "جزئي" },
     { k: "review", label: "مراجعة" },
+    { k: "has_phone", label: "لديه هاتف" },
+    { k: "no_phone", label: "بدون هاتف" },
   ] as const;
 
   return (
