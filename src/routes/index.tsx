@@ -1,34 +1,14 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { usePatientStatuses, type PatientStatusRow } from "@/lib/queries";
+import { usePatientStatuses } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
-import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2 } from "lucide-react";
+import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff } from "lucide-react";
 import { normalizeArabicName } from "@/lib/name-normalize";
+import { PatientCard, statusMeta } from "@/components/PatientCard";
 
 export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard /></Gate> });
-
-function statusMeta(row: PatientStatusRow) {
-  // Priority: needs_review > overdue > partial > due soon > waiting/ok
-  if (row.review_status === "needs_review") {
-    return { key: "review", label: "يحتاج مراجعة", color: "bg-warning text-warning-foreground" };
-  }
-  if (row.current_cycle_status === "Partial") {
-    return { key: "partial", label: "صرف جزئي", color: "bg-info text-info-foreground" };
-  }
-  if (row.remaining_days !== null) {
-    if (row.remaining_days < 0)
-      return { key: "overdue", label: "متأخر", color: "bg-destructive text-destructive-foreground" };
-    if (row.remaining_days <= 3)
-      return { key: "due", label: "قريب الاستحقاق", color: "bg-warning text-warning-foreground" };
-  }
-  if (row.current_cycle_status === "Waiting") {
-    return { key: "waiting", label: "بانتظار الصرف", color: "bg-success text-success-foreground" };
-  }
-  return { key: "ok", label: "مكتمل", color: "bg-secondary text-secondary-foreground" };
-}
 
 function Dashboard() {
   const { data: rows, isLoading } = usePatientStatuses();
@@ -36,7 +16,7 @@ function Dashboard() {
 
   const stats = useMemo(() => {
     const r = rows ?? [];
-    let review = 0, partial = 0, overdue = 0, due = 0, shared = 0;
+    let review = 0, partial = 0, overdue = 0, due = 0, shared = 0, withPhone = 0, noPhone = 0;
     for (const x of r) {
       const m = statusMeta(x);
       if (m.key === "review") review++;
@@ -44,8 +24,9 @@ function Dashboard() {
       else if (m.key === "overdue") overdue++;
       else if (m.key === "due") due++;
       if (x.is_shared) shared++;
+      if (x.phone && x.phone.trim()) withPhone++; else noPhone++;
     }
-    return { total: r.length, review, partial, overdue, due, shared };
+    return { total: r.length, review, partial, overdue, due, shared, withPhone, noPhone };
   }, [rows]);
 
   const filtered = useMemo(() => {
@@ -71,6 +52,8 @@ function Dashboard() {
         <StatCard label="قريب الاستحقاق" value={stats.due} icon={Clock} tone="warning" />
         <StatCard label="صرف جزئي" value={stats.partial} icon={CheckCircle2} tone="info" />
         <StatCard label="يحتاج مراجعة" value={stats.review} icon={AlertTriangle} tone="warning" />
+        <StatCard label="لديه رقم هاتف" value={stats.withPhone} icon={Phone} tone="info" />
+        <StatCard label="بدون رقم هاتف" value={stats.noPhone} icon={PhoneOff} tone="warning" />
       </div>
 
       <div className="relative">
@@ -129,53 +112,4 @@ function StatCard({
       </div>
     </Card>
   );
-}
-
-export function PatientCard({ row }: { row: PatientStatusRow }) {
-  const meta = statusMeta(row);
-  return (
-    <Link
-      to="/patients/$id"
-      params={{ id: row.patient_id }}
-      className="block"
-    >
-      <Card className={`p-3 border-r-4 hover:shadow-md transition ${borderTone(meta.key)}`}>
-        <div className="flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="font-semibold text-base truncate">{row.patient_name}</div>
-              {row.is_shared && (
-                <Badge variant="outline" className="text-[10px]">
-                  <Share2 className="h-3 w-3 ml-1" /> مشترك
-                </Badge>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
-              {row.insurance_card_number && <span>بطاقة: {row.insurance_card_number}</span>}
-              {row.last_pharmacy_name && <span>آخر صرف: {row.last_pharmacy_name}</span>}
-              {row.next_due_date && (
-                <span>
-                  {row.remaining_days !== null && row.remaining_days >= 0
-                    ? `متبقي ${row.remaining_days} يوم`
-                    : `متأخر ${Math.abs(row.remaining_days ?? 0)} يوم`}
-                </span>
-              )}
-            </div>
-          </div>
-          <Badge className={`${meta.color} border-0`}>{meta.label}</Badge>
-        </div>
-      </Card>
-    </Link>
-  );
-}
-
-function borderTone(key: string) {
-  switch (key) {
-    case "overdue": return "border-r-destructive";
-    case "due": return "border-r-warning";
-    case "partial": return "border-r-info";
-    case "review": return "border-r-warning";
-    case "waiting": return "border-r-success";
-    default: return "border-r-border";
-  }
 }
