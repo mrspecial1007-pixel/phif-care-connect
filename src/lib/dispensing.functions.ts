@@ -5,9 +5,12 @@ const createDispensingSchema = z.object({
   patient_id: z.string().uuid(),
   transaction_type: z.enum(["Partial", "Remaining", "Completed"]),
   items_dispensed: z.number().int().nonnegative().nullable().optional(),
+  items_remaining: z.number().int().nonnegative().nullable().optional(),
   notes: z.string().max(1000).optional().nullable(),
   pharmacy_id: z.string().uuid().optional().nullable(),
   dispensing_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  idempotency_key: z.string().min(8).max(80).optional().nullable(),
+  historical_mode: z.enum(["append", "recalc"]).optional().nullable(),
 });
 
 function addDays(iso: string, days: number): string {
@@ -42,6 +45,18 @@ export const recordDispensing = createServerFn({ method: "POST" })
       return { ok: false as const, error: "future_date_not_allowed" };
     }
 
+    // Idempotency: if a tx with this key already exists, return it as-is.
+    if (data.idempotency_key) {
+      const { data: existingTx } = await supabaseAdmin
+        .from("dispensing_transactions")
+        .select("id, cycle_id")
+        .eq("idempotency_key", data.idempotency_key)
+        .maybeSingle();
+      if (existingTx) {
+        return { ok: true as const, transaction_id: existingTx.id, cycle_id: existingTx.cycle_id, deduped: true };
+      }
+    }
+
     // Load patient + latest non-completed cycle
     const { data: patient, error: pErr } = await supabaseAdmin
       .from("patients")
@@ -49,6 +64,67 @@ export const recordDispensing = createServerFn({ method: "POST" })
       .eq("id", data.patient_id)
       .maybeSingle();
     if (pErr || !patient) return { ok: false as const, error: "patient_not_found" };
+
+    // Detect if this is a historical dispensing (older than latest recorded).
+    const { data: latestTx } = await supabaseAdmin
+      .from("dispensing_transactions")
+      .select("dispensing_date")
+      .eq("patient_id", data.patient_id)
+      .order("dispensing_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const latestDate = latestTx?.dispensing_date?.slice(0, 10) ?? null;
+    const isHistorical = latestDate !== null && effectiveDate < latestDate;
+
+    // If historical and caller did not opt-in, block and ask.
+    if (isHistorical && !data.historical_mode) {
+      return { ok: false as const, error: "historical_dispensing", latest_date: latestDate };
+    }
+
+    // Historical + append: only insert a completed historical cycle+tx; do not touch current cycle.
+    if (isHistorical && data.historical_mode === "append") {
+      const started = new Date(effectiveDate);
+      started.setUTCDate(started.getUTCDate() - 28);
+      const next = new Date(effectiveDate);
+      next.setUTCDate(next.getUTCDate() + 28);
+      const { data: cyc } = await supabaseAdmin
+        .from("dispensing_cycles")
+        .insert({
+          patient_id: data.patient_id,
+          status: "Completed",
+          started_at: started.toISOString().slice(0, 10),
+          completed_at: effectiveDate,
+          next_due_date: next.toISOString().slice(0, 10),
+        })
+        .select("id")
+        .single();
+      if (!cyc) return { ok: false as const, error: "cycle_create_failed" };
+      const { data: tx, error: tErr } = await supabaseAdmin
+        .from("dispensing_transactions")
+        .insert({
+          cycle_id: cyc.id,
+          patient_id: data.patient_id,
+          pharmacy_id,
+          transaction_type: data.transaction_type,
+          items_dispensed: data.items_dispensed ?? null,
+          items_remaining: data.items_remaining ?? null,
+          notes: data.notes ?? null,
+          dispensing_date: `${effectiveDate}T12:00:00Z`,
+          idempotency_key: data.idempotency_key ?? null,
+        })
+        .select("id")
+        .single();
+      if (tErr || !tx) return { ok: false as const, error: "tx_insert_failed" };
+      await writeAudit({
+        pharmacy_id,
+        action: "record_dispensing_historical_append",
+        entity: "dispensing_transaction",
+        entity_id: tx.id,
+        after: { patient_id: data.patient_id, transaction_type: data.transaction_type, cycle_id: cyc.id, effective_date: effectiveDate },
+        ip,
+      });
+      return { ok: true as const, transaction_id: tx.id, cycle_id: cyc.id };
+    }
 
     const { data: openCycles } = await supabaseAdmin
       .from("dispensing_cycles")
@@ -108,8 +184,10 @@ export const recordDispensing = createServerFn({ method: "POST" })
         pharmacy_id,
         transaction_type: data.transaction_type,
         items_dispensed: data.items_dispensed ?? null,
+        items_remaining: data.items_remaining ?? null,
         notes: data.notes ?? null,
         dispensing_date: `${effectiveDate}T12:00:00Z`,
+        idempotency_key: data.idempotency_key ?? null,
       })
       .select("id")
       .single();
@@ -128,7 +206,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
 
     await writeAudit({
       pharmacy_id,
-      action: "record_dispensing",
+      action: isHistorical && data.historical_mode === "recalc" ? "record_dispensing_recalc" : "record_dispensing",
       entity: "dispensing_transaction",
       entity_id: tx.id,
       after: { patient_id: data.patient_id, transaction_type: data.transaction_type, cycle_id: cycle.id },
