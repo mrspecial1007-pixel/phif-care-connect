@@ -88,18 +88,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: "PHIF Tracker — إدارة صرف التأمين الصحي" },
       {
         property: "og:description",
-        content: "إدارة المرضى ودورات الصرف عبر عدة صيدليات في تطبيق واحد.",
+        content: "نظام إدارة مرضى التأمين الصحي العام (PHIF): تتبع دورات الصرف الشهرية، منع التكرار بين الصيدليات، وسجل تفصيلي لكل مريض.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "PHIF Tracker — إدارة صرف التأمين الصحي" },
+      { name: "twitter:description", content: "نظام إدارة مرضى التأمين الصحي العام (PHIF): تتبع دورات الصرف الشهرية، منع التكرار بين الصيدليات، وسجل تفصيلي لكل مريض." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/bNO3PnFjBwcf1MnnzrYHbpvTTUl1/social-images/social-1783993175218-260709.webp" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/bNO3PnFjBwcf1MnnzrYHbpvTTUl1/social-images/social-1783993175218-260709.webp" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
