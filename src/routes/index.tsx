@@ -13,6 +13,7 @@ export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard />
 function Dashboard() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone">("all");
 
   const stats = useMemo(() => {
     const r = rows ?? [];
@@ -32,14 +33,51 @@ function Dashboard() {
   const filtered = useMemo(() => {
     if (!rows) return [];
     const qn = normalizeArabicName(q);
-    if (!qn) return rows.slice(0, 100);
-    return rows.filter(
-      (r) =>
+    const list = rows.filter((r) => {
+      if (filter === "shared" && !r.is_shared) return false;
+      if (filter === "review" && r.review_status !== "needs_review") return false;
+      if (filter === "overdue" && !(r.remaining_days !== null && r.remaining_days < 0)) return false;
+      if (filter === "partial" && r.current_cycle_status !== "Partial") return false;
+      if (filter === "has_phone" && !(r.phone && r.phone.trim())) return false;
+      if (filter === "no_phone" && r.phone && r.phone.trim()) return false;
+      // Default view hides overdue patients (they live under the "overdue" filter)
+      if (filter === "all" && r.remaining_days !== null && r.remaining_days < 0) return false;
+      if (!qn) return true;
+      return (
         normalizeArabicName(r.patient_name).includes(qn) ||
         (r.insurance_card_number ?? "").includes(q.trim()) ||
         (r.national_id ?? "").includes(q.trim())
-    ).slice(0, 200);
-  }, [rows, q]);
+      );
+    });
+
+    const sorted = [...list].sort((a, b) => {
+      if (filter === "overdue") {
+        // Most overdue first (most negative remaining_days)
+        const av = a.remaining_days ?? Number.NEGATIVE_INFINITY;
+        const bv = b.remaining_days ?? Number.NEGATIVE_INFINITY;
+        return av - bv;
+      }
+      // Nearest due first; nulls last
+      const av = a.remaining_days;
+      const bv = b.remaining_days;
+      if (av === null && bv === null) return a.patient_name.localeCompare(b.patient_name, "ar");
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return av - bv;
+    });
+
+    return sorted.slice(0, 500);
+  }, [rows, q, filter]);
+
+  const chips = [
+    { k: "all", label: "الكل" },
+    { k: "overdue", label: "متأخر" },
+    { k: "partial", label: "جزئي" },
+    { k: "review", label: "مراجعة" },
+    { k: "shared", label: "مشترك" },
+    { k: "has_phone", label: "لديه هاتف" },
+    { k: "no_phone", label: "بدون هاتف" },
+  ] as const;
 
   return (
     <div className="space-y-4">
@@ -64,6 +102,20 @@ function Dashboard() {
           placeholder="ابحث بالاسم أو رقم البطاقة…"
           className="pr-10 h-12 text-base"
         />
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {chips.map((c) => (
+          <button
+            key={c.k}
+            onClick={() => setFilter(c.k as any)}
+            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border ${
+              filter === c.k ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
       </div>
 
       {isLoading ? (
