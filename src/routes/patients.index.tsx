@@ -17,35 +17,26 @@ export const Route = createFileRoute("/patients/")({
 function List() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone">("all");
 
   const items = useMemo(() => {
     if (!rows) return [];
     const qn = normalizeArabicName(q);
-    return rows.filter((r) => {
-      if (filter === "shared" && !r.is_shared) return false;
-      if (filter === "review" && r.review_status !== "needs_review") return false;
-      if (filter === "overdue" && !(r.remaining_days !== null && r.remaining_days < 0)) return false;
-      if (filter === "partial" && r.current_cycle_status !== "Partial") return false;
-      if (filter === "has_phone" && !(r.phone && r.phone.trim())) return false;
-      if (filter === "no_phone" && r.phone && r.phone.trim()) return false;
+    const list = rows.filter((r) => {
       if (!qn) return true;
       return (
         normalizeArabicName(r.patient_name).includes(qn) ||
         (r.insurance_card_number ?? "").includes(q.trim())
       );
     });
-  }, [rows, q, filter]);
-
-  const chips = [
-    { k: "all", label: `الكل (${rows?.length ?? 0})` },
-    { k: "shared", label: "مشترك" },
-    { k: "overdue", label: "متأخر" },
-    { k: "partial", label: "جزئي" },
-    { k: "review", label: "مراجعة" },
-    { k: "has_phone", label: "لديه هاتف" },
-    { k: "no_phone", label: "بدون هاتف" },
-  ] as const;
+    return [...list].sort((a, b) => {
+      const av = a.remaining_days;
+      const bv = b.remaining_days;
+      if (av === null && bv === null) return a.patient_name.localeCompare(b.patient_name, "ar");
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return av - bv;
+    });
+  }, [rows, q]);
 
   return (
     <div className="space-y-3">
@@ -56,19 +47,6 @@ function List() {
         placeholder="بحث…"
         className="h-12 text-base"
       />
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {chips.map((c) => (
-          <button
-            key={c.k}
-            onClick={() => setFilter(c.k as any)}
-            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border ${
-              filter === c.k ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground"
-            }`}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
       {isLoading ? (
         <div className="text-center py-10 text-muted-foreground">جاري التحميل…</div>
       ) : (
