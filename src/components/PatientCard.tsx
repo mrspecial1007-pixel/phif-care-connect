@@ -107,14 +107,14 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
           {isPartial ? (
             <Button
               className="w-full h-11 bg-info text-info-foreground hover:bg-info/90"
-              onClick={(e) => { stop(e); setRemOpen(true); }}
+              onClick={(e: MouseEvent) => { stop(e); setRemOpen(true); }}
             >
               <Clock className="h-4 w-4 ml-2" /> صرف متبقي
             </Button>
           ) : (
             <Button
               className="w-full h-11"
-              onClick={(e) => { stop(e); setDispOpen(true); }}
+              onClick={(e: MouseEvent) => { stop(e); setDispOpen(true); }}
             >
               <CheckCircle2 className="h-4 w-4 ml-2" /> تم الصرف
             </Button>
@@ -122,7 +122,12 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
         </div>
       </Card>
 
-      <PhoneSheet open={phoneOpen} onOpenChange={setPhoneOpen} phone={row.phone} patientName={row.patient_name} />
+      <PhoneSheet 
+        open={phoneOpen} 
+        onOpenChange={setPhoneOpen} 
+        patient={{ ...row, patient_id: row.patient_id, patient_name: row.patient_name, phone: row.phone! }} 
+        pharmacy={session?.unlocked ? { id: session.pharmacy.id, name: session.pharmacy.name } : undefined}
+      />
       <DispenseDialog
         open={dispOpen}
         onOpenChange={setDispOpen}

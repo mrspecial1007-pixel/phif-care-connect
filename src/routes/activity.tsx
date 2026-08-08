@@ -7,13 +7,13 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-import { Building2, Pill, Pencil, FileSpreadsheet, Upload, Download } from "lucide-react";
+import { Building2, Pill, Pencil, FileSpreadsheet, Upload, Download, Phone, MessageSquare } from "lucide-react";
 
 export const Route = createFileRoute("/activity")({
   component: () => <Gate><ActivityPage /></Gate>,
 });
 
-type Filter = "today_all" | "all" | "dispensing" | "edits" | "imports";
+type Filter = "today_all" | "all" | "dispensing" | "edits" | "imports" | "communication";
 
 function ActivityPage() {
   const fetchFn = useServerFn(getRecentActivity);
@@ -34,14 +34,22 @@ function ActivityPage() {
     const auditItems = data.audit
       .filter((a: any) => a.action !== "record_dispensing" && a.action !== "record_dispensing_historical_append" && a.action !== "record_dispensing_recalc")
       .map((a: any) => ({ kind: "audit" as const, at: a.created_at, audit: a }));
-    const all = [...txItems, ...auditItems].sort((a, b) => (a.at > b.at ? -1 : 1));
+    const commItems = (data as any).communication?.map((c: any) => ({
+      kind: "comm" as const,
+      at: c.created_at,
+      comm: c,
+    })) || [];
+
+    const all = [...txItems, ...auditItems, ...commItems].sort((a, b) => (a.at > b.at ? -1 : 1));
     const today = new Date().toISOString().slice(0, 10);
+    
     return all.filter((it) => {
       const isToday = (it.at ?? "").slice(0, 10) === today;
       if (filter === "today_all") return isToday;
       if (filter === "dispensing") return it.kind === "tx";
       if (filter === "edits") return it.kind === "audit" && it.audit.action?.includes("patient");
       if (filter === "imports") return it.kind === "audit" && it.audit.action === "import_excel";
+      if (filter === "communication") return it.kind === "comm";
       return true;
     });
   }, [data, filter]);
@@ -61,7 +69,19 @@ function ActivityPage() {
           ملاحظات: t.notes ?? "",
         };
       }
-      const a = it.audit;
+      if (it.kind === "comm") {
+        const c = it.comm;
+        return {
+          الوقت: new Date(c.created_at).toLocaleString("en-GB"),
+          النوع: "تواصل",
+          القناة: c.channel,
+          الإجراء: c.action_type,
+          المريض: c.patients?.patient_name ?? "",
+          الهاتف: c.phone_number ?? "",
+          الصيدلية: c.pharmacies?.name ?? "",
+        };
+      }
+      const a = (it as any).audit;
       return {
         الوقت: new Date(a.created_at).toLocaleString("en-GB"),
         النوع: a.action,
@@ -80,6 +100,7 @@ function ActivityPage() {
     { k: "dispensing", label: "الصرف" },
     { k: "edits", label: "تعديلات المرضى" },
     { k: "imports", label: "استيراد Excel" },
+    { k: "communication", label: "التواصل" },
     { k: "all", label: "الكل (30 يوم)" },
   ];
 
@@ -115,6 +136,8 @@ function ActivityPage() {
             <Card key={i} className="p-3">
               {it.kind === "tx" ? (
                 <TxRow tx={it.tx} />
+              ) : it.kind === "comm" ? (
+                <CommRow comm={it.comm} />
               ) : (
                 <AuditRow a={it.audit} />
               )}
@@ -168,6 +191,34 @@ function AuditRow({ a }: { a: any }) {
       {isImport ? <FileSpreadsheet className="h-4 w-4 mt-0.5 text-info shrink-0" /> : <Pencil className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />}
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-sm">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function CommRow({ comm }: { comm: any }) {
+  const t = new Date(comm.created_at);
+  const isCall = comm.channel === "Call";
+  return (
+    <div className="flex items-start gap-3">
+      <div className="text-xs text-muted-foreground w-14 shrink-0">
+        {t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+      </div>
+      {isCall ? (
+        <Phone className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+      ) : (
+        <MessageSquare className="h-4 w-4 mt-0.5 text-success shrink-0" />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="font-semibold text-sm">{comm.patients?.patient_name ?? "—"}</div>
+        <div className="text-xs font-medium text-foreground">{comm.action_type}</div>
+        <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+          <span dir="ltr">{comm.phone_number}</span>
+          <span className="flex items-center gap-1">
+            <Building2 className="h-3 w-3" />
+            {comm.pharmacies?.name ?? "—"}
+          </span>
+        </div>
       </div>
     </div>
   );

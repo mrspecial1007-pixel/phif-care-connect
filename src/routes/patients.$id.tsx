@@ -282,12 +282,20 @@ function Detail() {
         defaultPharmacyId={session?.unlocked ? session.pharmacy.id : undefined}
       />
 
-      <PhoneSheet
-        open={phoneOpen}
-        onOpenChange={setPhoneOpen}
-        phone={patient.phone}
-        patientName={patient.patient_name}
-      />
+      {patient?.phone && (
+        <PhoneSheet 
+          open={phoneOpen} 
+          onOpenChange={setPhoneOpen} 
+          patient={{
+            patient_id: patient.id,
+            patient_name: patient.patient_name,
+            phone: patient.phone,
+            remaining_days: status?.remaining_days,
+            current_cycle_status: status?.current_cycle_status as any,
+          }}
+          pharmacy={session?.unlocked ? { id: session.pharmacy.id, name: session.pharmacy.name } : undefined}
+        />
+      )}
     </div>
   );
 }
