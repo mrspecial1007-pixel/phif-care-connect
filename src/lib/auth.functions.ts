@@ -25,7 +25,7 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
 
     const { data: pharm } = await supabaseAdmin
       .from("pharmacies")
-      .select("id, name, pin_hash")
+      .select("id, name, address, phone, pin_hash")
       .eq("id", data.pharmacy_id)
       .maybeSingle();
 
