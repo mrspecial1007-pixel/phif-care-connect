@@ -8,6 +8,7 @@ import { Download, Database } from "lucide-react";
 import { useState } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
+import { useSession } from "@/lib/queries";
 
 export const Route = createFileRoute("/settings")({
   component: () => <Gate><SettingsPage /></Gate>,
