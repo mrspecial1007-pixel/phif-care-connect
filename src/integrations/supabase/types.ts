@@ -72,8 +72,10 @@ export type Database = {
           created_at: string
           id: string
           patient_id: string
+          patient_status: string | null
           pharmacy_id: string | null
           phone_number: string
+          remaining_days: number | null
         }
         Insert: {
           action_type: string
@@ -81,8 +83,10 @@ export type Database = {
           created_at?: string
           id?: string
           patient_id: string
+          patient_status?: string | null
           pharmacy_id?: string | null
           phone_number: string
+          remaining_days?: number | null
         }
         Update: {
           action_type?: string
@@ -90,8 +94,10 @@ export type Database = {
           created_at?: string
           id?: string
           patient_id?: string
+          patient_status?: string | null
           pharmacy_id?: string | null
           phone_number?: string
+          remaining_days?: number | null
         }
         Relationships: [
           {
@@ -325,21 +331,27 @@ export type Database = {
       }
       pharmacies: {
         Row: {
+          address: string | null
           created_at: string
           id: string
           name: string
+          phone: string | null
           pin_hash: string
         }
         Insert: {
+          address?: string | null
           created_at?: string
           id?: string
           name: string
+          phone?: string | null
           pin_hash: string
         }
         Update: {
+          address?: string | null
           created_at?: string
           id?: string
           name?: string
+          phone?: string | null
           pin_hash?: string
         }
         Relationships: []

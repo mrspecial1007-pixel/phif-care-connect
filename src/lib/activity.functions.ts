@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 
 export const getRecentActivity = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -34,14 +35,18 @@ export const getRecentActivity = createServerFn({ method: "GET" }).handler(async
   };
 });
 
+const logCommSchema = z.object({
+  patientId: z.string().uuid(),
+  pharmacyId: z.string().uuid(),
+  actionType: z.string(),
+  phoneNumber: z.string(),
+  channel: z.enum(["WhatsApp", "SMS", "Call"]),
+  patientStatus: z.string().optional(),
+  remainingDays: z.number().optional(),
+});
+
 export const logCommunication = createServerFn({ method: "POST" })
-  .inputValidator((data: any) => data as { 
-    patientId: string; 
-    pharmacyId: string; 
-    actionType: string; 
-    phoneNumber: string; 
-    channel: string; 
-  })
+  .inputValidator((d: unknown) => logCommSchema.parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("communication_logs").insert({
@@ -49,8 +54,10 @@ export const logCommunication = createServerFn({ method: "POST" })
       pharmacy_id: data.pharmacyId,
       action_type: data.actionType,
       phone_number: data.phoneNumber,
-      channel: data.channel
-    });
+      channel: data.channel,
+      patient_status: data.patientStatus,
+      remaining_days: data.remainingDays,
+    } as any);
     if (error) throw error;
     return { success: true };
   });
@@ -62,7 +69,7 @@ export const exportAllData = createServerFn({ method: "GET" }).handler(async () 
     supabaseAdmin.from("dispensing_cycles").select("*"),
     supabaseAdmin.from("dispensing_transactions").select("*, patients(patient_name), pharmacies(name)"),
     supabaseAdmin.from("audit_log").select("*"),
-    supabaseAdmin.from("pharmacies").select("id, name, created_at"),
+    supabaseAdmin.from("pharmacies").select("id, name, address, phone, created_at"),
   ]);
   return {
     patients: patients.data ?? [],

@@ -25,7 +25,7 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
 
     const { data: pharm } = await supabaseAdmin
       .from("pharmacies")
-      .select("id, name, pin_hash")
+      .select("id, name, address, phone, pin_hash")
       .eq("id", data.pharmacy_id)
       .maybeSingle();
 
@@ -45,6 +45,8 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
     await session.update({
       pharmacy_id: pharm.id,
       pharmacy_name: pharm.name,
+      pharmacy_address: pharm.address ?? undefined,
+      pharmacy_phone: pharm.phone ?? undefined,
       unlocked_at: Date.now(),
     });
     await writeAudit({
@@ -73,6 +75,8 @@ export const currentSession = createServerFn({ method: "GET" }).handler(async ()
     pharmacy: {
       id: session.data.pharmacy_id,
       name: session.data.pharmacy_name ?? "",
+      address: session.data.pharmacy_address ?? "",
+      phone: session.data.pharmacy_phone ?? "",
     },
   };
 });
