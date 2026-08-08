@@ -325,21 +325,27 @@ export type Database = {
       }
       pharmacies: {
         Row: {
+          address: string | null
           created_at: string
           id: string
           name: string
+          phone: string | null
           pin_hash: string
         }
         Insert: {
+          address?: string | null
           created_at?: string
           id?: string
           name: string
+          phone?: string | null
           pin_hash: string
         }
         Update: {
+          address?: string | null
           created_at?: string
           id?: string
           name?: string
+          phone?: string | null
           pin_hash?: string
         }
         Relationships: []
