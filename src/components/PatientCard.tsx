@@ -126,7 +126,11 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
         open={phoneOpen} 
         onOpenChange={setPhoneOpen} 
         patient={{ ...row, patient_id: row.patient_id, patient_name: row.patient_name, phone: row.phone! }} 
-        pharmacy={session?.unlocked ? { id: session.pharmacy.id, name: session.pharmacy.name } : undefined}
+        pharmacy={session?.unlocked ? { 
+          id: session.pharmacy.id, 
+          name: session.pharmacy.name, 
+          address: (session.pharmacy as any).address 
+        } : undefined}
       />
       <DispenseDialog
         open={dispOpen}

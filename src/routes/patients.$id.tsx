@@ -293,7 +293,11 @@ function Detail() {
             remaining_days: status?.remaining_days,
             current_cycle_status: status?.current_cycle_status as any,
           }}
-          pharmacy={session?.unlocked ? { id: session.pharmacy.id, name: session.pharmacy.name } : undefined}
+          pharmacy={session?.unlocked ? { 
+            id: session.pharmacy.id, 
+            name: session.pharmacy.name, 
+            address: (session.pharmacy as any).address 
+          } : undefined}
         />
       )}
     </div>
