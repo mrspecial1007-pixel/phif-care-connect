@@ -99,13 +99,21 @@ export function PhoneSheet({
   async function handleLog(chan: "WhatsApp" | "SMS" | "Call") {
     if (!pharmacy) return;
     try {
+      const actionMap = {
+        "Call": "تم بدء اتصال بالعميل",
+        "WhatsApp": "تم فتح WhatsApp للتواصل مع العميل",
+        "SMS": "تم فتح SMS للتواصل مع العميل"
+      };
+      
       await doLog({
         data: {
           patientId: patient.patient_id,
           pharmacyId: pharmacy.id,
-          actionType: chan === "Call" ? "تم بدء اتصال بالعميل" : `تم فتح رسالة ${chan} للعميل`,
+          actionType: actionMap[chan],
           phoneNumber: phone,
           channel: chan,
+          patientStatus: patient.current_cycle_status || "Waiting",
+          remainingDays: patient.remaining_days ?? undefined,
         }
       });
     } catch (e) {
