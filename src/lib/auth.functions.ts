@@ -75,6 +75,8 @@ export const currentSession = createServerFn({ method: "GET" }).handler(async ()
     pharmacy: {
       id: session.data.pharmacy_id,
       name: session.data.pharmacy_name ?? "",
+      address: session.data.pharmacy_address ?? "",
+      phone: session.data.pharmacy_phone ?? "",
     },
   };
 });
