@@ -143,5 +143,3 @@ function PharmacySettingsCard() {
     </Card>
   );
 }
-
-import { useSession } from "@/lib/queries";
