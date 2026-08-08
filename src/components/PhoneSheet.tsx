@@ -38,7 +38,7 @@ function generateMessage(row: Partial<PatientStatusRow>, pharmacyName?: string):
 
   if (isPartial) {
     text = "السلام عليكم، نحيطكم علمًا بوجود أصناف متبقية من صرف علاج التأمين الخاص بكم. يرجى التواصل أو مراجعة الصيدلية. شكرًا لكم.";
-  } else if (days !== null) {
+  } else if (days !== undefined && days !== null) {
     if (days === 0) {
       text = "السلام عليكم، نحيطكم علمًا بأن موعد صرف علاج التأمين الخاص بكم أصبح مستحقًا اليوم. يرجى مراجعة الصيدلية. شكرًا لكم.";
     } else if (days < 0) {
@@ -91,11 +91,13 @@ export function PhoneSheet({
     if (!pharmacy) return;
     try {
       await doLog({
-        patientId: patient.patient_id,
-        pharmacyId: pharmacy.id,
-        actionType: chan === "Call" ? "تم بدء اتصال بالعميل" : `تم فتح رسالة ${chan} للعميل`,
-        phoneNumber: phone,
-        channel: chan,
+        data: {
+          patientId: patient.patient_id,
+          pharmacyId: pharmacy.id,
+          actionType: chan === "Call" ? "تم بدء اتصال بالعميل" : `تم فتح رسالة ${chan} للعميل`,
+          phoneNumber: phone,
+          channel: chan,
+        }
       });
     } catch (e) {
       console.error("Failed to log activity", e);

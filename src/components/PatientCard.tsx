@@ -122,7 +122,12 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
         </div>
       </Card>
 
-      <PhoneSheet open={phoneOpen} onOpenChange={setPhoneOpen} phone={row.phone} patientName={row.patient_name} />
+      <PhoneSheet 
+        open={phoneOpen} 
+        onOpenChange={setPhoneOpen} 
+        patient={{ ...row, patient_id: row.patient_id, patient_name: row.patient_name, phone: row.phone! }} 
+        pharmacy={session?.unlocked ? { id: session.pharmacy.id, name: session.pharmacy.name } : undefined}
+      />
       <DispenseDialog
         open={dispOpen}
         onOpenChange={setDispOpen}
