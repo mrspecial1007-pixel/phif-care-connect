@@ -65,6 +65,65 @@ export type Database = {
           },
         ]
       }
+      communication_logs: {
+        Row: {
+          action_type: string
+          channel: string
+          created_at: string
+          id: string
+          patient_id: string
+          pharmacy_id: string | null
+          phone_number: string
+        }
+        Insert: {
+          action_type: string
+          channel: string
+          created_at?: string
+          id?: string
+          patient_id: string
+          pharmacy_id?: string | null
+          phone_number: string
+        }
+        Update: {
+          action_type?: string
+          channel?: string
+          created_at?: string
+          id?: string
+          patient_id?: string
+          pharmacy_id?: string | null
+          phone_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "communication_logs_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "communication_logs_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "communication_logs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "communication_logs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dispensing_cycles: {
         Row: {
           completed_at: string | null
