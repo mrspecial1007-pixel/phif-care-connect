@@ -62,6 +62,85 @@ function SettingsPage() {
           {busy ? "جاري التحضير…" : "تنزيل النسخة الاحتياطية"}
         </Button>
       </Card>
+
+      <PharmacySettingsCard />
     </div>
   );
 }
+
+function PharmacySettingsCard() {
+  const { data: session } = useSession();
+  const [busy, setBusy] = useState(false);
+  
+  if (!session?.unlocked || !session.pharmacy) return null;
+  
+  const pharmacy = session.pharmacy as any;
+
+  async function updatePharmacyInfo(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    const formData = new FormData(e.currentTarget);
+    const name = formData.get("name") as string;
+    const address = formData.get("address") as string;
+    const phone = formData.get("phone") as string;
+
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { error } = await supabase
+        .from("pharmacies")
+        .update({ name, address, phone })
+        .eq("id", pharmacy.id);
+      
+      if (error) throw error;
+      toast.success("تم تحديث بيانات الصيدلية");
+      window.location.reload(); // Refresh to update session data
+    } catch (err) {
+      toast.error("تعذر تحديث البيانات");
+      console.error(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="p-4 space-y-4">
+      <div className="font-semibold text-lg border-b pb-2">إعدادات الصيدلية الحالية</div>
+      <form onSubmit={updatePharmacyInfo} className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">اسم الصيدلية</label>
+          <input 
+            name="name"
+            defaultValue={pharmacy.name}
+            className="w-full p-2 border rounded-md text-right"
+            required
+            dir="rtl"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">العنوان (يظهر في الرسائل)</label>
+          <textarea 
+            name="address"
+            defaultValue={pharmacy.address}
+            className="w-full p-2 border rounded-md text-right min-h-[80px]"
+            required
+            dir="rtl"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">رقم الهاتف (اختياري)</label>
+          <input 
+            name="phone"
+            defaultValue={pharmacy.phone}
+            className="w-full p-2 border rounded-md text-right"
+            dir="ltr"
+          />
+        </div>
+        <Button type="submit" disabled={busy} className="w-full h-11 bg-success hover:bg-success/90">
+          {busy ? "جاري الحفظ..." : "حفظ التعديلات"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+import { useSession } from "@/lib/queries";

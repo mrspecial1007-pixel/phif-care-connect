@@ -87,7 +87,7 @@ export function PhoneSheet({
   useEffect(() => {
     if (open) {
       setView("options");
-      setMessage(generateMessage(patient, pharmacy?.name));
+      setMessage(generateMessage(patient, pharmacy));
     }
   }, [open, patient, pharmacy]);
 
@@ -161,6 +161,18 @@ export function PhoneSheet({
             <div className="text-right space-y-1">
               <div className="font-semibold text-lg">{patient.patient_name}</div>
               <div className="text-sm text-muted-foreground" dir="ltr">{phone}</div>
+              <div className="text-xs bg-muted p-2 rounded-md mt-2">
+                <div className="font-medium text-primary">حالة الاستحقاق:</div>
+                <div>{patient.current_cycle_status === "Partial" ? "صرف جزئي" : 
+                      patient.remaining_days === 0 ? "مستحق اليوم" :
+                      (patient.remaining_days || 0) < 0 ? `متأخر (${Math.abs(patient.remaining_days || 0)} يوم)` :
+                      `بعد ${patient.remaining_days} يوم`}</div>
+                {pharmacy && (
+                  <div className="mt-1 opacity-70">
+                    {pharmacy.name} {pharmacy.address && `- ${pharmacy.address}`}
+                  </div>
+                )}
+              </div>
             </div>
           </SheetHeader>
 
