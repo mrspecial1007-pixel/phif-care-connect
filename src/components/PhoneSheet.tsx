@@ -31,32 +31,41 @@ function normalizeLibyaIntl(raw: string): string | null {
   return null;
 }
 
-function generateMessage(row: Partial<PatientStatusRow>, pharmacyName?: string): string {
-  let text = "";
+function generateMessage(row: Partial<PatientStatusRow>, pharmacy?: { name: string; address?: string }): string {
+  const name = row.patient_name || "";
+  const greeting = `السلام عليكم ${name}،\n\nنتمنى أن تكونوا بصحة وعافية.`;
+  
+  let body = "";
   const days = row.remaining_days;
   const isPartial = row.current_cycle_status === "Partial";
 
+  const getArabicDays = (n: number) => {
+    const absN = Math.abs(n);
+    if (absN === 1) return "يوم واحد";
+    if (absN === 2) return "يومين";
+    if (absN >= 3 && absN <= 10) return `${absN} أيام`;
+    return `${absN} يومًا`;
+  };
+
   if (isPartial) {
-    text = "السلام عليكم، نحيطكم علمًا بوجود أصناف متبقية من صرف علاج التأمين الخاص بكم. يرجى التواصل أو مراجعة الصيدلية. شكرًا لكم.";
+    body = "نود إعلامكم بوجود أصناف متبقية من علاج التأمين الخاص بكم لم يكتمل صرفها بعد.\n\nنرجو التكرم بالحضور لاستلام الأصناف المتبقية، ويسعدنا تواصلكم معنا في حال وجود أي استفسار.";
   } else if (days !== undefined && days !== null) {
     if (days === 0) {
-      text = "السلام عليكم، نحيطكم علمًا بأن موعد صرف علاج التأمين الخاص بكم أصبح مستحقًا اليوم. يرجى مراجعة الصيدلية. شكرًا لكم.";
+      body = "نود إعلامكم بأن موعد صرف علاج التأمين الخاص بكم أصبح مستحقًا اليوم.\n\nنرجو التكرم بالحضور لاستلام العلاج، ويسعدنا تواصلكم معنا في حال وجود أي استفسار.";
     } else if (days < 0) {
-      const absDays = Math.abs(days);
-      text = `السلام عليكم، نحيطكم علمًا بأن موعد صرف علاج التأمين الخاص بكم مستحق منذ ${absDays} ${absDays === 1 ? "يوم" : "أيام"}. يرجى مراجعة الصيدلية. شكرًا لكم.`;
-    } else if (days <= 3) {
-      text = `السلام عليكم، نحيطكم علمًا بأن موعد صرف علاج التأمين الخاص بكم سيكون بعد ${days} ${days === 1 ? "يوم" : "أيام"}. شكرًا لكم.`;
+      body = `نود إعلامكم بأن موعد صرف علاج التأمين الخاص بكم مستحق منذ ${getArabicDays(days)}.\n\nنرجو التكرم بالحضور لاستلام العلاج، ويسعدنا تواصلكم معنا في حال وجود أي استفسار.`;
     } else {
-      text = "السلام عليكم، نحيطكم علمًا بأن موعد صرف علاج التأمين الخاص بكم يقترب. يرجى مراجعة الصيدلية. شكرًا لكم.";
+      body = `نود إعلامكم بأن موعد صرف علاج التأمين الخاص بكم سيكون بعد ${getArabicDays(days)}.\n\nنرجو التكرم بالحضور في موعد الاستحقاق لاستلام العلاج، ويسعدنا تواصلكم معنا في حال وجود أي استفسار.`;
     }
   } else {
-    text = "السلام عليكم، يرجى مراجعة الصيدلية بشأن علاج التأمين الخاص بكم. شكرًا لكم.";
+    body = "نود إعلامكم بضرورة مراجعة الصيدلية بشأن علاج التأمين الخاص بكم.\n\nيسعدنا تواصلكم معنا في حال وجود أي استفسار.";
   }
 
-  if (pharmacyName) {
-    text += `\n\n${pharmacyName}`;
-  }
-  return text;
+  const signature = pharmacy?.name 
+    ? `\n\n${pharmacy.name}${pharmacy.address ? `\n📍 ${pharmacy.address}` : ""}`
+    : "";
+
+  return `${greeting}\n\n${body}${signature}`;
 }
 
 export function PhoneSheet({
@@ -68,7 +77,7 @@ export function PhoneSheet({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   patient: Partial<PatientStatusRow> & { patient_id: string; patient_name: string; phone: string };
-  pharmacy?: { id: string; name: string };
+  pharmacy?: { id: string; name: string; address?: string };
 }) {
   const [view, setView] = useState<"options" | "preview">("options");
   const [channel, setChannel] = useState<"WhatsApp" | "SMS" | "Call">("WhatsApp");
