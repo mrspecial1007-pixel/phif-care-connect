@@ -3,6 +3,8 @@ import { useSession } from "@tanstack/react-start/server";
 export type PharmacySessionData = {
   pharmacy_id?: string;
   pharmacy_name?: string;
+  pharmacy_address?: string;
+  pharmacy_phone?: string;
   unlocked_at?: number;
 };
 
