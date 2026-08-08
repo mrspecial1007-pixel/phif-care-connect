@@ -57,7 +57,7 @@ export const logCommunication = createServerFn({ method: "POST" })
       channel: data.channel,
       patient_status: data.patientStatus,
       remaining_days: data.remainingDays,
-    });
+    } as any);
     if (error) throw error;
     return { success: true };
   });
