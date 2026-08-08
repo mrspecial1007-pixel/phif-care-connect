@@ -45,8 +45,8 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
     await session.update({
       pharmacy_id: pharm.id,
       pharmacy_name: pharm.name,
-      pharmacy_address: pharm.address,
-      pharmacy_phone: pharm.phone,
+      pharmacy_address: pharm.address ?? undefined,
+      pharmacy_phone: pharm.phone ?? undefined,
       unlocked_at: Date.now(),
     });
     await writeAudit({
