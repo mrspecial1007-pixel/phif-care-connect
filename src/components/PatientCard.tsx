@@ -107,14 +107,14 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
           {isPartial ? (
             <Button
               className="w-full h-11 bg-info text-info-foreground hover:bg-info/90"
-              onClick={(e) => { stop(e); setRemOpen(true); }}
+              onClick={(e: MouseEvent) => { stop(e); setRemOpen(true); }}
             >
               <Clock className="h-4 w-4 ml-2" /> صرف متبقي
             </Button>
           ) : (
             <Button
               className="w-full h-11"
-              onClick={(e) => { stop(e); setDispOpen(true); }}
+              onClick={(e: MouseEvent) => { stop(e); setDispOpen(true); }}
             >
               <CheckCircle2 className="h-4 w-4 ml-2" /> تم الصرف
             </Button>

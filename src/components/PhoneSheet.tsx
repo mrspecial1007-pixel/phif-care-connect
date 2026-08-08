@@ -160,7 +160,7 @@ export function PhoneSheet({
               <label className="text-sm font-medium">نص الرسالة</label>
               <Textarea 
                 value={message} 
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setMessage(e.target.value)}
                 className="min-h-[150px] text-right"
                 dir="rtl"
               />
