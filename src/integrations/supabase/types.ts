@@ -271,6 +271,7 @@ export type Database = {
           gender: string | null
           id: string
           insurance_card_number: string | null
+          is_favorite: boolean | null
           national_id: string | null
           notes: string | null
           patient_name: string
@@ -287,6 +288,7 @@ export type Database = {
           gender?: string | null
           id?: string
           insurance_card_number?: string | null
+          is_favorite?: boolean | null
           national_id?: string | null
           notes?: string | null
           patient_name: string
@@ -303,6 +305,7 @@ export type Database = {
           gender?: string | null
           id?: string
           insurance_card_number?: string | null
+          is_favorite?: boolean | null
           national_id?: string | null
           notes?: string | null
           patient_name?: string
@@ -366,6 +369,7 @@ export type Database = {
             | Database["public"]["Enums"]["cycle_status"]
             | null
           insurance_card_number: string | null
+          is_favorite: boolean | null
           is_shared: boolean | null
           last_dispensing_date: string | null
           last_pharmacy_id: string | null
