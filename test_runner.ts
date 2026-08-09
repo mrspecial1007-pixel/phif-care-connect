@@ -15,17 +15,18 @@ async function runTest() {
   const patientId = p!.id;
   console.log("Patient created:", patientId);
 
-  // We need a dummy cycle because of the FK constraint
-  const { data: cycle } = await supabaseAdmin.from("dispensing_cycles").insert({
+  // Use started_at instead of start_date
+  const { data: cycle, error: cErr } = await supabaseAdmin.from("dispensing_cycles").insert({
     patient_id: patientId,
-    start_date: new Date().toISOString().slice(0, 10),
+    started_at: new Date().toISOString().slice(0, 10),
     status: "Active"
   }).select("id").single();
   
+  if (cErr) throw cErr;
   const cycleId = cycle!.id;
 
   async function recordDispense(type: string, date: string, trackId: string | null = null) {
-      const { data: tx } = await supabaseAdmin.from("dispensing_transactions").insert({
+      const { data: tx, error: tErr } = await supabaseAdmin.from("dispensing_transactions").insert({
           patient_id: patientId,
           pharmacy_id: "11111111-1111-1111-1111-111111111111",
           transaction_type: type,
@@ -33,6 +34,8 @@ async function runTest() {
           cycle_id: cycleId
       }).select("id").single();
       
+      if (tErr) throw tErr;
+
       const nextDue = new Date(date);
       nextDue.setUTCDate(nextDue.getUTCDate() + 28);
       const nextDueDate = nextDue.toISOString().slice(0, 10);
