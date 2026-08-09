@@ -99,7 +99,7 @@ function Dashboard() {
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="ابحث بالاسم أو رقم البطاقة…"
+          placeholder="ابحث بالاسم أو رقم البطاقة أو رقم الهاتف..."
           className="pr-10 h-12 text-base"
         />
       </div>
