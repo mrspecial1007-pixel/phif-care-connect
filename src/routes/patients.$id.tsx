@@ -3,7 +3,7 @@ import { Gate } from "@/components/AppShell";
 import {
   usePatient,
   usePatientHistory,
-  usePatientCycles,
+  usePatientDueTracks,
   usePatientStatuses,
   useSession,
 } from "@/lib/queries";
@@ -69,18 +69,17 @@ function Detail() {
   const { id } = Route.useParams();
   const { data: patient, isLoading } = usePatient(id);
   const { data: history } = usePatientHistory(id);
-  const { data: cycles } = usePatientCycles(id);
+  const { data: dueTracks } = usePatientDueTracks(id);
   const { data: statuses } = usePatientStatuses();
   const { data: session } = useSession();
   const status = statuses?.find((s) => s.patient_id === id);
 
-  const currentCycle = cycles?.[0];
-  const isPartial = currentCycle?.status === "Partial";
+  const nearestTrack = dueTracks?.[0];
+  const isPartial = false; // Logic for Partial button will be updated inside DispenseFlow
 
   const [editOpen, setEditOpen] = useState(false);
   const [editFocus, setEditFocus] = useState<string | null>(null);
   const [dispenseOpen, setDispenseOpen] = useState(false);
-  const [remainingConfirmOpen, setRemainingConfirmOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [favBusy, setFavBusy] = useState(false);
   const qc = useQueryClient();
@@ -212,56 +211,56 @@ function Detail() {
         </div>
       </Card>
 
-      {/* Dispensing status card */}
-      <Card className="p-4 space-y-2">
+      <Card className="p-4 space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="font-semibold">بيانات الصرف</h2>
-          <StatusBadge status={currentCycle?.status ?? "Waiting"} />
+          <StatusBadge status={nearestTrack ? "Waiting" : "Completed"} />
         </div>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <Stat label="آخر تاريخ صرف" value={fmtDate(status?.last_dispensing_date)} />
-          <Stat label="الاستحقاق القادم" value={status?.next_due_date ?? "—"} />
-          <Stat
-            label="الأيام"
-            value={
-              status?.remaining_days == null
-                ? "—"
-                : status.remaining_days >= 0
-                ? `متبقي ${status.remaining_days} يوم`
-                : `متأخر ${Math.abs(status.remaining_days)} يوم`
-            }
-            tone={
-              status?.remaining_days == null
-                ? undefined
-                : status.remaining_days < 0
-                ? "danger"
-                : status.remaining_days <= 3
-                ? "warning"
-                : "muted"
-            }
-          />
-          <Stat
-            label="آخر صيدلية"
-            value={status?.last_pharmacy_name ?? "—"}
-            icon={<Building2 className="h-3.5 w-3.5" />}
-          />
+        
+        <div className="space-y-3">
+          {(dueTracks ?? []).slice(0, 2).map((track, idx) => (
+            <div key={track.id} className="grid grid-cols-2 gap-3 text-sm border-b pb-3 last:border-0 last:pb-0">
+              <Stat label={idx === 0 ? "أقرب استحقاق" : "موعد إضافي"} value={track.next_due_date} />
+              <Stat
+                label="الأيام"
+                value={
+                  (() => {
+                    const diff = Math.ceil((new Date(track.next_due_date).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+                    return diff >= 0 ? `متبقي ${diff} يوم` : `متأخر ${Math.abs(diff)} يوم`;
+                  })()
+                }
+                tone={
+                  (() => {
+                    const diff = Math.ceil((new Date(track.next_due_date).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+                    return diff < 0 ? "danger" : diff <= 3 ? "warning" : "muted";
+                  })()
+                }
+              />
+            </div>
+          ))}
+          
+          {dueTracks && dueTracks.length > 2 && (
+            <div className="text-xs text-center text-muted-foreground bg-muted/50 py-1 rounded">
+              +{dueTracks.length - 2} مواعيد استحقاق أخرى نشطة
+            </div>
+          )}
+
+          {(!dueTracks || dueTracks.length === 0) && (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <Stat label="آخر تاريخ صرف" value={fmtDate(status?.last_dispensing_date)} />
+              <Stat label="الحالة" value="لا يوجد مواعيد نشطة" tone="muted" />
+            </div>
+          )}
         </div>
 
-        {isPartial ? (
-          <Button
-            className="w-full h-14 text-base bg-info text-info-foreground hover:bg-info/90"
-            onClick={() => setRemainingConfirmOpen(true)}
-          >
-            <Clock className="h-5 w-5 ml-2" /> صرف متبقي
-          </Button>
-        ) : (
+        <div className="space-y-2 pt-2">
           <Button
             className="w-full h-14 text-base"
             onClick={() => setDispenseOpen(true)}
           >
             <CheckCircle2 className="h-5 w-5 ml-2" /> تم الصرف
           </Button>
-        )}
+        </div>
       </Card>
 
       {/* History */}
@@ -320,12 +319,6 @@ function Detail() {
         cardNumber={patient.insurance_card_number}
       />
 
-      <RemainingConfirmDialog
-        open={remainingConfirmOpen}
-        onOpenChange={setRemainingConfirmOpen}
-        patientId={patient.id}
-        defaultPharmacyId={session?.unlocked ? session.pharmacy.id : undefined}
-      />
 
       {patient?.phone && (
         <PhoneSheet 
@@ -336,7 +329,7 @@ function Detail() {
             patient_name: patient.patient_name,
             phone: patient.phone,
             remaining_days: status?.remaining_days,
-            current_cycle_status: status?.current_cycle_status as any,
+            current_cycle_status: "Waiting",
           }}
           pharmacy={session?.unlocked ? { 
             id: session.pharmacy.id, 

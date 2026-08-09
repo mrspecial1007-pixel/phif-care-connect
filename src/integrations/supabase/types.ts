@@ -178,6 +178,61 @@ export type Database = {
           },
         ]
       }
+      dispensing_due_tracks: {
+        Row: {
+          created_at: string
+          id: string
+          last_dispensing_date: string
+          next_due_date: string
+          patient_id: string
+          source_transaction_id: string | null
+          status: Database["public"]["Enums"]["cycle_status"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_dispensing_date: string
+          next_due_date: string
+          patient_id: string
+          source_transaction_id?: string | null
+          status?: Database["public"]["Enums"]["cycle_status"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_dispensing_date?: string
+          next_due_date?: string
+          patient_id?: string
+          source_transaction_id?: string | null
+          status?: Database["public"]["Enums"]["cycle_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispensing_due_tracks_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispensing_due_tracks_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "dispensing_due_tracks_source_transaction_id_fkey"
+            columns: ["source_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "dispensing_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dispensing_transactions: {
         Row: {
           created_at: string
@@ -225,13 +280,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "dispensing_cycles"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispensing_transactions_cycle_id_fkey"
-            columns: ["cycle_id"]
-            isOneToOne: false
-            referencedRelation: "v_patient_status"
-            referencedColumns: ["current_cycle_id"]
           },
           {
             foreignKeyName: "dispensing_transactions_patient_id_fkey"
@@ -363,11 +411,7 @@ export type Database = {
     Views: {
       v_patient_status: {
         Row: {
-          current_cycle_id: string | null
-          current_cycle_started_at: string | null
-          current_cycle_status:
-            | Database["public"]["Enums"]["cycle_status"]
-            | null
+          active_tracks_count: number | null
           insurance_card_number: string | null
           is_favorite: boolean | null
           is_shared: boolean | null

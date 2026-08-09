@@ -81,22 +81,29 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
   };
 
   const daysNode = row.remaining_days !== null ? (
-    row.remaining_days < 0 ? (
-      <div className="flex items-center gap-1.5 text-red-700 dark:text-red-400 font-extrabold text-base mt-2">
-        <AlertTriangle className="h-4 w-4" />
-        متأخر {Math.abs(row.remaining_days)} {Math.abs(row.remaining_days) === 1 ? "يوم" : "أيام"}
-      </div>
-    ) : row.remaining_days <= 3 ? (
-      <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-extrabold text-base mt-2">
-        <Clock className="h-4 w-4" />
-        متبقي {row.remaining_days} {row.remaining_days === 1 ? "يوم" : "أيام"}
-      </div>
-    ) : (
-      <div className="flex items-center gap-1.5 text-foreground font-bold text-sm mt-2">
-        <Clock className="h-4 w-4 text-muted-foreground" />
-        متبقي {row.remaining_days} يوم
-      </div>
-    )
+    <div className="mt-2 space-y-1">
+      {row.remaining_days < 0 ? (
+        <div className="flex items-center gap-1.5 text-red-700 dark:text-red-400 font-extrabold text-base">
+          <AlertTriangle className="h-4 w-4" />
+          متأخر {Math.abs(row.remaining_days)} {Math.abs(row.remaining_days) === 1 ? "يوم" : "أيام"}
+        </div>
+      ) : row.remaining_days <= 3 ? (
+        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-extrabold text-base">
+          <Clock className="h-4 w-4" />
+          متبقي {row.remaining_days} {row.remaining_days === 1 ? "يوم" : "أيام"}
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 text-foreground font-bold text-sm">
+          <Clock className="h-4 w-4 text-muted-foreground" />
+          متبقي {row.remaining_days} يوم
+        </div>
+      )}
+      {row.active_tracks_count > 1 && (
+        <div className="text-[11px] text-muted-foreground font-medium pr-6">
+          +{row.active_tracks_count - 1} مواعيد استحقاق أخرى
+        </div>
+      )}
+    </div>
   ) : null;
 
   return (

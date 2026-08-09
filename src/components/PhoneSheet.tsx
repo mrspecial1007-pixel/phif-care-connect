@@ -37,7 +37,6 @@ function generateMessage(row: Partial<PatientStatusRow>, pharmacy?: { name: stri
   
   let body = "";
   const days = row.remaining_days;
-  const isPartial = row.current_cycle_status === "Partial";
 
   const getArabicDays = (n: number) => {
     const absN = Math.abs(n);
@@ -47,9 +46,7 @@ function generateMessage(row: Partial<PatientStatusRow>, pharmacy?: { name: stri
     return `${absN} يومًا`;
   };
 
-  if (isPartial) {
-    body = "نود إعلامكم بوجود أصناف متبقية من علاج التأمين الخاص بكم لم يكتمل صرفها بعد.\n\nنرجو التكرم بالحضور لاستلام الأصناف المتبقية، ويسعدنا تواصلكم معنا في حال وجود أي استفسار.";
-  } else if (days !== undefined && days !== null) {
+  if (days !== undefined && days !== null) {
     if (days === 0) {
       body = "نود إعلامكم بأن موعد صرف علاج التأمين الخاص بكم أصبح مستحقًا اليوم.\n\nنرجو التكرم بالحضور لاستلام العلاج، ويسعدنا تواصلكم معنا في حال وجود أي استفسار.";
     } else if (days < 0) {
@@ -112,7 +109,7 @@ export function PhoneSheet({
           actionType: actionMap[chan],
           phoneNumber: phone,
           channel: chan,
-          patientStatus: patient.current_cycle_status || "Waiting",
+          patientStatus: "Waiting",
           remainingDays: patient.remaining_days ?? undefined,
         }
       });
