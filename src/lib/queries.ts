@@ -162,7 +162,7 @@ export function useDispensingTransactions(options: {
         query = query.eq("pharmacy_id", options.pharmacyId);
       }
       if (options.type && options.type !== "all") {
-        query = query.eq("transaction_type", options.type);
+        query = query.eq("transaction_type", options.type as any);
       }
 
       const { data, error } = await query.limit(1000);
