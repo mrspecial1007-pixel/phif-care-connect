@@ -23,7 +23,7 @@ function SettingsPage() {
     try {
       const data: any = await exportFn();
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.patients), "Beneficiarys");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.patients), "Patients");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.cycles), "Cycles");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
         (data.transactions ?? []).map((t: any) => ({

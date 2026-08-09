@@ -1,17 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { useBeneficiaryStatuses } from "@/lib/queries";
+import { usePatientStatuses } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
 import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff } from "lucide-react";
 import { normalizeArabicName } from "@/lib/name-normalize";
-import { BeneficiaryCard, statusMeta } from "@/components/BeneficiaryCard";
+import { PatientCard, statusMeta } from "@/components/PatientCard";
 
 export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard /></Gate> });
 
 function Dashboard() {
-  const { data: rows, isLoading } = useBeneficiaryStatuses();
+  const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone">("all");
 
@@ -123,7 +123,7 @@ function Dashboard() {
       ) : (
         <div className="grid gap-2">
           {filtered.map((r) => (
-            <BeneficiaryCard key={r.patient_id} row={r} />
+            <PatientCard key={r.patient_id} row={r} />
           ))}
           {filtered.length === 0 && (
             <div className="text-center py-10 text-muted-foreground">لا توجد نتائج</div>

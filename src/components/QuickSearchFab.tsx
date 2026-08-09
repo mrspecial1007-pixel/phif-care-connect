@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "@tanstack/react-router";
-import { useBeneficiaryStatuses } from "@/lib/queries";
+import { usePatientStatuses } from "@/lib/queries";
 import { normalizeArabicName } from "@/lib/name-normalize";
 import { Badge } from "@/components/ui/badge";
 
@@ -11,7 +11,7 @@ export function QuickSearchFab() {
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const nav = useNavigate();
-  const { data: rows } = useBeneficiaryStatuses();
+  const { data: rows } = usePatientStatuses();
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);

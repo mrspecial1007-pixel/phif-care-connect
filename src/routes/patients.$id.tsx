@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import {
-  useBeneficiary,
-  useBeneficiaryHistory,
-  useBeneficiaryCycles,
-  useBeneficiaryStatuses,
+  usePatient,
+  usePatientHistory,
+  usePatientCycles,
+  usePatientStatuses,
   useSession,
 } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
@@ -23,7 +23,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { upsertBeneficiary } from "@/lib/dispensing.functions";
+import { upsertPatient } from "@/lib/dispensing.functions";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
 import { PhoneSheet } from "@/components/PhoneSheet";
@@ -66,10 +66,10 @@ async function copy(text: string, label: string) {
 
 function Detail() {
   const { id } = Route.useParams();
-  const { data: patient, isLoading } = useBeneficiary(id);
-  const { data: history } = useBeneficiaryHistory(id);
-  const { data: cycles } = useBeneficiaryCycles(id);
-  const { data: statuses } = useBeneficiaryStatuses();
+  const { data: patient, isLoading } = usePatient(id);
+  const { data: history } = usePatientHistory(id);
+  const { data: cycles } = usePatientCycles(id);
+  const { data: statuses } = usePatientStatuses();
   const { data: session } = useSession();
   const status = statuses?.find((s) => s.patient_id === id);
 
@@ -260,7 +260,7 @@ function Detail() {
         </div>
       </Card>
 
-      <EditBeneficiaryDialog
+      <EditPatientDialog
         open={editOpen}
         onOpenChange={setEditOpen}
         patient={patient}
@@ -406,7 +406,7 @@ function InfoRow({
   );
 }
 
-function EditBeneficiaryDialog({
+function EditPatientDialog({
   open,
   onOpenChange,
   patient,
@@ -423,7 +423,7 @@ function EditBeneficiaryDialog({
   const [address, setAddress] = useState(patient.address ?? "");
   const [busy, setBusy] = useState(false);
   const qc = useQueryClient();
-  const upsert = useServerFn(upsertBeneficiary);
+  const upsert = useServerFn(upsertPatient);
 
   useEffect(() => {
     if (open) {

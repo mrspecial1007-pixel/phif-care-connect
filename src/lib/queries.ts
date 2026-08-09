@@ -25,7 +25,7 @@ export function usePharmacies() {
   });
 }
 
-export type BeneficiaryStatusRow = {
+export type PatientStatusRow = {
   patient_id: string;
   patient_name: string;
   insurance_card_number: string | null;
@@ -44,22 +44,22 @@ export type BeneficiaryStatusRow = {
   is_shared: boolean;
 };
 
-export function useBeneficiaryStatuses() {
+export function usePatientStatuses() {
   return useQuery({
     queryKey: ["patient_status"],
-    queryFn: async (): Promise<BeneficiaryStatusRow[]> => {
+    queryFn: async (): Promise<PatientStatusRow[]> => {
       const { data, error } = await supabase
         .from("v_patient_status" as never)
         .select("*")
         .limit(2000);
       if (error) throw error;
-      return (data ?? []) as BeneficiaryStatusRow[];
+      return (data ?? []) as PatientStatusRow[];
     },
     staleTime: 15_000,
   });
 }
 
-export function useBeneficiary(id: string | undefined) {
+export function usePatient(id: string | undefined) {
   return useQuery({
     enabled: !!id,
     queryKey: ["patient", id],
@@ -75,7 +75,7 @@ export function useBeneficiary(id: string | undefined) {
   });
 }
 
-export function useBeneficiaryHistory(id: string | undefined) {
+export function usePatientHistory(id: string | undefined) {
   return useQuery({
     enabled: !!id,
     queryKey: ["patient_history", id],
@@ -92,7 +92,7 @@ export function useBeneficiaryHistory(id: string | undefined) {
   });
 }
 
-export function useBeneficiaryCycles(id: string | undefined) {
+export function usePatientCycles(id: string | undefined) {
   return useQuery({
     enabled: !!id,
     queryKey: ["patient_cycles", id],
