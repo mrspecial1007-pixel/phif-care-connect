@@ -26,7 +26,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { recordDispensing } from "@/lib/dispensing.functions";
-import { usePharmacies, useSession } from "@/lib/queries";
+import { usePharmacies, useSession, usePatientDueTracks } from "@/lib/queries";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -53,6 +53,7 @@ export function DispenseDialog({
 }) {
   const { data: pharmacies } = usePharmacies();
   const { data: session } = useSession();
+  const { data: dueTracks } = usePatientDueTracks(patientId);
   const defaultPharmacyId = session?.unlocked ? session.pharmacy.id : undefined;
   const qc = useQueryClient();
   const dispense = useServerFn(recordDispensing);
@@ -61,6 +62,7 @@ export function DispenseDialog({
   const [pharmacyId, setPharmacyId] = useState<string>(defaultPharmacyId ?? "");
   const [date, setDate] = useState<string>(todayISO());
   const [allDispensed, setAllDispensed] = useState<boolean | null>(null);
+  const [trackId, setTrackId] = useState<string>("");
   const [itemsDispensed, setItemsDispensed] = useState<string>("");
   const [itemsRemaining, setItemsRemaining] = useState<string>("");
   const [notes, setNotes] = useState("");
@@ -78,11 +80,12 @@ export function DispenseDialog({
       setItemsRemaining("");
       setNotes("");
       setHistorical(null);
+      setTrackId(dueTracks?.[0]?.id ?? "");
       setIdempotencyKey(
         typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
       );
     }
-  }, [open, defaultPharmacyId, pharmacies]);
+  }, [open, defaultPharmacyId, pharmacies, dueTracks]);
 
   const pharmacyName = useMemo(
     () => pharmacies?.find((p) => p.id === pharmacyId)?.name ?? "—",
@@ -105,6 +108,7 @@ export function DispenseDialog({
           items_remaining: itemsRemaining ? Number(itemsRemaining) : null,
           idempotency_key: idempotencyKey,
           historical_mode: historicalMode ?? null,
+          track_id: trackId || null,
         },
       });
       if (!res.ok) {
@@ -122,7 +126,7 @@ export function DispenseDialog({
       }
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["patient_history", patientId] }),
-        qc.invalidateQueries({ queryKey: ["patient_cycles", patientId] }),
+        qc.invalidateQueries({ queryKey: ["patient_due_tracks", patientId] }),
         qc.invalidateQueries({ queryKey: ["patient_status"] }),
       ]);
       onOpenChange(false);
@@ -146,6 +150,29 @@ export function DispenseDialog({
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
+                {dueTracks && dueTracks.length > 1 && (
+                  <div>
+                    <Label>اختر موعد الصرف المعالج</Label>
+                    <div className="space-y-2 mt-1">
+                      {dueTracks.map((track) => (
+                        <button
+                          key={track.id}
+                          type="button"
+                          onClick={() => setTrackId(track.id)}
+                          className={`w-full rounded-lg border p-3 text-sm text-right transition flex items-center justify-between ${
+                            trackId === track.id
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:border-primary/40"
+                          }`}
+                        >
+                          <span>مستحق في {track.next_due_date}</span>
+                          {trackId === track.id && <Check className="h-4 w-4" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <Label>الصيدلية</Label>
                   <div className="grid grid-cols-2 gap-2 mt-1">
@@ -414,7 +441,7 @@ export function RemainingConfirmDialog({
       toast.success("تم إكمال الصرف وبدء دورة جديدة");
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["patient_history", patientId] }),
-        qc.invalidateQueries({ queryKey: ["patient_cycles", patientId] }),
+        qc.invalidateQueries({ queryKey: ["patient_due_tracks", patientId] }),
         qc.invalidateQueries({ queryKey: ["patient_status"] }),
       ]);
       onOpenChange(false);
