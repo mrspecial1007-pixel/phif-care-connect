@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./src/integrations/supabase/client.server";
 
 async function runTest() {
-  const patientName = "Multi-track Logic Test " + Date.now();
+  const patientName = "Multi-track Logic Test FIXED " + Date.now();
   const insuranceNum = "900" + Math.floor(Math.random() * 10000000000);
   
   console.log("--- STARTING TRACK LOGIC VERIFICATION ---");
@@ -15,18 +15,16 @@ async function runTest() {
   const patientId = p!.id;
   console.log("Patient created:", patientId);
 
-  // Use status 'Waiting'
-  const { data: cycle, error: cErr } = await supabaseAdmin.from("dispensing_cycles").insert({
+  const { data: cycle } = await supabaseAdmin.from("dispensing_cycles").insert({
     patient_id: patientId,
     started_at: new Date().toISOString().slice(0, 10),
     status: "Waiting"
   }).select("id").single();
   
-  if (cErr) throw cErr;
   const cycleId = cycle!.id;
 
   async function recordDispense(type: string, date: string, trackId: string | null = null) {
-      const { data: tx, error: tErr } = await supabaseAdmin.from("dispensing_transactions").insert({
+      const { data: tx } = await supabaseAdmin.from("dispensing_transactions").insert({
           patient_id: patientId,
           pharmacy_id: "11111111-1111-1111-1111-111111111111",
           transaction_type: type,
@@ -34,8 +32,6 @@ async function runTest() {
           cycle_id: cycleId
       }).select("id").single();
       
-      if (tErr) throw tErr;
-
       const nextDue = new Date(date);
       nextDue.setUTCDate(nextDue.getUTCDate() + 28);
       const nextDueDate = nextDue.toISOString().slice(0, 10);
@@ -57,31 +53,14 @@ async function runTest() {
                   status: "Waiting"
               }).eq("id", trackId);
           } else {
-              const { data: nearest } = await supabaseAdmin
-                  .from("dispensing_due_tracks")
-                  .select("id")
-                  .eq("patient_id", patientId)
-                  .neq("status", "Completed")
-                  .order("next_due_date", { ascending: true })
-                  .limit(1)
-                  .maybeSingle();
-              
-              if (nearest) {
-                  await supabaseAdmin.from("dispensing_due_tracks").update({
-                      last_dispensing_date: date,
-                      next_due_date: nextDueDate,
-                      source_transaction_id: tx!.id,
-                      status: "Waiting"
-                  }).eq("id", nearest.id);
-              } else {
-                  await supabaseAdmin.from("dispensing_due_tracks").insert({
-                      patient_id: patientId,
-                      source_transaction_id: tx!.id,
-                      last_dispensing_date: date,
-                      next_due_date: nextDueDate,
-                      status: "Waiting"
-                  });
-              }
+              // FIXED LOGIC: Insert new track instead of updating nearest
+              await supabaseAdmin.from("dispensing_due_tracks").insert({
+                  patient_id: patientId,
+                  source_transaction_id: tx!.id,
+                  last_dispensing_date: date,
+                  next_due_date: nextDueDate,
+                  status: "Waiting"
+              });
           }
       }
   }
@@ -113,8 +92,8 @@ async function runTest() {
     .eq("patient_id", patientId)
     .eq("next_due_date", "2026-08-29");
   
-  const trackId = tracks?.[0]?.id;
-  await recordDispense("Completed", "2026-08-29", trackId);
+  const targetTrack = tracks?.[0]?.id;
+  await recordDispense("Completed", "2026-08-29", targetTrack);
   console.log("Active due tracks:", (await getTracks()).join(", "));
 
   console.log("\n--- VERIFICATION COMPLETE ---");
