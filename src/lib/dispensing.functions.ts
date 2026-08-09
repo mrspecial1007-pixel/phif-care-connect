@@ -227,6 +227,7 @@ const upsertPatientSchema = z.object({
   birth_date: z.string().optional().nullable(),
   gender: z.string().max(20).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
+  is_favorite: z.boolean().optional(),
 });
 
 export const upsertPatient = createServerFn({ method: "POST" })
@@ -281,6 +282,7 @@ export const upsertPatient = createServerFn({ method: "POST" })
       notes: data.notes ?? null,
       review_status,
       possible_duplicate_of,
+      is_favorite: data.is_favorite ?? false,
     };
 
     if (data.id) {
