@@ -156,10 +156,10 @@ function DispensingActivityPage() {
 
   const getTypeBadge = (type: string) => {
     switch (type) {
-      case "Completed": return <Badge className="bg-success hover:bg-success/90">صرف كامل</Badge>;
-      case "Partial": return <Badge className="bg-info hover:bg-info/90">صرف جزئي</Badge>;
-      case "Remaining": return <Badge className="bg-purple-600 hover:bg-purple-700">صرف متبقي</Badge>;
-      default: return <Badge variant="outline">{type}</Badge>;
+      case "Completed": return <Badge className="bg-success text-[10px] px-2 py-0 h-5 rounded-full hover:bg-success/90">صرف كامل</Badge>;
+      case "Partial": return <Badge className="bg-info text-[10px] px-2 py-0 h-5 rounded-full hover:bg-info/90">صرف جزئي</Badge>;
+      case "Remaining": return <Badge className="bg-purple-600 text-[10px] px-2 py-0 h-5 rounded-full hover:bg-purple-700">صرف متبقي</Badge>;
+      default: return <Badge variant="outline" className="text-[10px] px-2 py-0 h-5">{type}</Badge>;
     }
   };
 
@@ -366,7 +366,7 @@ function DispensingActivityPage() {
         </div>
 
         {/* Transaction List */}
-        <div className="space-y-4">
+        <div className="flex flex-col gap-2">
           {isLoading ? (
             <div className="text-center py-20 text-slate-400">جاري التحميل...</div>
           ) : sortedTransactions.length === 0 ? (
@@ -382,46 +382,36 @@ function DispensingActivityPage() {
                 params={{ id: tx.patient_id }}
                 className="block active:scale-[0.98] transition-transform"
               >
-                <Card className="p-4 bg-white shadow-sm hover:shadow-md transition-shadow border-none ring-1 ring-slate-200 group relative overflow-hidden">
-                  <div className="flex gap-4">
-                    {/* Time Column */}
-                    <div className="flex flex-col items-center justify-center shrink-0 w-16 border-l border-slate-100 pl-4">
-                      <span className="text-xs font-bold text-primary">
-                        {format(new Date(tx.created_at), "hh:mm", { locale: ar })}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase">
-                        {format(new Date(tx.created_at), "a", { locale: ar })}
-                      </span>
-                    </div>
-
-                    {/* Content */}
-                    <div className="grow space-y-2">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="font-bold text-slate-900 leading-tight group-hover:text-primary transition-colors">
-                            {tx.patient_name}
-                          </h3>
-                          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-medium mt-1">
-                            <CreditCard className="h-3 w-3" />
-                            <span className="tracking-wider">{tx.insurance_card_number}</span>
-                          </div>
-                        </div>
+                <Card className="p-3 bg-white shadow-sm hover:shadow-md transition-shadow border-none ring-1 ring-slate-200 group relative overflow-hidden">
+                  <div className="space-y-1">
+                    {/* السطر الأول: الاسم ونوع الصرف */}
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-bold text-base text-slate-900 leading-tight group-hover:text-primary transition-colors truncate">
+                        {tx.patient_name}
+                      </h3>
+                      <div className="shrink-0">
                         {getTypeBadge(tx.transaction_type)}
                       </div>
-
-                      <div className="flex flex-wrap items-center gap-3 pt-1">
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-600 bg-slate-50 px-2 py-1 rounded-md">
-                          <Building2 className="h-3 w-3 text-slate-400" />
-                          {tx.pharmacy_name}
-                        </div>
-                        {tx.notes && (
-                          <div className="flex items-center gap-1.5 text-[10px] text-slate-600 bg-amber-50 px-2 py-1 rounded-md max-w-xs truncate">
-                            <FileText className="h-3 w-3 text-amber-500" />
-                            {tx.notes}
-                          </div>
-                        )}
-                      </div>
                     </div>
+
+                    {/* السطر الثاني: رقم البطاقة */}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                      <CreditCard className="h-3 w-3 opacity-70" />
+                      <span className="tracking-wider">{tx.insurance_card_number}</span>
+                    </div>
+
+                    {/* السطر الثالث: الصيدلية */}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <Building2 className="h-3.5 w-3.5 text-primary/70" />
+                      <span>{tx.pharmacy_name}</span>
+                    </div>
+
+                    {tx.notes && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-amber-600 bg-amber-50/50 px-2 py-0.5 rounded-md mt-1 w-fit max-w-full">
+                        <FileText className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{tx.notes}</span>
+                      </div>
+                    )}
                   </div>
                 </Card>
               </Link>
