@@ -108,6 +108,9 @@ function DispensingActivityPage() {
     });
   };
 
+  // Removed unused handleExport dependencies or helper functions if any were left outside main body
+  // (Main body contains everything needed now)
+
   const handleExport = async () => {
     if (!transactions || transactions.length === 0) {
       toast.error("لا توجد بيانات للتصدير");
