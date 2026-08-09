@@ -86,12 +86,14 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
       {row.tracks.slice(0, 2).map((track, i) => {
         const days = track.remaining_days;
         let colorClass = "text-emerald-700 dark:text-emerald-400"; // Default green/turquoise
-        let fontClass = "font-extrabold text-base";
+        let fontClass = "font-bold text-sm";
         
         if (days < 0) {
-          colorClass = "text-red-700 dark:text-red-400";
+          colorClass = "text-red-700 dark:text-red-500";
+          fontClass = "font-extrabold text-base";
         } else if (days === 0) {
-          colorClass = "text-green-800 dark:text-green-500";
+          colorClass = "text-green-800 dark:text-green-600";
+          fontClass = "font-extrabold text-base";
         }
 
         return (
