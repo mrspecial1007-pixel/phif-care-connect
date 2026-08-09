@@ -167,6 +167,7 @@ function Detail() {
               </Button>
             </div>
           </div>
+        </div>
 
         <div className="space-y-2 text-sm">
           <InfoRow
