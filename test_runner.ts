@@ -1,33 +1,24 @@
-import { recordDispensing, upsertPatient } from "./src/lib/dispensing.functions";
 import { supabaseAdmin } from "./src/integrations/supabase/client.server";
 
-// Instead of mocking, we can manually check what recordDispensing does.
-// Since we want to verify the LOGIC in src/lib/dispensing.functions.ts,
-// and it calls requirePharmacySession which will fail in a CLI context.
-// Let's create a temporary modified version of the file for testing.
-
 async function runTest() {
-  const patientName = "Logic Test " + Date.now();
+  const patientName = "Final Logic Test " + Date.now();
   const insuranceNum = "900" + Math.floor(Math.random() * 10000000000);
-  
-  // We'll use supabaseAdmin to manually perform the logic steps if we can't run the server function.
-  // But wait, recordDispensing is just a wrapper around supabase calls.
-  // Let's verify the actual behavior by running the logic steps.
   
   console.log("--- STARTING TRACK LOGIC VERIFICATION ---");
   
-  const { data: p } = await supabaseAdmin.from("patients").insert({
+  const { data: p, error: pErr } = await supabaseAdmin.from("patients").insert({
     patient_name: patientName,
     patient_name_normalized: patientName,
     insurance_card_number: insuranceNum
   }).select("id").single();
   
+  if (pErr) throw pErr;
   const patientId = p!.id;
   console.log("Patient created:", patientId);
 
-  async function recordDispense(type: any, date: string, trackId: string | null = null) {
-      // Manual implementation of recordDispensing logic to verify it works as intended
-      const { data: tx } = await supabaseAdmin.from("dispensing_transactions").insert({
+  async function recordDispense(type: string, date: string, trackId: string | null = null) {
+      console.log(`Recording ${type} on ${date}...`);
+      const { data: tx, error: tErr } = await supabaseAdmin.from("dispensing_transactions").insert({
           patient_id: patientId,
           pharmacy_id: "11111111-1111-1111-1111-111111111111",
           transaction_type: type,
@@ -35,6 +26,11 @@ async function runTest() {
           cycle_id: '00000000-0000-0000-0000-000000000000'
       }).select("id").single();
       
+      if (tErr) {
+          console.error("TX Error:", tErr);
+          return;
+      }
+
       const nextDue = new Date(date);
       nextDue.setUTCDate(nextDue.getUTCDate() + 28);
       const nextDueDate = nextDue.toISOString().slice(0, 10);
@@ -56,7 +52,6 @@ async function runTest() {
                   status: "Waiting"
               }).eq("id", trackId);
           } else {
-              // Find nearest
               const { data: nearest } = await supabaseAdmin
                   .from("dispensing_due_tracks")
                   .select("id")
@@ -96,17 +91,17 @@ async function runTest() {
   }
 
   // 1. Record Partial on 01/08/2026
-  console.log("\nStep 1: Partial dispensing on 2026-08-01");
+  console.log("\n--- STEP 1 ---");
   await recordDispense("Partial", "2026-08-01");
   console.log("Active due tracks:", (await getTracks()).join(", "));
 
   // 2. Record Remaining on 06/08/2026
-  console.log("\nStep 2: Remaining dispensing on 2026-08-06");
+  console.log("\n--- STEP 2 ---");
   await recordDispense("Remaining", "2026-08-06");
   console.log("Active due tracks:", (await getTracks()).join(", "));
 
   // 3. Record dispensing for 2026-08-29 track on 2026-08-29
-  console.log("\nStep 3: Record dispensing for 29/08 track on 2026-08-29");
+  console.log("\n--- STEP 3 ---");
   const { data: trackObj } = await supabaseAdmin
     .from("dispensing_due_tracks")
     .select("id")
