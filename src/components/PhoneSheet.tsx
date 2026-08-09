@@ -57,8 +57,6 @@ function generateMessage(row: Partial<PatientStatusRow>, pharmacy?: { name: stri
   } else {
     body = "نود إعلامكم بضرورة مراجعة الصيدلية بشأن علاج التأمين الخاص بكم.\n\nيسعدنا تواصلكم معنا في حال وجود أي استفسار.";
   }
-    body = "نود إعلامكم بضرورة مراجعة الصيدلية بشأن علاج التأمين الخاص بكم.\n\nيسعدنا تواصلكم معنا في حال وجود أي استفسار.";
-  }
 
   const signature = pharmacy?.name 
     ? `\n\n${pharmacy.name}${pharmacy.address ? `\n📍 ${pharmacy.address}` : ""}`
