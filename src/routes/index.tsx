@@ -4,7 +4,7 @@ import { usePatientStatuses } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
-import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff } from "lucide-react";
+import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff, Star } from "lucide-react";
 import { normalizeArabicName } from "@/lib/name-normalize";
 import { PatientCard, statusMeta } from "@/components/PatientCard";
 
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard />
 function Dashboard() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone">("all");
+  const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite">("all");
 
   const stats = useMemo(() => {
     const r = rows ?? [];
@@ -40,6 +40,8 @@ function Dashboard() {
       if (filter === "partial" && r.current_cycle_status !== "Partial") return false;
       if (filter === "has_phone" && !(r.phone && r.phone.trim())) return false;
       if (filter === "no_phone" && r.phone && r.phone.trim()) return false;
+      if (filter === "favorite" && !r.is_favorite) return false;
+      
       // Default view hides overdue patients (they live under the "overdue" filter)
       if (filter === "all" && r.remaining_days !== null && r.remaining_days < 0) return false;
       if (!qn) return true;
@@ -71,6 +73,7 @@ function Dashboard() {
 
   const chips = [
     { k: "all", label: "الكل" },
+    { k: "favorite", label: "المفضلة" },
     { k: "overdue", label: "متأخر" },
     { k: "partial", label: "جزئي" },
     { k: "review", label: "مراجعة" },
