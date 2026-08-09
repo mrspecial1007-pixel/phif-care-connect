@@ -2,9 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { usePatientStatuses } from "@/lib/queries";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { useMemo, useState } from "react";
 import { normalizeArabicName } from "@/lib/name-normalize";
 import { PatientCard } from "@/components/PatientCard";
+import { Plus } from "lucide-react";
+import { AddBeneficiaryDialog } from "@/components/AddBeneficiaryDialog";
 
 export const Route = createFileRoute("/patients/")({
   component: () => (
