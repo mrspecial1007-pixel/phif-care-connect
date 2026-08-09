@@ -112,10 +112,11 @@ function Dashboard() {
           <button
             key={c.k}
             onClick={() => setFilter(c.k as any)}
-            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border ${
+            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border flex items-center gap-1 ${
               filter === c.k ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground"
             }`}
           >
+            {c.k === "favorite" && <Star className={`h-3 w-3 ${filter === "favorite" ? "fill-current" : ""}`} />}
             {c.label}
           </button>
         ))}
