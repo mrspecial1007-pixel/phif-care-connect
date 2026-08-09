@@ -33,7 +33,7 @@ export type PatientStatusRow = {
   phone: string | null;
   review_status: "ok" | "needs_review";
   current_cycle_id: string | null;
-  current_cycle_status: "Waiting" | "Partial" | "Completed" | null;
+  current_cycle_status: "Waiting" | "Partial" | "Completed" | "Remaining" | null;
   current_cycle_started_at: string | null;
   next_due_date: string | null;
   remaining_days: number | null;
@@ -152,7 +152,7 @@ export function usePatientDetail(id: string) {
         .eq("patient_id", id)
         .maybeSingle();
       if (error) throw error;
-      return data as PatientStatusRow;
+      return data as any as PatientStatusRow;
     },
   });
 }
@@ -179,7 +179,7 @@ export function usePatientTimeline(id: string) {
           id: t.id,
           date: t.created_at,
           type: "dispense",
-          title: t.transaction_type === "Full" ? "صرف كامل" : "صرف جزئي",
+          title: t.transaction_type === "Completed" ? "صرف كامل" : "صرف جزئي",
           pharmacy: t.pharmacies?.name,
           details: t.notes
         })),
