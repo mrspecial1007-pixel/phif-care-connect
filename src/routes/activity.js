@@ -146,9 +146,9 @@ function AuditRow({ a }) {
     const label = isImport
         ? `استيراد Excel — ${a.after?.rows ?? 0} سجل`
         : a.action === "create_patient"
-            ? "إضافة مريض"
+            ? "إضافة مستفيد"
             : a.action === "update_patient"
-                ? "تعديل بيانات مريض"
+                ? "تعديل بيانات مستفيد"
                 : a.action;
     return (<div className="flex items-start gap-3">
       <div className="text-xs text-muted-foreground w-14 shrink-0">
