@@ -35,7 +35,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
     const pharmacy_id = data.pharmacy_id ?? sessionPharmacyId;
 
     if (effectiveDate > today) {
-      return { ok: false as const, error: "future_date_not_allowed" };
+      throw new Error("لا يمكن تسجيل عملية صرف بتاريخ مستقبلي");
     }
 
     // Idempotency check

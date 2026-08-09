@@ -116,6 +116,11 @@ export function DispenseDialog({
           setHistorical({ latest: res.latest_date });
           return;
         }
+        // Special case for future date error message
+        if (res.error?.includes("مستقبلي") || res.message?.includes("مستقبلي")) {
+          toast.error("لا يمكن تسجيل عملية صرف بتاريخ مستقبلي");
+          return;
+        }
         toast.error("تعذر تسجيل الصرف");
         return;
       }
