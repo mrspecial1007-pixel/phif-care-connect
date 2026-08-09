@@ -80,7 +80,6 @@ function Detail() {
   const [editOpen, setEditOpen] = useState(false);
   const [editFocus, setEditFocus] = useState<string | null>(null);
   const [dispenseOpen, setDispenseOpen] = useState(false);
-  const [remainingConfirmOpen, setRemainingConfirmOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [favBusy, setFavBusy] = useState(false);
   const qc = useQueryClient();
@@ -319,12 +318,6 @@ function Detail() {
         cardNumber={patient.insurance_card_number}
       />
 
-      <RemainingConfirmDialog
-        open={remainingConfirmOpen}
-        onOpenChange={setRemainingConfirmOpen}
-        patientId={patient.id}
-        defaultPharmacyId={session?.unlocked ? session.pharmacy.id : undefined}
-      />
 
       {patient?.phone && (
         <PhoneSheet 
