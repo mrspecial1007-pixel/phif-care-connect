@@ -378,7 +378,7 @@ function DispensingActivityPage() {
             sortedTransactions.map((tx) => (
               <Link 
                 key={tx.id} 
-                to="/beneficiaries/$id" 
+                to="/patients/$id" 
                 params={{ id: tx.patient_id }}
                 className="block active:scale-[0.98] transition-transform"
               >
