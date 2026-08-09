@@ -122,12 +122,12 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
 
   return (
     <>
-      <Card className={`p-3 border-r-4 hover:shadow-md transition ${borderTone(meta.key)}`}>
-        <Link to="/patients/$id" params={{ id: row.patient_id }} className="block">
-          <div className="flex items-start gap-3">
+      <Card className={`p-3 border-r-4 hover:shadow-md transition ${borderTone(meta.key)} w-full min-w-0 box-border`}>
+        <Link to="/patients/$id" params={{ id: row.patient_id }} className="block w-full min-w-0">
+          <div className="flex items-start gap-3 w-full min-w-0">
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="font-semibold text-base truncate">{row.patient_name}</div>
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <div className="font-semibold text-base truncate break-words min-w-0">{row.patient_name}</div>
                 <button
                   onClick={toggleFavorite}
                   className="p-1 -m-1 text-amber-500 hover:scale-110 transition-transform"
@@ -144,7 +144,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
                   </Badge>
                 )}
               </div>
-              <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
+              <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1 min-w-0">
                 {row.insurance_card_number && <span dir="ltr">بطاقة: {row.insurance_card_number}</span>}
                 {row.last_pharmacy_name && <span>آخر صرف: {row.last_pharmacy_name}</span>}
               </div>
@@ -161,7 +161,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
               )}
               {daysNode}
             </div>
-            <div className="flex flex-col gap-1 items-end">
+            <div className="flex flex-col gap-1 items-end shrink-0">
               <Badge className={`${meta.color} border-0`}>{meta.label}</Badge>
               {isPartial && (
                 <Badge variant="outline" className="text-[10px] border-info text-info">

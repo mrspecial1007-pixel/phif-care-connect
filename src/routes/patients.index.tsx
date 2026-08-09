@@ -110,7 +110,7 @@ function List() {
   const shown = Math.min(visible, items.length);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 w-full min-w-0">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">المستفيدون</h1>
         <Button onClick={() => setAddOpen(true)} size="sm" className="gap-2">
@@ -152,7 +152,7 @@ function List() {
       {isLoading ? (
         <div className="text-center py-10 text-muted-foreground">جاري التحميل…</div>
       ) : (
-        <div className="grid gap-2 pb-10">
+        <div className="grid gap-2 pb-10 w-full min-w-0">
           {items.slice(0, visible).map((r) => (
             <PatientCard key={r.patient_id} row={r} />
           ))}
