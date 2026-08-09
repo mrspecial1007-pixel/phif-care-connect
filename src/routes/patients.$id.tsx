@@ -151,7 +151,7 @@ function Detail() {
               setEditOpen(true);
             }}
             emptyLabel="لا يوجد رقم هاتف"
-            addLabel="إضافة رقم الهاتف"
+            addLabel="إضافة رقم هاتف"
           />
           <InfoRow
             icon={<MapPin className="h-4 w-4" />}
@@ -162,7 +162,7 @@ function Detail() {
               setEditOpen(true);
             }}
             emptyLabel="لا يوجد عنوان"
-            addLabel="إضافة العنوان"
+            addLabel="إضافة عنوان"
           />
         </div>
       </Card>
