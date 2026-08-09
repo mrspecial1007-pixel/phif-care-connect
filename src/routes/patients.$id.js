@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { usePatient, usePatientHistory, usePatientCycles, usePatientStatuses, useSession, } from "@/lib/queries";
+import { useBeneficiary, useBeneficiaryHistory, useBeneficiaryCycles, useBeneficiaryStatuses, useSession, } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, } from 
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { upsertPatient } from "@/lib/dispensing.functions";
+import { upsertBeneficiary } from "@/lib/dispensing.functions";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
 import { PhoneSheet } from "@/components/PhoneSheet";
@@ -35,10 +35,10 @@ async function copy(text, label) {
 }
 function Detail() {
     const { id } = Route.useParams();
-    const { data: patient, isLoading } = usePatient(id);
-    const { data: history } = usePatientHistory(id);
-    const { data: cycles } = usePatientCycles(id);
-    const { data: statuses } = usePatientStatuses();
+    const { data: patient, isLoading } = useBeneficiary(id);
+    const { data: history } = useBeneficiaryHistory(id);
+    const { data: cycles } = useBeneficiaryCycles(id);
+    const { data: statuses } = useBeneficiaryStatuses();
     const { data: session } = useSession();
     const status = statuses?.find((s) => s.patient_id === id);
     const currentCycle = cycles?.[0];
@@ -51,7 +51,7 @@ function Detail() {
     if (isLoading)
         return <div className="text-center py-10">جاري التحميل…</div>;
     if (!patient)
-        return <div className="text-center py-10">المريض غير موجود</div>;
+        return <div className="text-center py-10">المستفيد غير موجود</div>;
     return (<div className="space-y-4">
       <Link to="/" className="text-sm text-muted-foreground inline-flex items-center gap-1">
         <ArrowRight className="h-4 w-4 rotate-180"/> عودة
@@ -160,7 +160,7 @@ function Detail() {
         </div>
       </Card>
 
-      <EditPatientDialog open={editOpen} onOpenChange={setEditOpen} patient={patient} focusField={editFocus}/>
+      <EditBeneficiaryDialog open={editOpen} onOpenChange={setEditOpen} patient={patient} focusField={editFocus}/>
 
       <DispenseDialog open={dispenseOpen} onOpenChange={setDispenseOpen} patientId={patient.id} patientName={patient.patient_name} cardNumber={patient.insurance_card_number}/>
 
@@ -229,14 +229,14 @@ function InfoRow({ icon, label, value, onCopy, onAction, actionLabel, onAdd, emp
       </Button>
     </div>);
 }
-function EditPatientDialog({ open, onOpenChange, patient, focusField, }) {
+function EditBeneficiaryDialog({ open, onOpenChange, patient, focusField, }) {
     const [name, setName] = useState(patient.patient_name ?? "");
     const [card, setCard] = useState(patient.insurance_card_number ?? "");
     const [phone, setPhone] = useState(patient.phone ?? "");
     const [address, setAddress] = useState(patient.address ?? "");
     const [busy, setBusy] = useState(false);
     const qc = useQueryClient();
-    const upsert = useServerFn(upsertPatient);
+    const upsert = useServerFn(upsertBeneficiary);
     useEffect(() => {
         if (open) {
             setName(patient.patient_name ?? "");

@@ -59,7 +59,7 @@ function ActivityPage() {
                 return {
                     الوقت: new Date(t.created_at).toLocaleString("en-GB"),
                     النوع: t.transaction_type === "Completed" ? "صرف كامل" : t.transaction_type === "Partial" ? "صرف جزئي" : "صرف متبقي",
-                    المريض: t.patients?.patient_name ?? "",
+                    المستفيد: t.patients?.patient_name ?? "",
                     البطاقة: t.patients?.insurance_card_number ?? "",
                     الصيدلية: t.pharmacies?.name ?? "",
                     مصروف: t.items_dispensed ?? "",
@@ -74,7 +74,7 @@ function ActivityPage() {
                     النوع: "تواصل",
                     القناة: c.channel,
                     الإجراء: c.action_type,
-                    المريض: c.patients?.patient_name ?? "",
+                    المستفيد: c.patients?.patient_name ?? "",
                     الهاتف: c.phone_number ?? "",
                     الصيدلية: c.pharmacies?.name ?? "",
                 };
@@ -95,7 +95,7 @@ function ActivityPage() {
     const chips = [
         { k: "today_all", label: "نشاط اليوم" },
         { k: "dispensing", label: "الصرف" },
-        { k: "edits", label: "تعديلات المرضى" },
+        { k: "edits", label: "تعديلات المستفيدون" },
         { k: "imports", label: "استيراد Excel" },
         { k: "communication", label: "التواصل" },
         { k: "all", label: "الكل (30 يوم)" },

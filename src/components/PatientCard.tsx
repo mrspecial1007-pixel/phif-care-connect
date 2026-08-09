@@ -4,12 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Phone, Share2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { useState, type MouseEvent } from "react";
-import type { PatientStatusRow } from "@/lib/queries";
+import type { BeneficiaryStatusRow } from "@/lib/queries";
 import { PhoneSheet } from "./PhoneSheet";
 import { DispenseDialog, RemainingConfirmDialog } from "./DispenseFlow";
 import { useSession } from "@/lib/queries";
 
-export function statusMeta(row: PatientStatusRow) {
+export function statusMeta(row: BeneficiaryStatusRow) {
   if (row.review_status === "needs_review")
     return { key: "review", label: "يحتاج مراجعة", color: "bg-warning text-warning-foreground" };
   if (row.current_cycle_status === "Partial")
@@ -36,7 +36,7 @@ function borderTone(key: string) {
   }
 }
 
-export function PatientCard({ row }: { row: PatientStatusRow }) {
+export function BeneficiaryCard({ row }: { row: BeneficiaryStatusRow }) {
   const meta = statusMeta(row);
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [dispOpen, setDispOpen] = useState(false);
@@ -91,7 +91,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
                   onClick={(e) => { stop(e); setPhoneOpen(true); }}
                   className="inline-flex items-center gap-1.5 mt-1.5 text-cyan-700 dark:text-cyan-400 font-semibold text-sm hover:underline"
                   dir="ltr"
-                  aria-label="اتصال بالمريض"
+                  aria-label="اتصال بالمستفيد"
                 >
                   <Phone className="h-3.5 w-3.5" />
                   {row.phone}

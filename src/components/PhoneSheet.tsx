@@ -6,7 +6,7 @@ import { Phone, MessageSquare, Copy, X, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { logCommunication } from "@/lib/activity.functions";
-import type { PatientStatusRow } from "@/lib/queries";
+import type { BeneficiaryStatusRow } from "@/lib/queries";
 
 function normalizeLibyaIntl(raw: string): string | null {
   const digits = raw.replace(/[^\d]/g, "");
@@ -31,7 +31,7 @@ function normalizeLibyaIntl(raw: string): string | null {
   return null;
 }
 
-function generateMessage(row: Partial<PatientStatusRow>, pharmacy?: { name: string; address?: string }): string {
+function generateMessage(row: Partial<BeneficiaryStatusRow>, pharmacy?: { name: string; address?: string }): string {
   const name = row.patient_name || "";
   const greeting = `السلام عليكم ${name}،\n\nنتمنى أن تكونوا بصحة وعافية.`;
   
@@ -76,7 +76,7 @@ export function PhoneSheet({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  patient: Partial<PatientStatusRow> & { patient_id: string; patient_name: string; phone: string };
+  patient: Partial<BeneficiaryStatusRow> & { patient_id: string; patient_name: string; phone: string };
   pharmacy?: { id: string; name: string; address?: string };
 }) {
   const [view, setView] = useState<"options" | "preview">("options");

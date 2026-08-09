@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import {
-  usePatient,
-  usePatientHistory,
-  usePatientCycles,
-  usePatientStatuses,
+  useBeneficiary,
+  useBeneficiaryHistory,
+  useBeneficiaryCycles,
+  useBeneficiaryStatuses,
   useSession,
 } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
@@ -23,7 +23,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { upsertPatient } from "@/lib/dispensing.functions";
+import { upsertBeneficiary } from "@/lib/dispensing.functions";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
 import { PhoneSheet } from "@/components/PhoneSheet";
@@ -66,10 +66,10 @@ async function copy(text: string, label: string) {
 
 function Detail() {
   const { id } = Route.useParams();
-  const { data: patient, isLoading } = usePatient(id);
-  const { data: history } = usePatientHistory(id);
-  const { data: cycles } = usePatientCycles(id);
-  const { data: statuses } = usePatientStatuses();
+  const { data: patient, isLoading } = useBeneficiary(id);
+  const { data: history } = useBeneficiaryHistory(id);
+  const { data: cycles } = useBeneficiaryCycles(id);
+  const { data: statuses } = useBeneficiaryStatuses();
   const { data: session } = useSession();
   const status = statuses?.find((s) => s.patient_id === id);
 
@@ -83,7 +83,7 @@ function Detail() {
   const [phoneOpen, setPhoneOpen] = useState(false);
 
   if (isLoading) return <div className="text-center py-10">جاري التحميل…</div>;
-  if (!patient) return <div className="text-center py-10">المريض غير موجود</div>;
+  if (!patient) return <div className="text-center py-10">المستفيد غير موجود</div>;
 
   return (
     <div className="space-y-4">
@@ -260,7 +260,7 @@ function Detail() {
         </div>
       </Card>
 
-      <EditPatientDialog
+      <EditBeneficiaryDialog
         open={editOpen}
         onOpenChange={setEditOpen}
         patient={patient}
@@ -406,7 +406,7 @@ function InfoRow({
   );
 }
 
-function EditPatientDialog({
+function EditBeneficiaryDialog({
   open,
   onOpenChange,
   patient,
@@ -423,7 +423,7 @@ function EditPatientDialog({
   const [address, setAddress] = useState(patient.address ?? "");
   const [busy, setBusy] = useState(false);
   const qc = useQueryClient();
-  const upsert = useServerFn(upsertPatient);
+  const upsert = useServerFn(upsertBeneficiary);
 
   useEffect(() => {
     if (open) {

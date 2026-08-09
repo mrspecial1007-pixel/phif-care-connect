@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { usePatientStatuses } from "@/lib/queries";
+import { useBeneficiaryStatuses } from "@/lib/queries";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
 import { normalizeArabicName } from "@/lib/name-normalize";
-import { PatientCard } from "@/components/PatientCard";
+import { BeneficiaryCard } from "@/components/BeneficiaryCard";
 
 export const Route = createFileRoute("/patients/")({
   component: () => (
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/patients/")({
 });
 
 function List() {
-  const { data: rows, isLoading } = usePatientStatuses();
+  const { data: rows, isLoading } = useBeneficiaryStatuses();
   const [q, setQ] = useState("");
 
   const items = useMemo(() => {
@@ -40,7 +40,7 @@ function List() {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold">المرضى</h1>
+      <h1 className="text-xl font-bold">المستفيدون</h1>
       <Input
         value={q}
         onChange={(e) => setQ(e.target.value)}
@@ -52,7 +52,7 @@ function List() {
       ) : (
         <div className="grid gap-2">
           {items.slice(0, 500).map((r) => (
-            <PatientCard key={r.patient_id} row={r} />
+            <BeneficiaryCard key={r.patient_id} row={r} />
           ))}
           {items.length === 0 && (
             <div className="text-center py-10 text-muted-foreground">لا نتائج</div>

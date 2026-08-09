@@ -216,7 +216,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
     return { ok: true as const, transaction_id: tx.id, cycle_id: cycle.id };
   });
 
-const upsertPatientSchema = z.object({
+const upsertBeneficiarySchema = z.object({
   id: z.string().uuid().optional(),
   patient_name: z.string().trim().min(1).max(200),
   insurance_card_number: z.string().trim().max(60).optional().nullable(),
@@ -228,8 +228,8 @@ const upsertPatientSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
 });
 
-export const upsertPatient = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => upsertPatientSchema.parse(d))
+export const upsertBeneficiary = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => upsertBeneficiarySchema.parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");

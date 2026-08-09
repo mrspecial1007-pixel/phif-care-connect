@@ -1,19 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { usePatientStatuses } from "@/lib/queries";
+import { useBeneficiaryStatuses } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { Download, ChevronDown } from "lucide-react";
-import { PatientCard } from "@/components/PatientCard";
+import { BeneficiaryCard } from "@/components/BeneficiaryCard";
 
 export const Route = createFileRoute("/quality")({
   component: () => <Gate><QualityPage /></Gate>,
 });
 
 function QualityPage() {
-  const { data: rows } = usePatientStatuses();
+  const { data: rows } = useBeneficiaryStatuses();
   const [open, setOpen] = useState<string | null>(null);
 
   const groups = useMemo(() => {
@@ -86,7 +86,7 @@ function QualityPage() {
               </Button>
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {g.items.slice(0, 100).map((x) => (
-                  <PatientCard key={x.patient_id} row={x} />
+                  <BeneficiaryCard key={x.patient_id} row={x} />
                 ))}
                 {g.items.length > 100 && (
                   <div className="text-xs text-muted-foreground text-center">وأكثر…</div>

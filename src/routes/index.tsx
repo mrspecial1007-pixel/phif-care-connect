@@ -1,17 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { usePatientStatuses } from "@/lib/queries";
+import { useBeneficiaryStatuses } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
 import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff } from "lucide-react";
 import { normalizeArabicName } from "@/lib/name-normalize";
-import { PatientCard, statusMeta } from "@/components/PatientCard";
+import { BeneficiaryCard, statusMeta } from "@/components/BeneficiaryCard";
 
 export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard /></Gate> });
 
 function Dashboard() {
-  const { data: rows, isLoading } = usePatientStatuses();
+  const { data: rows, isLoading } = useBeneficiaryStatuses();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone">("all");
 
@@ -84,7 +84,7 @@ function Dashboard() {
       <h1 className="text-xl font-bold">لوحة التحكم</h1>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="إجمالي المرضى" value={stats.total} icon={Users} />
+        <StatCard label="إجمالي المستفيدون" value={stats.total} icon={Users} />
         <StatCard label="مشترك بين صيدليات" value={stats.shared} icon={Share2} tone="info" />
         <StatCard label="متأخر" value={stats.overdue} icon={AlertTriangle} tone="destructive" />
         <StatCard label="قريب الاستحقاق" value={stats.due} icon={Clock} tone="warning" />
@@ -123,7 +123,7 @@ function Dashboard() {
       ) : (
         <div className="grid gap-2">
           {filtered.map((r) => (
-            <PatientCard key={r.patient_id} row={r} />
+            <BeneficiaryCard key={r.patient_id} row={r} />
           ))}
           {filtered.length === 0 && (
             <div className="text-center py-10 text-muted-foreground">لا توجد نتائج</div>

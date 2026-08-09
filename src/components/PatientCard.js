@@ -32,7 +32,7 @@ function borderTone(key) {
         default: return "border-r-border";
     }
 }
-export function PatientCard({ row }) {
+export function BeneficiaryCard({ row }) {
     const meta = statusMeta(row);
     const [phoneOpen, setPhoneOpen] = useState(false);
     const [dispOpen, setDispOpen] = useState(false);
@@ -68,7 +68,7 @@ export function PatientCard({ row }) {
                 {row.insurance_card_number && <span dir="ltr">بطاقة: {row.insurance_card_number}</span>}
                 {row.last_pharmacy_name && <span>آخر صرف: {row.last_pharmacy_name}</span>}
               </div>
-              {row.phone && (<button onClick={(e) => { stop(e); setPhoneOpen(true); }} className="inline-flex items-center gap-1.5 mt-1.5 text-cyan-700 dark:text-cyan-400 font-semibold text-sm hover:underline" dir="ltr" aria-label="اتصال بالمريض">
+              {row.phone && (<button onClick={(e) => { stop(e); setPhoneOpen(true); }} className="inline-flex items-center gap-1.5 mt-1.5 text-cyan-700 dark:text-cyan-400 font-semibold text-sm hover:underline" dir="ltr" aria-label="اتصال بالمستفيد">
                   <Phone className="h-3.5 w-3.5"/>
                   {row.phone}
                 </button>)}
