@@ -23,7 +23,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const nav = [
     { to: "/", label: "الرئيسية", icon: LayoutDashboard },
     { to: "/patients", label: "المستفيدون", icon: Users },
-    { to: "/activity", label: "نشاط اليوم", icon: Activity },
+    { to: "/activity", label: "حركات الصرف", icon: Activity },
     { to: "/quality", label: "جودة البيانات", icon: ShieldCheck },
     { to: "/import", label: "استيراد", icon: Upload },
     { to: "/settings", label: "الإعدادات", icon: Settings },

@@ -109,6 +109,93 @@ export function usePatientCycles(id: string | undefined) {
   });
 }
 
+export type DispensingTransactionRow = {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  insurance_card_number: string | null;
+  pharmacy_id: string;
+  pharmacy_name: string;
+  transaction_type: "Partial" | "Remaining" | "Completed";
+  items_dispensed: number | null;
+  items_remaining: number | null;
+  notes: string | null;
+  dispensing_date: string;
+  created_at: string;
+};
+
+export function useDispensingTransactions(options: {
+  startDate?: string;
+  endDate?: string;
+  pharmacyId?: string;
+  type?: string;
+  search?: string;
+}) {
+  return useQuery({
+    queryKey: ["dispensing_transactions", options],
+    queryFn: async (): Promise<DispensingTransactionRow[]> => {
+      let query = supabase
+        .from("dispensing_transactions")
+        .select(`
+          id,
+          patient_id,
+          transaction_type,
+          items_dispensed,
+          items_remaining,
+          notes,
+          dispensing_date,
+          created_at,
+          pharmacy_id,
+          patients(patient_name, insurance_card_number),
+          pharmacies(name)
+        `)
+        .order("dispensing_date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (options.startDate) {
+        query = query.gte("dispensing_date", `${options.startDate}T00:00:00Z`);
+      }
+      if (options.endDate) {
+        query = query.lte("dispensing_date", `${options.endDate}T23:59:59Z`);
+      }
+      if (options.pharmacyId && options.pharmacyId !== "all") {
+        query = query.eq("pharmacy_id", options.pharmacyId);
+      }
+      if (options.type && options.type !== "all") {
+        query = query.eq("transaction_type", options.type as any);
+      }
+
+      const { data, error } = await query.limit(1000);
+      if (error) throw error;
+
+      let results = (data || []).map((d: any) => ({
+        id: d.id,
+        patient_id: d.patient_id,
+        patient_name: d.patients?.patient_name || "مستفيد غير معروف",
+        insurance_card_number: d.patients?.insurance_card_number,
+        pharmacy_id: d.pharmacy_id,
+        pharmacy_name: d.pharmacies?.name || "صيدلية غير معروفة",
+        transaction_type: d.transaction_type,
+        items_dispensed: d.items_dispensed,
+        items_remaining: d.items_remaining,
+        notes: d.notes,
+        dispensing_date: d.dispensing_date,
+        created_at: d.created_at,
+      }));
+
+      if (options.search) {
+        const s = options.search.toLowerCase();
+        results = results.filter(r => 
+          r.patient_name.toLowerCase().includes(s) || 
+          (r.insurance_card_number && r.insurance_card_number.includes(s))
+        );
+      }
+
+      return results;
+    },
+  });
+}
+
 export type ActivityLog = {
   id: string;
   created_at: string;
