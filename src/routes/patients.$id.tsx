@@ -41,6 +41,7 @@ import {
   MapPin,
   Phone,
   CreditCard,
+  Star,
 } from "lucide-react";
 
 export const Route = createFileRoute("/patients/$id")({
@@ -81,9 +82,37 @@ function Detail() {
   const [dispenseOpen, setDispenseOpen] = useState(false);
   const [remainingConfirmOpen, setRemainingConfirmOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
+  const [favBusy, setFavBusy] = useState(false);
+  const qc = useQueryClient();
+  const updatePatient = useServerFn(upsertPatient);
 
   if (isLoading) return <div className="text-center py-10">جاري التحميل…</div>;
   if (!patient) return <div className="text-center py-10">المستفيد غير موجود</div>;
+
+  const isFavorite = (patient as any).is_favorite;
+
+  async function toggleFavorite() {
+    if (favBusy) return;
+    setFavBusy(true);
+    try {
+      const res = await updatePatient({
+        data: {
+          id: patient!.id,
+          patient_name: patient!.patient_name,
+          is_favorite: !isFavorite,
+        },
+      });
+      if (res.ok) {
+        toast.success(isFavorite ? "تمت إزالة المستفيد من المفضلة" : "تمت إضافة المستفيد إلى المفضلة");
+        qc.invalidateQueries({ queryKey: ["patient", patient!.id] });
+        qc.invalidateQueries({ queryKey: ["patient_status"] });
+      }
+    } catch (err) {
+      toast.error("حدث خطأ ما");
+    } finally {
+      setFavBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -111,17 +140,33 @@ function Detail() {
                 </Badge>
               )}
             </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className={isFavorite ? "text-amber-600 bg-amber-50 border-amber-200" : ""}
+                onClick={toggleFavorite}
+                disabled={favBusy}
+              >
+                {isFavorite ? (
+                  <Star className="h-3.5 w-3.5 ml-1 fill-current" />
+                ) : (
+                  <Star className="h-3.5 w-3.5 ml-1" />
+                )}
+                {isFavorite ? "مفضل" : "إضافة للمفضلة"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditFocus(null);
+                  setEditOpen(true);
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5 ml-1" /> تعديل البيانات
+              </Button>
+            </div>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setEditFocus(null);
-              setEditOpen(true);
-            }}
-          >
-            <Pencil className="h-3.5 w-3.5 ml-1" /> تعديل البيانات
-          </Button>
         </div>
 
         <div className="space-y-2 text-sm">

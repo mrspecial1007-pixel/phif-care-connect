@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useMemo, useState } from "react";
 import { normalizeArabicName } from "@/lib/name-normalize";
 import { PatientCard } from "@/components/PatientCard";
-import { Plus } from "lucide-react";
+import { Plus, Star } from "lucide-react";
 import { AddBeneficiaryDialog } from "@/components/AddBeneficiaryDialog";
 
 export const Route = createFileRoute("/patients/")({
@@ -20,16 +20,18 @@ export const Route = createFileRoute("/patients/")({
 function List() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"all" | "favorite">("all");
 
   const items = useMemo(() => {
     if (!rows) return [];
     const qn = normalizeArabicName(q);
     const list = rows.filter((r) => {
-      if (!qn) return true;
-      return (
+      const matchSearch = !qn || (
         normalizeArabicName(r.patient_name).includes(qn) ||
         (r.insurance_card_number ?? "").includes(q.trim())
       );
+      const matchFilter = filter === "all" || r.is_favorite;
+      return matchSearch && matchFilter;
     });
     return [...list].sort((a, b) => {
       const av = a.remaining_days;
@@ -51,6 +53,27 @@ function List() {
           <Plus className="h-4 w-4" /> إضافة مستفيد
         </Button>
       </div>
+      
+      <div className="flex gap-2 mb-1 overflow-x-auto pb-1 no-scrollbar">
+        <Button 
+          variant={filter === "all" ? "default" : "outline"} 
+          size="sm" 
+          onClick={() => setFilter("all")}
+          className="rounded-full px-4"
+        >
+          الكل
+        </Button>
+        <Button 
+          variant={filter === "favorite" ? "default" : "outline"} 
+          size="sm" 
+          onClick={() => setFilter("favorite")}
+          className="rounded-full px-4 gap-1.5"
+        >
+          <Star className={`h-3.5 w-3.5 ${filter === "favorite" ? "fill-current" : ""}`} />
+          المفضلة
+        </Button>
+      </div>
+
       <Input
         value={q}
         onChange={(e) => setQ(e.target.value)}

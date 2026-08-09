@@ -2,12 +2,16 @@ import { Link } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Phone, Share2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { Phone, Share2, AlertTriangle, CheckCircle2, Clock, Star } from "lucide-react";
 import { useState, type MouseEvent } from "react";
 import type { PatientStatusRow } from "@/lib/queries";
 import { PhoneSheet } from "./PhoneSheet";
 import { DispenseDialog, RemainingConfirmDialog } from "./DispenseFlow";
 import { useSession } from "@/lib/queries";
+import { useServerFn } from "@tanstack/react-start";
+import { upsertPatient } from "@/lib/dispensing.functions";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export function statusMeta(row: PatientStatusRow) {
   if (row.review_status === "needs_review")
@@ -43,10 +47,37 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
   const [remOpen, setRemOpen] = useState(false);
   const { data: session } = useSession();
   const isPartial = row.current_cycle_status === "Partial";
+  const qc = useQueryClient();
+  const updatePatient = useServerFn(upsertPatient);
+  const [favBusy, setFavBusy] = useState(false);
 
   const stop = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+  };
+
+  const toggleFavorite = async (e: MouseEvent) => {
+    stop(e);
+    if (favBusy) return;
+    setFavBusy(true);
+    try {
+      const res = await updatePatient({
+        data: {
+          id: row.patient_id,
+          patient_name: row.patient_name,
+          is_favorite: !row.is_favorite,
+        },
+      });
+      if (res.ok) {
+        toast.success(row.is_favorite ? "تمت إزالة المستفيد من المفضلة" : "تمت إضافة المستفيد إلى المفضلة");
+        qc.invalidateQueries({ queryKey: ["patient_status"] });
+        qc.invalidateQueries({ queryKey: ["patient", row.patient_id] });
+      }
+    } catch (err) {
+      toast.error("حدث خطأ ما");
+    } finally {
+      setFavBusy(false);
+    }
   };
 
   const daysNode = row.remaining_days !== null ? (
@@ -76,6 +107,16 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="font-semibold text-base truncate">{row.patient_name}</div>
+                <button
+                  onClick={toggleFavorite}
+                  className="p-1 -m-1 text-amber-500 hover:scale-110 transition-transform"
+                >
+                  {row.is_favorite ? (
+                    <Star className="h-4 w-4 fill-current" />
+                  ) : (
+                    <Star className="h-4 w-4" />
+                  )}
+                </button>
                 {row.is_shared && (
                   <Badge variant="outline" className="text-[10px]">
                     <Share2 className="h-3 w-3 ml-1" /> مشترك
