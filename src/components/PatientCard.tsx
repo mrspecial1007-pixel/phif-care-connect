@@ -91,7 +91,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
                   onClick={(e) => { stop(e); setPhoneOpen(true); }}
                   className="inline-flex items-center gap-1.5 mt-1.5 text-cyan-700 dark:text-cyan-400 font-semibold text-sm hover:underline"
                   dir="ltr"
-                  aria-label="اتصال بالمريض"
+                  aria-label="اتصال بالمستفيد"
                 >
                   <Phone className="h-3.5 w-3.5" />
                   {row.phone}

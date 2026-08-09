@@ -18,16 +18,16 @@ function NotFoundComponent() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
+        <h2 className="mt-4 text-xl font-semibold text-foreground">الصفحة غير موجودة</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+          ربما تم نقل الصفحة أو أنها لم تعد موجودة.
         </p>
         <div className="mt-6">
           <Link
             to="/"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Go home
+            العودة للرئيسية
           </Link>
         </div>
       </div>
@@ -46,10 +46,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+          حدث خطأ ما
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+          نعتذر، حدث خطأ غير متوقع. يمكنك المحاولة مرة أخرى أو العودة للرئيسية.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
@@ -59,13 +59,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Try again
+            المحاولة مرة أخرى
           </button>
           <a
             href="/"
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Go home
+            الرئيسية
           </a>
         </div>
       </div>
@@ -82,19 +82,19 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "نظام إدارة مرضى التأمين الصحي العام (PHIF): تتبع دورات الصرف الشهرية، منع التكرار بين الصيدليات، وسجل تفصيلي لكل مريض.",
+          "نظام إدارة مستفيدي التأمين الصحي العام (PHIF): تتبع دورات الصرف الشهرية، منع التكرار بين الصيدليات، وسجل تفصيلي لكل مستفيد.",
       },
       { name: "theme-color", content: "#0891b2" },
       { property: "og:title", content: "PHIF Tracker — إدارة صرف التأمين الصحي" },
       {
         property: "og:description",
-        content: "نظام إدارة مرضى التأمين الصحي العام (PHIF): تتبع دورات الصرف الشهرية، منع التكرار بين الصيدليات، وسجل تفصيلي لكل مريض.",
+        content: "نظام إدارة مستفيدي التأمين الصحي العام (PHIF): تتبع دورات الصرف الشهرية، منع التكرار بين الصيدليات، وسجل تفصيلي لكل مستفيد.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "PHIF Tracker — إدارة صرف التأمين الصحي" },
-      { name: "twitter:description", content: "نظام إدارة مرضى التأمين الصحي العام (PHIF): تتبع دورات الصرف الشهرية، منع التكرار بين الصيدليات، وسجل تفصيلي لكل مريض." },
+      { name: "twitter:description", content: "نظام إدارة مستفيدي التأمين الصحي العام (PHIF): تتبع دورات الصرف الشهرية، منع التكرار بين الصيدليات، وسجل تفصيلي لكل مستفيد." },
       { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/bNO3PnFjBwcf1MnnzrYHbpvTTUl1/social-images/social-1783993175218-260709.webp" },
       { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/bNO3PnFjBwcf1MnnzrYHbpvTTUl1/social-images/social-1783993175218-260709.webp" },
     ],
@@ -136,7 +136,6 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
       <Toaster position="top-center" richColors closeButton />
     </QueryClientProvider>

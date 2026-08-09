@@ -84,7 +84,7 @@ function Dashboard() {
       <h1 className="text-xl font-bold">لوحة التحكم</h1>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="إجمالي المرضى" value={stats.total} icon={Users} />
+        <StatCard label="إجمالي المستفيدين" value={stats.total} icon={Users} />
         <StatCard label="مشترك بين صيدليات" value={stats.shared} icon={Share2} tone="info" />
         <StatCard label="متأخر" value={stats.overdue} icon={AlertTriangle} tone="destructive" />
         <StatCard label="قريب الاستحقاق" value={stats.due} icon={Clock} tone="warning" />
@@ -99,7 +99,7 @@ function Dashboard() {
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="ابحث بالاسم أو رقم البطاقة…"
+          placeholder="ابحث بالاسم أو رقم البطاقة أو رقم الهاتف..."
           className="pr-10 h-12 text-base"
         />
       </div>

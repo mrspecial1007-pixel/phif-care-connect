@@ -55,7 +55,7 @@ function SettingsPage() {
           </div>
           <div>
             <div className="font-semibold">تصدير قاعدة البيانات كاملة</div>
-            <div className="text-xs text-muted-foreground">المرضى والصرف والسجل بصيغة Excel</div>
+            <div className="text-xs text-muted-foreground">المستفيدون والصرف والسجل بصيغة Excel</div>
           </div>
         </div>
         <Button onClick={fullBackup} disabled={busy} className="w-full h-11">

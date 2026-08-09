@@ -142,7 +142,7 @@ export function DispenseDialog({
               <DialogHeader>
                 <DialogTitle>تم الصرف</DialogTitle>
                 <DialogDescription>
-                  {patientName ? `المريض: ${patientName}` : "سجل عملية الصرف"}
+                  {patientName ? `المستفيد: ${patientName}` : "سجل عملية الصرف"}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -242,7 +242,7 @@ export function DispenseDialog({
                 <DialogDescription>راجع البيانات قبل التسجيل</DialogDescription>
               </DialogHeader>
               <div className="rounded-lg border divide-y">
-                <ReviewRow label="المريض" value={patientName ?? "—"} />
+                <ReviewRow label="المستفيد" value={patientName ?? "—"} />
                 {cardNumber && <ReviewRow label="رقم البطاقة" value={cardNumber} ltr />}
                 <ReviewRow label="الصيدلية" value={pharmacyName} />
                 <ReviewRow label="تاريخ الصرف" value={date} ltr />

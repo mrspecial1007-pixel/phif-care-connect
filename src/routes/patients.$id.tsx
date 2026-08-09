@@ -83,7 +83,7 @@ function Detail() {
   const [phoneOpen, setPhoneOpen] = useState(false);
 
   if (isLoading) return <div className="text-center py-10">جاري التحميل…</div>;
-  if (!patient) return <div className="text-center py-10">المريض غير موجود</div>;
+  if (!patient) return <div className="text-center py-10">المستفيد غير موجود</div>;
 
   return (
     <div className="space-y-4">
@@ -151,7 +151,7 @@ function Detail() {
               setEditOpen(true);
             }}
             emptyLabel="لا يوجد رقم هاتف"
-            addLabel="إضافة رقم الهاتف"
+            addLabel="إضافة رقم هاتف"
           />
           <InfoRow
             icon={<MapPin className="h-4 w-4" />}
@@ -162,7 +162,7 @@ function Detail() {
               setEditOpen(true);
             }}
             emptyLabel="لا يوجد عنوان"
-            addLabel="إضافة العنوان"
+            addLabel="إضافة عنوان"
           />
         </div>
       </Card>

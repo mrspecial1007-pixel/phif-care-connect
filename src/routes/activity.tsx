@@ -1,224 +1,127 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { getRecentActivity } from "@/lib/activity.functions";
+import { useActivityLogs, ActivityLog } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { useMemo, useState } from "react";
-import * as XLSX from "xlsx";
-import { Building2, Pill, Pencil, FileSpreadsheet, Upload, Download, Phone, MessageSquare } from "lucide-react";
+import { 
+  UserPlus, 
+  UserCog, 
+  FileEdit, 
+  Trash2, 
+  Download, 
+  PhoneCall, 
+  MessageSquare, 
+  Building2, 
+  History,
+  CalendarDays
+} from "lucide-react";
+import { format } from "date-fns";
+import { ar } from "date-fns/locale";
+import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/activity")({
   component: () => <Gate><ActivityPage /></Gate>,
 });
 
-type Filter = "today_all" | "all" | "dispensing" | "edits" | "imports" | "communication";
+function getActionIcon(action: string) {
+  if (action.includes("اتصال")) return <PhoneCall className="h-4 w-4 text-primary" />;
+  if (action.includes("WhatsApp") || action.includes("SMS")) return <MessageSquare className="h-4 w-4 text-success" />;
+  if (action.includes("صرف")) return <CalendarDays className="h-4 w-4 text-info" />;
+  
+  switch (action) {
+    case "create_patient": return <UserPlus className="h-4 w-4 text-success" />;
+    case "update_patient": return <UserCog className="h-4 w-4 text-warning" />;
+    case "import_excel": return <Download className="h-4 w-4 text-info" />;
+    case "delete": return <Trash2 className="h-4 w-4 text-destructive" />;
+    default: return <History className="h-4 w-4 text-muted-foreground" />;
+  }
+}
+
+function getActionLabel(action: string) {
+  if (action.includes("اتصال")) return "اتصال هاتفي";
+  if (action.includes("WhatsApp")) return "مراسلة WhatsApp";
+  if (action.includes("SMS")) return "مراسلة SMS";
+  if (action.includes("صرف")) return action;
+
+  const labels: Record<string, string> = {
+    "create_patient": "إضافة مستفيد",
+    "update_patient": "تعديل بيانات مستفيد",
+    "import_excel": "استيراد ملف Excel",
+    "delete": "حذف بيانات",
+  };
+  return labels[action] || action;
+}
 
 function ActivityPage() {
-  const fetchFn = useServerFn(getRecentActivity);
-  const { data, isLoading } = useQuery({
-    queryKey: ["recent_activity"],
-    queryFn: () => fetchFn(),
-    staleTime: 30_000,
+  const { data: logs, isLoading } = useActivityLogs();
+  const [filter, setFilter] = useState<string>("all");
+
+  const filteredLogs = logs?.filter((log: ActivityLog) => {
+    if (filter === "all") return true;
+    if (filter === "dispensing") return log.action_type.includes("صرف");
+    if (filter === "communication") return log.action_type.includes("اتصال") || log.action_type.includes("WhatsApp") || log.action_type.includes("SMS");
+    if (filter === "system") return ["create_patient", "update_patient", "import_excel"].includes(log.action_type);
+    return true;
   });
-  const [filter, setFilter] = useState<Filter>("today_all");
-
-  const items = useMemo(() => {
-    if (!data) return [];
-    const txItems = data.transactions.map((t: any) => ({
-      kind: "tx" as const,
-      at: t.created_at,
-      tx: t,
-    }));
-    const auditItems = data.audit
-      .filter((a: any) => a.action !== "record_dispensing" && a.action !== "record_dispensing_historical_append" && a.action !== "record_dispensing_recalc")
-      .map((a: any) => ({ kind: "audit" as const, at: a.created_at, audit: a }));
-    const commItems = (data as any).communication?.map((c: any) => ({
-      kind: "comm" as const,
-      at: c.created_at,
-      comm: c,
-    })) || [];
-
-    const all = [...txItems, ...auditItems, ...commItems].sort((a, b) => (a.at > b.at ? -1 : 1));
-    const today = new Date().toISOString().slice(0, 10);
-    
-    return all.filter((it) => {
-      const isToday = (it.at ?? "").slice(0, 10) === today;
-      if (filter === "today_all") return isToday;
-      if (filter === "dispensing") return it.kind === "tx";
-      if (filter === "edits") return it.kind === "audit" && it.audit.action?.includes("patient");
-      if (filter === "imports") return it.kind === "audit" && it.audit.action === "import_excel";
-      if (filter === "communication") return it.kind === "comm";
-      return true;
-    });
-  }, [data, filter]);
-
-  function exportXlsx() {
-    const rows = items.map((it) => {
-      if (it.kind === "tx") {
-        const t = it.tx;
-        return {
-          الوقت: new Date(t.created_at).toLocaleString("en-GB"),
-          النوع: t.transaction_type === "Completed" ? "صرف كامل" : t.transaction_type === "Partial" ? "صرف جزئي" : "صرف متبقي",
-          المريض: t.patients?.patient_name ?? "",
-          البطاقة: t.patients?.insurance_card_number ?? "",
-          الصيدلية: t.pharmacies?.name ?? "",
-          مصروف: t.items_dispensed ?? "",
-          متبقي: t.items_remaining ?? "",
-          ملاحظات: t.notes ?? "",
-        };
-      }
-      if (it.kind === "comm") {
-        const c = it.comm;
-        return {
-          الوقت: new Date(c.created_at).toLocaleString("en-GB"),
-          النوع: "تواصل",
-          القناة: c.channel,
-          الإجراء: c.action_type,
-          المريض: c.patients?.patient_name ?? "",
-          الهاتف: c.phone_number ?? "",
-          الصيدلية: c.pharmacies?.name ?? "",
-        };
-      }
-      const a = (it as any).audit;
-      return {
-        الوقت: new Date(a.created_at).toLocaleString("en-GB"),
-        النوع: a.action,
-        الكيان: a.entity,
-        المعرف: a.entity_id ?? "",
-      };
-    });
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Activity");
-    XLSX.writeFile(wb, `activity-${new Date().toISOString().slice(0, 10)}.xlsx`);
-  }
-
-  const chips: { k: Filter; label: string }[] = [
-    { k: "today_all", label: "نشاط اليوم" },
-    { k: "dispensing", label: "الصرف" },
-    { k: "edits", label: "تعديلات المرضى" },
-    { k: "imports", label: "استيراد Excel" },
-    { k: "communication", label: "التواصل" },
-    { k: "all", label: "الكل (30 يوم)" },
-  ];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4 pb-20">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">نشاط اليوم</h1>
-        <Button variant="outline" size="sm" onClick={exportXlsx} disabled={!items.length}>
-          <Download className="h-4 w-4 ml-1" /> Excel
-        </Button>
-      </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {chips.map((c) => (
-          <button
-            key={c.k}
-            onClick={() => setFilter(c.k)}
-            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border ${
-              filter === c.k ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground"
-            }`}
-          >
-            {c.label}
-          </button>
-        ))}
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="تصفية" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">الكل</SelectItem>
+            <SelectItem value="dispensing">عمليات الصرف</SelectItem>
+            <SelectItem value="communication">التواصل</SelectItem>
+            <SelectItem value="system">النظام</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {isLoading ? (
-        <div className="text-center py-10 text-muted-foreground">جاري التحميل…</div>
-      ) : items.length === 0 ? (
-        <div className="text-center py-10 text-muted-foreground">لا يوجد نشاط</div>
-      ) : (
-        <div className="space-y-2">
-          {items.map((it, i) => (
-            <Card key={i} className="p-3">
-              {it.kind === "tx" ? (
-                <TxRow tx={it.tx} />
-              ) : it.kind === "comm" ? (
-                <CommRow comm={it.comm} />
-              ) : (
-                <AuditRow a={it.audit} />
-              )}
+      <div className="space-y-3">
+        {isLoading ? (
+          <div className="text-center py-10 text-muted-foreground">جاري التحميل...</div>
+        ) : filteredLogs?.length === 0 ? (
+          <div className="text-center py-10 text-muted-foreground">لا يوجد نشاط مسجل</div>
+        ) : (
+          filteredLogs?.map((log: ActivityLog) => (
+            <Card key={log.id} className="p-4 border-r-4 border-r-primary/20">
+              <div className="flex gap-3">
+                <div className="mt-1 p-2 bg-muted rounded-full shrink-0">
+                  {getActionIcon(log.action_type)}
+                </div>
+                <div className="space-y-1 grow">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-sm">
+                      {getActionLabel(log.action_type)}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {format(new Date(log.created_at), "HH:mm - yyyy/MM/dd", { locale: ar })}
+                    </span>
+                  </div>
+                  
+                  <div className="text-sm text-foreground/80">
+                    {log.details?.patient_name && (
+                      <span className="font-medium text-primary ml-1">{log.details.patient_name}</span>
+                    )}
+                    {log.details?.description || ""}
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <Badge variant="outline" className="text-[10px] font-normal py-0">
+                      <Building2 className="h-3 w-3 ml-1" />
+                      {log.pharmacy_name}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
             </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TxRow({ tx }: { tx: any }) {
-  const t = new Date(tx.created_at);
-  const kind =
-    tx.transaction_type === "Completed" ? { label: "صرف كامل", cls: "text-success" } :
-    tx.transaction_type === "Partial" ? { label: "صرف جزئي", cls: "text-info" } :
-    { label: "صرف متبقي", cls: "text-warning" };
-  return (
-    <div className="flex items-start gap-3">
-      <div className="text-xs text-muted-foreground w-14 shrink-0">
-        {t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-      </div>
-      <Pill className="h-4 w-4 mt-0.5 text-primary shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="font-semibold text-sm">{tx.patients?.patient_name ?? "—"}</div>
-        <div className={`text-xs font-medium ${kind.cls}`}>{kind.label}</div>
-        <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-          <Building2 className="h-3 w-3" />
-          {tx.pharmacies?.name ?? "—"}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AuditRow({ a }: { a: any }) {
-  const t = new Date(a.created_at);
-  const isImport = a.action === "import_excel";
-  const label = isImport
-    ? `استيراد Excel — ${a.after?.rows ?? 0} سجل`
-    : a.action === "create_patient"
-    ? "إضافة مريض"
-    : a.action === "update_patient"
-    ? "تعديل بيانات مريض"
-    : a.action;
-  return (
-    <div className="flex items-start gap-3">
-      <div className="text-xs text-muted-foreground w-14 shrink-0">
-        {t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-      </div>
-      {isImport ? <FileSpreadsheet className="h-4 w-4 mt-0.5 text-info shrink-0" /> : <Pencil className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />}
-      <div className="flex-1 min-w-0">
-        <div className="font-semibold text-sm">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function CommRow({ comm }: { comm: any }) {
-  const t = new Date(comm.created_at);
-  const isCall = comm.channel === "Call";
-  return (
-    <div className="flex items-start gap-3">
-      <div className="text-xs text-muted-foreground w-14 shrink-0">
-        {t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-      </div>
-      {isCall ? (
-        <Phone className="h-4 w-4 mt-0.5 text-primary shrink-0" />
-      ) : (
-        <MessageSquare className="h-4 w-4 mt-0.5 text-success shrink-0" />
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="font-semibold text-sm">{comm.patients?.patient_name ?? "—"}</div>
-        <div className="text-xs font-medium text-foreground">{comm.action_type}</div>
-        <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-          <span dir="ltr">{comm.phone_number}</span>
-          <span className="flex items-center gap-1">
-            <Building2 className="h-3 w-3" />
-            {comm.pharmacies?.name ?? "—"}
-          </span>
-        </div>
+          ))
+        )}
       </div>
     </div>
   );
