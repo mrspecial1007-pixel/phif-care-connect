@@ -19,11 +19,6 @@ const createDispensingSchema = z.object({
   historical_mode: z.enum(["append", "recalc"]).optional().nullable(),
 });
 
-function addDays(iso: string, days: number): string {
-  const d = new Date(iso);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 export const recordDispensing = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => createDispensingSchema.parse(d))
