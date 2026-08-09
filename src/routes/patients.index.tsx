@@ -3,7 +3,7 @@ import { Gate } from "@/components/AppShell";
 import { usePatientStatuses } from "@/lib/queries";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { normalizeArabicName } from "@/lib/name-normalize";
 import { PatientCard } from "@/components/PatientCard";
 import { Plus, Star } from "lucide-react";
@@ -17,23 +17,82 @@ export const Route = createFileRoute("/patients/")({
   ),
 });
 
+type Filter =
+  | "all"
+  | "favorite"
+  | "overdue"
+  | "partial"
+  | "shared"
+  | "has_phone"
+  | "no_phone"
+  | "review";
+
+const CHIPS: { k: Filter; label: string }[] = [
+  { k: "all", label: "الكل" },
+  { k: "favorite", label: "المفضلة" },
+  { k: "overdue", label: "متأخر" },
+  { k: "partial", label: "صرف جزئي" },
+  { k: "shared", label: "مشترك" },
+  { k: "has_phone", label: "لديه هاتف" },
+  { k: "no_phone", label: "بدون هاتف" },
+  { k: "review", label: "يحتاج مراجعة" },
+];
+
+const PAGE_SIZE = 100;
+
 function List() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "favorite">("all");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [visible, setVisible] = useState(PAGE_SIZE);
+
+  // Any change to search or filter resets pagination
+  useEffect(() => setVisible(PAGE_SIZE), [q, filter]);
+
+  const total = rows?.length ?? 0;
 
   const items = useMemo(() => {
     if (!rows) return [];
     const qn = normalizeArabicName(q);
+    const qd = q.trim();
     const list = rows.filter((r) => {
-      const matchSearch = !qn || (
+      const matchSearch =
+        !qd ||
         normalizeArabicName(r.patient_name).includes(qn) ||
-        (r.insurance_card_number ?? "").includes(q.trim())
-      );
-      const matchFilter = filter === "all" || r.is_favorite;
-      return matchSearch && matchFilter;
+        (r.insurance_card_number ?? "").includes(qd) ||
+        (r.national_id ?? "").includes(qd) ||
+        (r.phone ?? "").includes(qd);
+      if (!matchSearch) return false;
+
+      // "الكل" = no status/favorite/phone/pharmacy filtering at all
+      switch (filter) {
+        case "all":
+          return true;
+        case "favorite":
+          return !!r.is_favorite;
+        case "overdue":
+          return r.remaining_days !== null && r.remaining_days < 0;
+        case "partial":
+          return r.current_cycle_status === "Partial";
+        case "shared":
+          return !!r.is_shared;
+        case "has_phone":
+          return !!(r.phone && r.phone.trim());
+        case "no_phone":
+          return !(r.phone && r.phone.trim());
+        case "review":
+          return r.review_status === "needs_review";
+        default:
+          return true;
+      }
     });
+
     return [...list].sort((a, b) => {
+      if (filter === "overdue") {
+        const av = a.remaining_days ?? 0;
+        const bv = b.remaining_days ?? 0;
+        return av - bv;
+      }
       const av = a.remaining_days;
       const bv = b.remaining_days;
       if (av === null && bv === null) return a.patient_name.localeCompare(b.patient_name, "ar");
@@ -41,9 +100,10 @@ function List() {
       if (bv === null) return -1;
       return av - bv;
     });
-  }, [rows, q]);
+  }, [rows, q, filter]);
 
   const [addOpen, setAddOpen] = useState(false);
+  const shown = Math.min(visible, items.length);
 
   return (
     <div className="space-y-3">
@@ -53,25 +113,22 @@ function List() {
           <Plus className="h-4 w-4" /> إضافة مستفيد
         </Button>
       </div>
-      
+
       <div className="flex gap-2 mb-1 overflow-x-auto pb-1 no-scrollbar">
-        <Button 
-          variant={filter === "all" ? "default" : "outline"} 
-          size="sm" 
-          onClick={() => setFilter("all")}
-          className="rounded-full px-4"
-        >
-          الكل
-        </Button>
-        <Button 
-          variant={filter === "favorite" ? "default" : "outline"} 
-          size="sm" 
-          onClick={() => setFilter("favorite")}
-          className="rounded-full px-4 gap-1.5"
-        >
-          <Star className={`h-3.5 w-3.5 ${filter === "favorite" ? "fill-current" : ""}`} />
-          المفضلة
-        </Button>
+        {CHIPS.map((c) => (
+          <Button
+            key={c.k}
+            variant={filter === c.k ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFilter(c.k)}
+            className="rounded-full px-4 gap-1.5 shrink-0"
+          >
+            {c.k === "favorite" && (
+              <Star className={`h-3.5 w-3.5 ${filter === "favorite" ? "fill-current" : ""}`} />
+            )}
+            {c.label}
+          </Button>
+        ))}
       </div>
 
       <Input
@@ -80,15 +137,32 @@ function List() {
         placeholder="ابحث بالاسم أو رقم البطاقة أو رقم الهاتف..."
         className="h-12 text-base"
       />
+
+      {!isLoading && (
+        <div className="text-xs text-muted-foreground px-1">
+          عرض {shown} من {items.length} مستفيد
+          {items.length !== total && <span> (الإجمالي {total})</span>}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="text-center py-10 text-muted-foreground">جاري التحميل…</div>
       ) : (
         <div className="grid gap-2 pb-10">
-          {items.slice(0, 500).map((r) => (
+          {items.slice(0, visible).map((r) => (
             <PatientCard key={r.patient_id} row={r} />
           ))}
           {items.length === 0 && (
             <div className="text-center py-10 text-muted-foreground">لا نتائج</div>
+          )}
+          {items.length > visible && (
+            <Button
+              variant="outline"
+              className="mt-2"
+              onClick={() => setVisible((v) => v + PAGE_SIZE)}
+            >
+              عرض المزيد ({items.length - visible} متبقٍ)
+            </Button>
           )}
         </div>
       )}
