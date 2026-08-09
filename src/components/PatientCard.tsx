@@ -16,16 +16,17 @@ import { toast } from "sonner";
 export function statusMeta(row: PatientStatusRow) {
   if (row.review_status === "needs_review")
     return { key: "review", label: "يحتاج مراجعة", color: "bg-warning text-warning-foreground" };
-  if (row.current_cycle_status === "Partial")
-    return { key: "partial", label: "صرف جزئي", color: "bg-info text-info-foreground" };
+  
   if (row.remaining_days !== null) {
     if (row.remaining_days < 0)
       return { key: "overdue", label: "متأخر", color: "bg-destructive text-destructive-foreground" };
     if (row.remaining_days <= 3)
       return { key: "due", label: "قريب الاستحقاق", color: "bg-warning text-warning-foreground" };
   }
+  
   if (row.current_cycle_status === "Waiting")
     return { key: "waiting", label: "بانتظار الصرف", color: "bg-success text-success-foreground" };
+  
   return { key: "ok", label: "مكتمل", color: "bg-secondary text-secondary-foreground" };
 }
 
