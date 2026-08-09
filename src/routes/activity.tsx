@@ -156,10 +156,10 @@ function DispensingActivityPage() {
 
   const getTypeBadge = (type: string) => {
     switch (type) {
-      case "Completed": return <Badge className="bg-success hover:bg-success/90">صرف كامل</Badge>;
-      case "Partial": return <Badge className="bg-info hover:bg-info/90">صرف جزئي</Badge>;
-      case "Remaining": return <Badge className="bg-purple-600 hover:bg-purple-700">صرف متبقي</Badge>;
-      default: return <Badge variant="outline">{type}</Badge>;
+      case "Completed": return <Badge className="bg-success text-[10px] px-2 py-0 h-5 rounded-full hover:bg-success/90">صرف كامل</Badge>;
+      case "Partial": return <Badge className="bg-info text-[10px] px-2 py-0 h-5 rounded-full hover:bg-info/90">صرف جزئي</Badge>;
+      case "Remaining": return <Badge className="bg-purple-600 text-[10px] px-2 py-0 h-5 rounded-full hover:bg-purple-700">صرف متبقي</Badge>;
+      default: return <Badge variant="outline" className="text-[10px] px-2 py-0 h-5">{type}</Badge>;
     }
   };
 
