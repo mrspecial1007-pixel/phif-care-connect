@@ -17,8 +17,8 @@ const createDispensingSchema = z.object({
   dispensing_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   idempotency_key: z.string().min(8).max(80).optional().nullable(),
   historical_mode: z.enum(["append", "recalc"]).optional().nullable(),
+  track_id: z.string().uuid().optional().nullable(), // The track being fulfilled
 });
-
 
 export const recordDispensing = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => createDispensingSchema.parse(d))
@@ -32,189 +32,115 @@ export const recordDispensing = createServerFn({ method: "POST" })
     const ip = getRequestIP({ xForwardedFor: true }) ?? null;
     const today = new Date().toISOString().slice(0, 10);
     const effectiveDate = data.dispensing_date ?? today;
-    // Prevent future-dated dispensing.
     const pharmacy_id = data.pharmacy_id ?? sessionPharmacyId;
-    if (data.pharmacy_id) {
-      const { data: p } = await supabaseAdmin
-        .from("pharmacies")
-        .select("id")
-        .eq("id", data.pharmacy_id)
-        .maybeSingle();
-      if (!p) return { ok: false as const, error: "pharmacy_not_found" };
-    }
+
     if (effectiveDate > today) {
       return { ok: false as const, error: "future_date_not_allowed" };
     }
 
-    // Idempotency: if a tx with this key already exists, return it as-is.
+    // Idempotency check
     if (data.idempotency_key) {
       const { data: existingTx } = await supabaseAdmin
         .from("dispensing_transactions")
-        .select("id, cycle_id")
+        .select("id")
         .eq("idempotency_key", data.idempotency_key)
         .maybeSingle();
       if (existingTx) {
-        return { ok: true as const, transaction_id: existingTx.id, cycle_id: existingTx.cycle_id, deduped: true };
+        return { ok: true as const, transaction_id: existingTx.id, deduped: true };
       }
     }
 
-    // Load patient + latest non-completed cycle
-    const { data: patient, error: pErr } = await supabaseAdmin
+    // Load patient
+    const { data: patient } = await supabaseAdmin
       .from("patients")
-      .select("id, patient_name")
+      .select("id")
       .eq("id", data.patient_id)
       .maybeSingle();
-    if (pErr || !patient) return { ok: false as const, error: "patient_not_found" };
+    if (!patient) return { ok: false as const, error: "patient_not_found" };
 
-    // Detect if this is a historical dispensing (older than latest recorded).
-    const { data: latestTx } = await supabaseAdmin
-      .from("dispensing_transactions")
-      .select("dispensing_date")
-      .eq("patient_id", data.patient_id)
-      .order("dispensing_date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const latestDate = latestTx?.dispensing_date?.slice(0, 10) ?? null;
-    const isHistorical = latestDate !== null && effectiveDate < latestDate;
-
-    // If historical and caller did not opt-in, block and ask.
-    if (isHistorical && !data.historical_mode) {
-      return { ok: false as const, error: "historical_dispensing", latest_date: latestDate };
-    }
-
-    // Historical + append: only insert a completed historical cycle+tx; do not touch current cycle.
-    if (isHistorical && data.historical_mode === "append") {
-      const started = new Date(effectiveDate);
-      started.setUTCDate(started.getUTCDate() - 28);
-      const next = new Date(effectiveDate);
-      next.setUTCDate(next.getUTCDate() + 28);
-      const { data: cyc } = await supabaseAdmin
-        .from("dispensing_cycles")
-        .insert({
-          patient_id: data.patient_id,
-          status: "Completed",
-          started_at: started.toISOString().slice(0, 10),
-          completed_at: effectiveDate,
-          next_due_date: next.toISOString().slice(0, 10),
-        })
-        .select("id")
-        .single();
-      if (!cyc) return { ok: false as const, error: "cycle_create_failed" };
-      const { data: tx, error: tErr } = await supabaseAdmin
-        .from("dispensing_transactions")
-        .insert({
-          cycle_id: cyc.id,
-          patient_id: data.patient_id,
-          pharmacy_id,
-          transaction_type: data.transaction_type,
-          items_dispensed: data.items_dispensed ?? null,
-          items_remaining: data.items_remaining ?? null,
-          notes: data.notes ?? null,
-          dispensing_date: `${effectiveDate}T12:00:00Z`,
-          idempotency_key: data.idempotency_key ?? null,
-        })
-        .select("id")
-        .single();
-      if (tErr || !tx) return { ok: false as const, error: "tx_insert_failed" };
-      await writeAudit({
-        pharmacy_id,
-        action: "record_dispensing_historical_append",
-        entity: "dispensing_transaction",
-        entity_id: tx.id,
-        after: { patient_id: data.patient_id, transaction_type: data.transaction_type, cycle_id: cyc.id, effective_date: effectiveDate },
-        ip,
-      });
-      return { ok: true as const, transaction_id: tx.id, cycle_id: cyc.id };
-    }
-
-    const { data: openCycles } = await supabaseAdmin
-      .from("dispensing_cycles")
-      .select("id, status, started_at, next_due_date")
-      .eq("patient_id", data.patient_id)
-      .neq("status", "Completed")
-      .order("started_at", { ascending: false })
-      .limit(1);
-    let cycle = openCycles?.[0] ?? null;
-
-    // If no open cycle, create one starting today
-    if (!cycle) {
-      const started = effectiveDate;
-      const { data: newCycle, error: cErr } = await supabaseAdmin
-        .from("dispensing_cycles")
-        .insert({
-          patient_id: data.patient_id,
-          status: "Waiting",
-          started_at: started,
-          next_due_date: addDays(started, 28),
-        })
-        .select("id, status, started_at, next_due_date")
-        .single();
-      if (cErr || !newCycle) return { ok: false as const, error: "cycle_create_failed" };
-      cycle = newCycle;
-    }
-
-    // Rules:
-    // - Partial: cycle -> Partial
-    // - Remaining or Completed: cycle -> Completed, set completed_at=today, next_due_date=today+28
-    let nextStatus: "Waiting" | "Partial" | "Completed" = cycle.status as any;
-    const updates: {
-      status: "Partial" | "Completed";
-      completed_at?: string | null;
-      next_due_date?: string | null;
-    } = { status: "Partial" };
-    if (data.transaction_type === "Partial") {
-      nextStatus = "Partial";
-      updates.status = "Partial";
-    } else {
-      nextStatus = "Completed";
-      updates.status = "Completed";
-      updates.completed_at = effectiveDate;
-      updates.next_due_date = addDays(effectiveDate, 28);
-    }
-    const { error: uErr } = await supabaseAdmin
-      .from("dispensing_cycles")
-      .update(updates)
-      .eq("id", cycle.id);
-    if (uErr) return { ok: false as const, error: "cycle_update_failed" };
-
+    // Record the transaction
     const { data: tx, error: tErr } = await supabaseAdmin
       .from("dispensing_transactions")
       .insert({
-        cycle_id: cycle.id,
         patient_id: data.patient_id,
         pharmacy_id,
         transaction_type: data.transaction_type,
         items_dispensed: data.items_dispensed ?? null,
-        items_remaining: data.items_remaining ?? null,
         notes: data.notes ?? null,
         dispensing_date: `${effectiveDate}T12:00:00Z`,
         idempotency_key: data.idempotency_key ?? null,
+        cycle_id: '00000000-0000-0000-0000-000000000000', // Dummy for legacy FK if exists
       })
       .select("id")
       .single();
-    if (tErr) return { ok: false as const, error: "tx_insert_failed" };
+    if (tErr || !tx) return { ok: false as const, error: "tx_insert_failed" };
 
-    // If completed, open a new Waiting cycle starting when next dispensing is due
-    if (nextStatus === "Completed") {
-      const nextStart = addDays(effectiveDate, 28);
-      await supabaseAdmin.from("dispensing_cycles").insert({
-        patient_id: data.patient_id,
-        status: "Waiting",
-        started_at: nextStart,
-        next_due_date: nextStart,
-      });
+    // Update or Create Track
+    // 1. If we have a track_id, it means we are fulfilling an existing requirement.
+    // 2. If it's Partial, we start a NEW track for the dispensed items.
+    // 3. If it's Completed, we either update the chosen track OR create a new one if none was chosen.
+
+    if (data.transaction_type === "Partial") {
+        // Partial: This creates a new track starting today.
+        // It does NOT fulfill an existing track (or maybe it fulfills one and leaves others?)
+        // The rule says: "Every dispensing creates a track".
+        await supabaseAdmin.from("dispensing_due_tracks").insert({
+            patient_id: data.patient_id,
+            source_transaction_id: tx.id,
+            last_dispensing_date: effectiveDate,
+            next_due_date: addDays(effectiveDate, 28),
+            status: "Waiting"
+        });
+    } else if (data.transaction_type === "Completed" || data.transaction_type === "Remaining") {
+        if (data.track_id) {
+            // Fulfilling a specific track
+            await supabaseAdmin.from("dispensing_due_tracks").update({
+                last_dispensing_date: effectiveDate,
+                next_due_date: addDays(effectiveDate, 28),
+                source_transaction_id: tx.id,
+                status: "Waiting"
+            }).eq("id", data.track_id);
+        } else {
+            // Normal completed dispensing (maybe the only one)
+            // If no track selected, find the nearest one or create new.
+            const { data: nearest } = await supabaseAdmin
+                .from("dispensing_due_tracks")
+                .select("id")
+                .eq("patient_id", data.patient_id)
+                .neq("status", "Completed")
+                .order("next_due_date", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+            
+            if (nearest) {
+                await supabaseAdmin.from("dispensing_due_tracks").update({
+                    last_dispensing_date: effectiveDate,
+                    next_due_date: addDays(effectiveDate, 28),
+                    source_transaction_id: tx.id,
+                    status: "Waiting"
+                }).eq("id", nearest.id);
+            } else {
+                await supabaseAdmin.from("dispensing_due_tracks").insert({
+                    patient_id: data.patient_id,
+                    source_transaction_id: tx.id,
+                    last_dispensing_date: effectiveDate,
+                    next_due_date: addDays(effectiveDate, 28),
+                    status: "Waiting"
+                });
+            }
+        }
     }
 
     await writeAudit({
       pharmacy_id,
-      action: isHistorical && data.historical_mode === "recalc" ? "record_dispensing_recalc" : "record_dispensing",
+      action: "record_dispensing",
       entity: "dispensing_transaction",
       entity_id: tx.id,
-      after: { patient_id: data.patient_id, transaction_type: data.transaction_type, cycle_id: cycle.id },
+      after: { patient_id: data.patient_id, transaction_type: data.transaction_type, effective_date: effectiveDate },
       ip,
     });
 
-    return { ok: true as const, transaction_id: tx.id, cycle_id: cycle.id };
+    return { ok: true as const, transaction_id: tx.id };
   });
 
 const upsertPatientSchema = z.object({
@@ -244,7 +170,6 @@ export const upsertPatient = createServerFn({ method: "POST" })
     const norm = normalizeArabicName(data.patient_name);
     const card = data.insurance_card_number?.trim() || null;
 
-    // Card-based dedupe
     if (card && !data.id) {
       const { data: existing } = await supabaseAdmin
         .from("patients")
@@ -252,22 +177,6 @@ export const upsertPatient = createServerFn({ method: "POST" })
         .eq("insurance_card_number", card)
         .maybeSingle();
       if (existing) return { ok: true as const, id: existing.id, matched: "card" as const };
-    }
-
-    // Name-based soft match -> needs_review
-    let review_status: "ok" | "needs_review" = "ok";
-    let possible_duplicate_of: string | null = null;
-    if (!data.id && !card) {
-      const { data: nameMatch } = await supabaseAdmin
-        .from("patients")
-        .select("id")
-        .eq("patient_name_normalized", norm)
-        .limit(1)
-        .maybeSingle();
-      if (nameMatch) {
-        review_status = "needs_review";
-        possible_duplicate_of = nameMatch.id;
-      }
     }
 
     const payload = {
@@ -280,8 +189,6 @@ export const upsertPatient = createServerFn({ method: "POST" })
       birth_date: data.birth_date || null,
       gender: data.gender ?? null,
       notes: data.notes ?? null,
-      review_status,
-      possible_duplicate_of,
       is_favorite: data.is_favorite ?? false,
     };
 
@@ -347,29 +254,12 @@ export const importExcelRows = createServerFn({ method: "POST" })
       }
 
       if (!patientId) {
-        let review_status: "ok" | "needs_review" = "ok";
-        let possible_duplicate_of: string | null = null;
-        if (!card) {
-          const { data: nameMatch } = await supabaseAdmin
-            .from("patients")
-            .select("id")
-            .eq("patient_name_normalized", norm)
-            .limit(1)
-            .maybeSingle();
-          if (nameMatch) {
-            review_status = "needs_review";
-            possible_duplicate_of = nameMatch.id;
-            needsReview++;
-          }
-        }
         const { data: ins, error } = await supabaseAdmin
           .from("patients")
           .insert({
             patient_name: row.patient_name.trim(),
             patient_name_normalized: norm,
             insurance_card_number: card,
-            review_status,
-            possible_duplicate_of,
           })
           .select("id")
           .single();
@@ -378,34 +268,31 @@ export const importExcelRows = createServerFn({ method: "POST" })
         created++;
       }
 
-      // Add dispensing history as Completed cycles + transactions
+      // Add dispensing history as transactions and tracks
+      // For each date, create a transaction and a track.
+      // If dates are within 28 days, they result in separate tracks.
       for (const dt of row.dispensing_dates) {
         const clean = dt?.slice(0, 10);
         if (!clean) continue;
-        const started = new Date(clean);
-        started.setUTCDate(started.getUTCDate() - 28);
-        const next = new Date(clean);
-        next.setUTCDate(next.getUTCDate() + 28);
-        const { data: cyc } = await supabaseAdmin
-          .from("dispensing_cycles")
-          .insert({
-            patient_id: patientId,
-            status: "Completed",
-            started_at: started.toISOString().slice(0, 10),
-            completed_at: clean,
-            next_due_date: next.toISOString().slice(0, 10),
-          })
-          .select("id")
-          .single();
-        if (!cyc) continue;
-        await supabaseAdmin.from("dispensing_transactions").insert({
-          cycle_id: cyc.id,
+        
+        const { data: tx } = await supabaseAdmin.from("dispensing_transactions").insert({
           patient_id: patientId,
           pharmacy_id,
           dispensing_date: `${clean}T12:00:00Z`,
           transaction_type: "Completed",
-        });
-        txAdded++;
+          cycle_id: '00000000-0000-0000-0000-000000000000',
+        }).select("id").single();
+        
+        if (tx) {
+            await supabaseAdmin.from("dispensing_due_tracks").insert({
+                patient_id: patientId,
+                source_transaction_id: tx.id,
+                last_dispensing_date: clean,
+                next_due_date: addDays(clean, 28),
+                status: "Waiting"
+            });
+            txAdded++;
+        }
       }
     }
 

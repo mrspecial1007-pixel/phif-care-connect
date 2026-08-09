@@ -38,6 +38,7 @@ export type PatientStatusRow = {
   current_cycle_started_at: string | null;
   next_due_date: string | null;
   remaining_days: number | null;
+  active_tracks_count: number;
   last_pharmacy_id: string | null;
   last_pharmacy_name: string | null;
   last_dispensing_date: string | null;
@@ -93,16 +94,17 @@ export function usePatientHistory(id: string | undefined) {
   });
 }
 
-export function usePatientCycles(id: string | undefined) {
+export function usePatientDueTracks(id: string | undefined) {
   return useQuery({
     enabled: !!id,
-    queryKey: ["patient_cycles", id],
+    queryKey: ["patient_due_tracks", id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("dispensing_cycles")
-        .select("id, status, started_at, completed_at, next_due_date")
+        .from("dispensing_due_tracks")
+        .select("*")
         .eq("patient_id", id!)
-        .order("started_at", { ascending: false });
+        .neq("status", "Completed")
+        .order("next_due_date", { ascending: true });
       if (error) throw error;
       return data ?? [];
     },
