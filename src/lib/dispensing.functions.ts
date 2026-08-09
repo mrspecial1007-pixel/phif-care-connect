@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+function addDays(iso: string, days: number): string {
+  const d = new Date(iso);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 const createDispensingSchema = z.object({
   patient_id: z.string().uuid(),
   transaction_type: z.enum(["Partial", "Remaining", "Completed"]),
