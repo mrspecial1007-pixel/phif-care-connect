@@ -1,4 +1,4 @@
-ALTER TABLE public.patients ADD COLUMN is_favorite BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE;
 
 -- Update the view to include is_favorite
 DROP VIEW IF EXISTS public.v_patient_status;
