@@ -3,7 +3,7 @@ import { Gate } from "@/components/AppShell";
 import {
   usePatient,
   usePatientHistory,
-  usePatientCycles,
+  usePatientDueTracks,
   usePatientStatuses,
   useSession,
 } from "@/lib/queries";
@@ -69,13 +69,13 @@ function Detail() {
   const { id } = Route.useParams();
   const { data: patient, isLoading } = usePatient(id);
   const { data: history } = usePatientHistory(id);
-  const { data: cycles } = usePatientCycles(id);
+  const { data: dueTracks } = usePatientDueTracks(id);
   const { data: statuses } = usePatientStatuses();
   const { data: session } = useSession();
   const status = statuses?.find((s) => s.patient_id === id);
 
-  const currentCycle = cycles?.[0];
-  const isPartial = currentCycle?.status === "Partial";
+  const nearestTrack = dueTracks?.[0];
+  const isPartial = false; // Logic for Partial button will be updated inside DispenseFlow
 
   const [editOpen, setEditOpen] = useState(false);
   const [editFocus, setEditFocus] = useState<string | null>(null);
@@ -216,7 +216,7 @@ function Detail() {
       <Card className="p-4 space-y-2">
         <div className="flex items-center gap-2">
           <h2 className="font-semibold">بيانات الصرف</h2>
-          <StatusBadge status={currentCycle?.status ?? "Waiting"} />
+          <StatusBadge status={nearestTrack ? "Waiting" : "Completed"} />
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <Stat label="آخر تاريخ صرف" value={fmtDate(status?.last_dispensing_date)} />
@@ -247,21 +247,20 @@ function Detail() {
           />
         </div>
 
-        {isPartial ? (
-          <Button
-            className="w-full h-14 text-base bg-info text-info-foreground hover:bg-info/90"
-            onClick={() => setRemainingConfirmOpen(true)}
-          >
-            <Clock className="h-5 w-5 ml-2" /> صرف متبقي
-          </Button>
-        ) : (
+        <div className="space-y-2 mt-4">
           <Button
             className="w-full h-14 text-base"
             onClick={() => setDispenseOpen(true)}
           >
             <CheckCircle2 className="h-5 w-5 ml-2" /> تم الصرف
           </Button>
-        )}
+          
+          {dueTracks && dueTracks.length > 1 && (
+             <div className="text-xs text-center text-muted-foreground">
+               لدى المستفيد {dueTracks.length} مواعيد استحقاق نشطة
+             </div>
+          )}
+        </div>
       </Card>
 
       {/* History */}
