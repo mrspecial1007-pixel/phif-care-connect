@@ -101,33 +101,15 @@ export const recordDispensing = createServerFn({ method: "POST" })
                 status: "Waiting"
             }).eq("id", data.track_id);
         } else {
-            // Normal completed dispensing (maybe the only one)
-            // If no track selected, find the nearest one or create new.
-            const { data: nearest } = await supabaseAdmin
-                .from("dispensing_due_tracks")
-                .select("id")
-                .eq("patient_id", data.patient_id)
-                .neq("status", "Completed")
-                .order("next_due_date", { ascending: true })
-                .limit(1)
-                .maybeSingle();
-            
-            if (nearest) {
-                await supabaseAdmin.from("dispensing_due_tracks").update({
-                    last_dispensing_date: effectiveDate,
-                    next_due_date: addDays(effectiveDate, 28),
-                    source_transaction_id: tx.id,
-                    status: "Waiting"
-                }).eq("id", nearest.id);
-            } else {
-                await supabaseAdmin.from("dispensing_due_tracks").insert({
-                    patient_id: data.patient_id,
-                    source_transaction_id: tx.id,
-                    last_dispensing_date: effectiveDate,
-                    next_due_date: addDays(effectiveDate, 28),
-                    status: "Waiting"
-                });
-            }
+            // ALWAYS start a new track for a new dispensing batch, 
+            // unless a specific track was explicitly selected to be fulfilled.
+            await supabaseAdmin.from("dispensing_due_tracks").insert({
+                patient_id: data.patient_id,
+                source_transaction_id: tx.id,
+                last_dispensing_date: effectiveDate,
+                next_due_date: addDays(effectiveDate, 28),
+                status: "Waiting"
+            });
         }
     }
 
