@@ -16,16 +16,17 @@ import { toast } from "sonner";
 export function statusMeta(row: PatientStatusRow) {
   if (row.review_status === "needs_review")
     return { key: "review", label: "يحتاج مراجعة", color: "bg-warning text-warning-foreground" };
-  if (row.current_cycle_status === "Partial")
-    return { key: "partial", label: "صرف جزئي", color: "bg-info text-info-foreground" };
+  
   if (row.remaining_days !== null) {
     if (row.remaining_days < 0)
       return { key: "overdue", label: "متأخر", color: "bg-destructive text-destructive-foreground" };
     if (row.remaining_days <= 3)
       return { key: "due", label: "قريب الاستحقاق", color: "bg-warning text-warning-foreground" };
   }
+  
   if (row.current_cycle_status === "Waiting")
     return { key: "waiting", label: "بانتظار الصرف", color: "bg-success text-success-foreground" };
+  
   return { key: "ok", label: "مكتمل", color: "bg-secondary text-secondary-foreground" };
 }
 
@@ -80,28 +81,41 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
     }
   };
 
-  const daysNode = row.remaining_days !== null ? (
+  const daysNode = row.tracks && row.tracks.length > 0 ? (
     <div className="mt-2 space-y-1">
-      {row.remaining_days < 0 ? (
-        <div className="flex items-center gap-1.5 text-red-700 dark:text-red-400 font-extrabold text-base">
-          <AlertTriangle className="h-4 w-4" />
-          متأخر {Math.abs(row.remaining_days)} {Math.abs(row.remaining_days) === 1 ? "يوم" : "أيام"}
-        </div>
-      ) : row.remaining_days <= 3 ? (
-        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-extrabold text-base">
-          <Clock className="h-4 w-4" />
-          متبقي {row.remaining_days} {row.remaining_days === 1 ? "يوم" : "أيام"}
-        </div>
-      ) : (
-        <div className="flex items-center gap-1.5 text-foreground font-bold text-sm">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          متبقي {row.remaining_days} يوم
-        </div>
-      )}
-      {row.active_tracks_count > 1 && (
-        <div className="text-[11px] text-muted-foreground font-medium pr-6">
-          +{row.active_tracks_count - 1} مواعيد استحقاق أخرى
-        </div>
+      {row.tracks.slice(0, 2).map((track, i) => {
+        const days = track.remaining_days;
+        let colorClass = "text-emerald-700 dark:text-emerald-400"; // Default green/turquoise
+        let fontClass = "font-extrabold text-sm";
+        
+        if (days < 0) {
+          colorClass = "text-red-700 dark:text-red-500";
+          fontClass = "font-extrabold text-base";
+        } else if (days === 0) {
+          colorClass = "text-green-800 dark:text-green-600";
+          fontClass = "font-extrabold text-base";
+        }
+
+        return (
+          <div key={i} className={`flex items-center gap-1.5 ${colorClass} ${fontClass}`}>
+            <Clock className="h-4 w-4 shrink-0" />
+            <span>
+              {days === 0 ? "مستحق اليوم" : 
+               days < 0 ? `متأخر ${Math.abs(days)} ${Math.abs(days) === 1 ? "يوم" : "أيام"}` :
+               `متبقي ${days} ${days === 1 ? "يوم" : "يومًا"}`}
+            </span>
+          </div>
+        );
+      })}
+      {row.active_tracks_count > 2 && (
+        <Link 
+          to="/patients/$id" 
+          params={{ id: row.patient_id }}
+          onClick={(e) => e.stopPropagation()}
+          className="block text-[11px] text-muted-foreground font-medium pr-6 hover:underline"
+        >
+          +{row.active_tracks_count - 2} مواعيد أخرى
+        </Link>
       )}
     </div>
   ) : null;
@@ -147,7 +161,14 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
               )}
               {daysNode}
             </div>
-            <Badge className={`${meta.color} border-0`}>{meta.label}</Badge>
+            <div className="flex flex-col gap-1 items-end">
+              <Badge className={`${meta.color} border-0`}>{meta.label}</Badge>
+              {isPartial && (
+                <Badge variant="outline" className="text-[10px] border-info text-info">
+                  صرف جزئي
+                </Badge>
+              )}
+            </div>
           </div>
         </Link>
 
