@@ -19,6 +19,7 @@ export const Route = createFileRoute("/patients/")({
 
 type Filter =
   | "all"
+  | "nearest"
   | "favorite"
   | "overdue"
   | "partial"
@@ -29,6 +30,7 @@ type Filter =
 
 const CHIPS: { k: Filter; label: string }[] = [
   { k: "all", label: "الكل" },
+  { k: "nearest", label: "الأقرب" },
   { k: "favorite", label: "المفضلة" },
   { k: "overdue", label: "متأخر" },
   { k: "partial", label: "صرف جزئي" },
@@ -43,7 +45,7 @@ const PAGE_SIZE = 100;
 function List() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("nearest");
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   // Any change to search or filter resets pagination
@@ -68,6 +70,8 @@ function List() {
       switch (filter) {
         case "all":
           return true;
+        case "nearest":
+          return r.remaining_days !== null && r.remaining_days >= 0 && r.remaining_days <= 28;
         case "favorite":
           return !!r.is_favorite;
         case "overdue":
