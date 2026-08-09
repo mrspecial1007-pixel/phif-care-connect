@@ -426,6 +426,7 @@ export type Database = {
           phone: string | null
           remaining_days: number | null
           review_status: Database["public"]["Enums"]["review_status"] | null
+          tracks: Json | null
         }
         Relationships: [
           {
