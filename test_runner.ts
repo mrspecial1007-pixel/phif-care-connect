@@ -29,7 +29,7 @@ async function runTest() {
       // Manual implementation of recordDispensing logic to verify it works as intended
       const { data: tx } = await supabaseAdmin.from("dispensing_transactions").insert({
           patient_id: patientId,
-          pharmacy_id: "77777777-7777-7777-7777-777777777777",
+          pharmacy_id: "11111111-1111-1111-1111-111111111111",
           transaction_type: type,
           dispensing_date: `${date}T12:00:00Z`,
           cycle_id: '00000000-0000-0000-0000-000000000000'
