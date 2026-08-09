@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { useActivityLogs } from "@/lib/queries";
+import { useActivityLogs, ActivityLog } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { 
   UserPlus, 
@@ -57,7 +57,7 @@ function ActivityPage() {
   const { data: logs, isLoading } = useActivityLogs();
   const [filter, setFilter] = useState<string>("all");
 
-  const filteredLogs = logs?.filter(log => {
+  const filteredLogs = logs?.filter((log: ActivityLog) => {
     if (filter === "all") return true;
     if (filter === "dispensing") return log.action_type.includes("صرف");
     if (filter === "communication") return log.action_type.includes("اتصال") || log.action_type.includes("WhatsApp") || log.action_type.includes("SMS");
@@ -88,7 +88,7 @@ function ActivityPage() {
         ) : filteredLogs?.length === 0 ? (
           <div className="text-center py-10 text-muted-foreground">لا يوجد نشاط مسجل</div>
         ) : (
-          filteredLogs?.map((log) => (
+          filteredLogs?.map((log: ActivityLog) => (
             <Card key={log.id} className="p-4 border-r-4 border-r-primary/20">
               <div className="flex gap-3">
                 <div className="mt-1 p-2 bg-muted rounded-full shrink-0">

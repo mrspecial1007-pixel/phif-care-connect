@@ -107,3 +107,92 @@ export function usePatientCycles(id: string | undefined) {
     },
   });
 }
+
+export type ActivityLog = {
+  id: string;
+  created_at: string;
+  pharmacy_id: string;
+  pharmacy_name: string;
+  action_type: string;
+  details: any;
+};
+
+export function useActivityLogs() {
+  return useQuery({
+    queryKey: ["activity_logs"],
+    queryFn: async (): Promise<ActivityLog[]> => {
+      const { data, error } = await supabase
+        .from("audit_log")
+        .select(`
+          id, 
+          created_at, 
+          pharmacy_id, 
+          action_type, 
+          details,
+          pharmacies:pharmacy_id(name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data || []).map((d: any) => ({
+        ...d,
+        pharmacy_name: d.pharmacies?.name || "صيدلية غير معروفة",
+      }));
+    },
+  });
+}
+
+export function usePatientDetail(id: string) {
+  return useQuery({
+    queryKey: ["patient_detail", id],
+    queryFn: async (): Promise<PatientStatusRow | null> => {
+      const { data, error } = await supabase
+        .from("v_patient_status" as never)
+        .select("*")
+        .eq("patient_id", id)
+        .maybeSingle();
+      if (error) throw error;
+      return data as PatientStatusRow;
+    },
+  });
+}
+
+export function usePatientTimeline(id: string) {
+  return useQuery({
+    queryKey: ["patient_timeline", id],
+    queryFn: async () => {
+      const [{ data: trans }, { data: comms }] = await Promise.all([
+        supabase
+          .from("dispensing_transactions")
+          .select("id, created_at, dispensing_date, transaction_type, pharmacies(name), notes")
+          .eq("patient_id", id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("communication_logs")
+          .select("id, created_at, channel, action_type, pharmacies(name)")
+          .eq("patient_id", id)
+          .order("created_at", { ascending: false }),
+      ]);
+      
+      const events = [
+        ...(trans || []).map(t => ({
+          id: t.id,
+          date: t.created_at,
+          type: "dispense",
+          title: t.transaction_type === "Full" ? "صرف كامل" : "صرف جزئي",
+          pharmacy: t.pharmacies?.name,
+          details: t.notes
+        })),
+        ...(comms || []).map(c => ({
+          id: c.id,
+          date: c.created_at,
+          type: "comm",
+          title: c.action_type,
+          pharmacy: c.pharmacies?.name
+        }))
+      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      return events;
+    }
+  });
+}
