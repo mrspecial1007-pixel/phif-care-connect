@@ -412,6 +412,7 @@ export type Database = {
       v_patient_status: {
         Row: {
           active_tracks_count: number | null
+          current_cycle_status: string | null
           insurance_card_number: string | null
           is_favorite: boolean | null
           is_shared: boolean | null
