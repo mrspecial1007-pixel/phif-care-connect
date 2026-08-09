@@ -329,7 +329,7 @@ function Detail() {
             patient_name: patient.patient_name,
             phone: patient.phone,
             remaining_days: status?.remaining_days,
-            current_cycle_status: status?.current_cycle_status as any,
+            current_cycle_status: "Waiting",
           }}
           pharmacy={session?.unlocked ? { 
             id: session.pharmacy.id, 
