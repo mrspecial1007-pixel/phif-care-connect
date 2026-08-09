@@ -15,11 +15,11 @@ async function runTest() {
   const patientId = p!.id;
   console.log("Patient created:", patientId);
 
-  // Use started_at instead of start_date
+  // Use status 'Waiting'
   const { data: cycle, error: cErr } = await supabaseAdmin.from("dispensing_cycles").insert({
     patient_id: patientId,
     started_at: new Date().toISOString().slice(0, 10),
-    status: "Active"
+    status: "Waiting"
   }).select("id").single();
   
   if (cErr) throw cErr;
