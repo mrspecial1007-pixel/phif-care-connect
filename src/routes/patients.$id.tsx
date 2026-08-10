@@ -471,9 +471,10 @@ function Detail() {
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="ghost" onClick={() => setSuspendOpen(false)}>إلغاء</Button>
             <Button 
-              variant="warning" 
+              variant="outline" 
               onClick={() => handleSuspension(true)} 
               disabled={suspendLoading}
+              className="text-warning border-warning hover:bg-warning/10"
             >
               {suspendLoading ? "جاري التعليق..." : "تعليق المتابعة"}
             </Button>
@@ -509,11 +510,7 @@ function Detail() {
           open={editDispenseOpen}
           onOpenChange={setEditDispenseOpen}
           transaction={selectedTx}
-          onSuccess={() => {
-            qc.invalidateQueries({ queryKey: ["patient_history", id] });
-            qc.invalidateQueries({ queryKey: ["patient_due_tracks", id] });
-            qc.invalidateQueries({ queryKey: ["patient_status"] });
-          }}
+          patientId={id}
         />
       )}
     </div>
