@@ -110,6 +110,23 @@ export const recordDispensing = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!patient) return { ok: false as const, error: "patient_not_found" };
 
+    // 1. Determine stream_id if we are fulfilling a track
+    let stream_id: string | null = null;
+    if (data.track_id) {
+        const { data: track } = await supabaseAdmin
+            .from("dispensing_due_tracks")
+            .select("stream_id")
+            .eq("id", data.track_id)
+            .maybeSingle();
+        if (track) stream_id = track.stream_id;
+    }
+
+    // 2. If it's a new Partial/Remaining that doesn't fulfill a track, it starts its own stream
+    // We'll generate a UUID for it.
+    if (!stream_id && (data.transaction_type === "Partial" || data.transaction_type === "Remaining")) {
+        stream_id = crypto.randomUUID();
+    }
+
     // Record the transaction
     const { data: tx, error: tErr } = await supabaseAdmin
       .from("dispensing_transactions")
@@ -122,48 +139,15 @@ export const recordDispensing = createServerFn({ method: "POST" })
         dispensing_date: `${effectiveDate}T12:00:00Z`,
         idempotency_key: data.idempotency_key ?? null,
         cycle_id: '00000000-0000-0000-0000-000000000000', // Dummy for legacy FK if exists
+        stream_id: stream_id,
       })
       .select("id")
       .single();
     if (tErr || !tx) return { ok: false as const, error: "tx_insert_failed" };
 
-    // Update or Create Track
-    // 1. If we have a track_id, it means we are fulfilling an existing requirement.
-    // 2. If it's Partial, we start a NEW track for the dispensed items.
-    // 3. If it's Completed, we either update the chosen track OR create a new one if none was chosen.
+    // Recalculate tracks will handle updating/creating the due tracks based on this new transaction
+    // and its stream_id. No need to manually insert into dispensing_due_tracks here anymore.
 
-    if (data.transaction_type === "Partial") {
-        // Partial: This creates a new track starting today.
-        // It does NOT fulfill an existing track (or maybe it fulfills one and leaves others?)
-        // The rule says: "Every dispensing creates a track".
-        await supabaseAdmin.from("dispensing_due_tracks").insert({
-            patient_id: data.patient_id,
-            source_transaction_id: tx.id,
-            last_dispensing_date: effectiveDate,
-            next_due_date: addDays(effectiveDate, 28),
-            status: "Waiting"
-        });
-    } else if (data.transaction_type === "Completed" || data.transaction_type === "Remaining") {
-        if (data.track_id) {
-            // Fulfilling a specific track
-            await supabaseAdmin.from("dispensing_due_tracks").update({
-                last_dispensing_date: effectiveDate,
-                next_due_date: addDays(effectiveDate, 28),
-                source_transaction_id: tx.id,
-                status: "Waiting"
-            }).eq("id", data.track_id);
-        } else {
-            // ALWAYS start a new track for a new dispensing batch, 
-            // unless a specific track was explicitly selected to be fulfilled.
-            await supabaseAdmin.from("dispensing_due_tracks").insert({
-                patient_id: data.patient_id,
-                source_transaction_id: tx.id,
-                last_dispensing_date: effectiveDate,
-                next_due_date: addDays(effectiveDate, 28),
-                status: "Waiting"
-            });
-        }
-    }
 
     await writeAudit({
       pharmacy_id,
