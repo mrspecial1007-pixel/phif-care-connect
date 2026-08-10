@@ -447,6 +447,75 @@ function Detail() {
           } : undefined}
         />
       )}
+
+      {/* Suspend Follow-up Dialog */}
+      <Dialog open={suspendOpen} onOpenChange={setSuspendOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>تعليق متابعة المستفيد</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="suspend-reason">سبب تعليق المتابعة (اختياري)</Label>
+              <Input
+                id="suspend-reason"
+                placeholder="مثال: يصرف حالياً من صيدلية أخرى"
+                value={suspendReason}
+                onChange={(e) => setSuspendReason(e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              سيتم استبعاد المستفيد من قوائم المتابعة اليومية والإحصائيات، مع الاحتفاظ بكافة بياناته وسجله التاريخي.
+            </p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setSuspendOpen(false)}>إلغاء</Button>
+            <Button 
+              variant="warning" 
+              onClick={() => handleSuspension(true)} 
+              disabled={suspendLoading}
+            >
+              {suspendLoading ? "جاري التعليق..." : "تعليق المتابعة"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>حذف المستفيد</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-3 text-destructive">
+              <AlertTriangle className="h-6 w-6" />
+              <p className="font-semibold text-sm">سيتم حذف المستفيد وبياناته المرتبطة. هل أنت متأكد؟</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              هذا الإجراء سيقوم بأرشفة بيانات المستفيد، ولن يظهر في القوائم النشطة.
+            </p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setArchiveConfirmOpen(false)}>إلغاء</Button>
+            <Button variant="destructive" onClick={handleArchive} disabled={archiveLoading}>
+              {archiveLoading ? "جاري الحذف..." : "نعم، متأكد"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {selectedTx && (
+        <EditDispenseDialog
+          open={editDispenseOpen}
+          onOpenChange={setEditDispenseOpen}
+          transaction={selectedTx}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ["patient_history", id] });
+            qc.invalidateQueries({ queryKey: ["patient_due_tracks", id] });
+            qc.invalidateQueries({ queryKey: ["patient_status"] });
+          }}
+        />
+      )}
     </div>
   );
 }
