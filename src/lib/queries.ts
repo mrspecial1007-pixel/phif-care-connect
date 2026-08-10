@@ -150,7 +150,7 @@ export function useDispensingTransactions(options: {
           created_at,
           pharmacy_id,
           is_cancelled,
-          patients(patient_name, insurance_card_number),
+          patients(patient_name, insurance_card_number, national_id),
           pharmacies!dispensing_transactions_pharmacy_id_fkey(name)
         `)
         .order("dispensing_date", { ascending: false })
