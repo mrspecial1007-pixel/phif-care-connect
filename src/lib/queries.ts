@@ -85,7 +85,7 @@ export function usePatientHistory(id: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("dispensing_transactions")
-        .select("id, dispensing_date, transaction_type, items_dispensed, notes, pharmacy_id, cycle_id, pharmacies(name)")
+        .select("id, dispensing_date, transaction_type, items_dispensed, notes, pharmacy_id, cycle_id, pharmacies!dispensing_transactions_pharmacy_id_fkey(name)")
         .eq("patient_id", id!)
         .order("dispensing_date", { ascending: false })
         .limit(200);
@@ -149,8 +149,9 @@ export function useDispensingTransactions(options: {
           dispensing_date,
           created_at,
           pharmacy_id,
+          is_cancelled,
           patients(patient_name, insurance_card_number),
-          pharmacies(name)
+          pharmacies!dispensing_transactions_pharmacy_id_fkey(name)
         `)
         .order("dispensing_date", { ascending: false })
         .order("created_at", { ascending: false });
@@ -220,7 +221,7 @@ export function useActivityLogs() {
           pharmacy_id, 
           action_type, 
           details,
-          pharmacies:pharmacy_id(name)
+          pharmacies:pharmacy_id!audit_log_pharmacy_id_fkey(name)
         `)
         .order("created_at", { ascending: false })
         .limit(100);
@@ -255,12 +256,12 @@ export function usePatientTimeline(id: string) {
       const [{ data: trans }, { data: comms }] = await Promise.all([
         supabase
           .from("dispensing_transactions")
-          .select("id, created_at, dispensing_date, transaction_type, pharmacies(name), notes")
+          .select("id, created_at, dispensing_date, transaction_type, pharmacies!dispensing_transactions_pharmacy_id_fkey(name), notes")
           .eq("patient_id", id)
           .order("created_at", { ascending: false }),
         supabase
           .from("communication_logs")
-          .select("id, created_at, channel, action_type, pharmacies(name)")
+          .select("id, created_at, channel, action_type, pharmacies!communication_logs_pharmacy_id_fkey(name)")
           .eq("patient_id", id)
           .order("created_at", { ascending: false }),
       ]);
