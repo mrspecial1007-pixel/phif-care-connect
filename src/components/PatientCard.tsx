@@ -14,6 +14,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 export function statusMeta(row: PatientStatusRow) {
+  if (row.is_follow_up_suspended)
+    return { key: "suspended", label: "متابعة معلقة", color: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400" };
+
   if (row.review_status === "needs_review")
     return { key: "review", label: "يحتاج مراجعة", color: "bg-warning text-warning-foreground" };
   
@@ -37,6 +40,7 @@ function borderTone(key: string) {
     case "partial": return "border-r-info";
     case "review": return "border-r-warning";
     case "waiting": return "border-r-success";
+    case "suspended": return "border-r-slate-300";
     default: return "border-r-border";
   }
 }
