@@ -125,6 +125,8 @@ export type DispensingTransactionRow = {
   notes: string | null;
   dispensing_date: string;
   created_at: string;
+  is_cancelled?: boolean;
+  cancellation_reason?: string | null;
 };
 
 export function useDispensingTransactions(options: {
@@ -185,6 +187,8 @@ export function useDispensingTransactions(options: {
         notes: d.notes,
         dispensing_date: d.dispensing_date,
         created_at: d.created_at,
+        is_cancelled: d.is_cancelled,
+        cancellation_reason: d.cancellation_reason,
       }));
 
       if (options.search) {
@@ -256,7 +260,7 @@ export function usePatientTimeline(id: string) {
       const [{ data: trans }, { data: comms }] = await Promise.all([
         supabase
           .from("dispensing_transactions")
-          .select("id, created_at, dispensing_date, transaction_type, pharmacies!dispensing_transactions_pharmacy_id_fkey(name), notes")
+          .select("id, created_at, dispensing_date, transaction_type, pharmacies!dispensing_transactions_pharmacy_id_fkey(name), notes, is_cancelled, cancellation_reason")
           .eq("patient_id", id)
           .order("created_at", { ascending: false }),
         supabase
@@ -271,9 +275,10 @@ export function usePatientTimeline(id: string) {
           id: t.id,
           date: t.created_at,
           type: "dispense",
-          title: t.transaction_type === "Completed" ? "صرف كامل" : "صرف جزئي",
+          title: t.is_cancelled ? "ملغاة" : (t.transaction_type === "Completed" ? "صرف كامل" : "صرف جزئي"),
           pharmacy: t.pharmacies?.name,
-          details: t.notes
+          details: t.is_cancelled ? `[ملغاة: ${t.cancellation_reason}] ${t.notes || ""}` : t.notes,
+          is_cancelled: t.is_cancelled
         })),
         ...(comms || []).map(c => ({
           id: c.id,
