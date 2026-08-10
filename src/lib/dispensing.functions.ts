@@ -289,9 +289,8 @@ export const importExcelRows = createServerFn({ method: "POST" })
         created++;
       }
 
-      // Add dispensing history as transactions and tracks
-      // For each date, create a transaction and a track.
-      // If dates are within 28 days, they result in separate tracks.
+      // Add dispensing history as transactions.
+      // Recalculate will collapse historical transactions into one track.
       for (const dt of row.dispensing_dates) {
         const clean = dt?.slice(0, 10);
         if (!clean) continue;
@@ -304,17 +303,11 @@ export const importExcelRows = createServerFn({ method: "POST" })
           cycle_id: '00000000-0000-0000-0000-000000000000',
         }).select("id").single();
         
-        if (tx) {
-            await supabaseAdmin.from("dispensing_due_tracks").insert({
-                patient_id: patientId,
-                source_transaction_id: tx.id,
-                last_dispensing_date: clean,
-                next_due_date: addDays(clean, 28),
-                status: "Waiting"
-            });
-            txAdded++;
-        }
+        if (tx) txAdded++;
       }
+      
+      // Sync tracks for this patient
+      await recalculateTracks(patientId, supabaseAdmin);
     }
 
     await writeAudit({
