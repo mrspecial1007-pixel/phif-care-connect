@@ -8,13 +8,15 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { unlockPharmacy } from "@/lib/auth.functions";
 import { usePharmacies } from "@/lib/queries";
-import { Pill, Lock } from "lucide-react";
+import { Pill, Lock, CheckCircle2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export function UnlockScreen() {
   const { data: pharmacies, isLoading } = usePharmacies();
   const [pharmacyId, setPharmacyId] = useState<string>("");
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(true);
   const qc = useQueryClient();
   const unlock = useServerFn(unlockPharmacy);
 
@@ -24,7 +26,7 @@ export function UnlockScreen() {
     if (!selected) return;
     setBusy(true);
     try {
-      const res = await unlock({ data: { pharmacy_id: selected, pin } });
+      const res = await unlock({ data: { pharmacy_id: selected, pin, remember } });
       if (!res.ok) {
         if (res.error === "invalid_pin") toast.error("رمز PIN غير صحيح");
         else if (res.error === "too_many_attempts") toast.error("محاولات كثيرة، انتظر دقيقة");
@@ -86,6 +88,15 @@ export function UnlockScreen() {
               maxLength={20}
               required
             />
+          </div>
+
+          <div className="flex items-center space-x-2 space-x-reverse py-2">
+            <Checkbox 
+              id="remember" 
+              checked={remember} 
+              onCheckedChange={(checked) => setRemember(checked === true)}
+            />
+            <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">تذكرني (ابقِ الجلسة مفتوحة)</Label>
           </div>
 
           <Button type="submit" className="w-full h-12 text-base" disabled={busy || !pin}>
