@@ -416,6 +416,8 @@ export function RemainingConfirmDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState("");
+  const { data: dueTracks } = usePatientDueTracks(patientId);
+  const [selectedTrackId, setSelectedTrackId] = useState<string>("");
   const qc = useQueryClient();
   const dispense = useServerFn(recordDispensing);
 
@@ -424,8 +426,9 @@ export function RemainingConfirmDialog({
       setIdempotencyKey(
         typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
       );
+      setSelectedTrackId(dueTracks?.[0]?.id ?? "");
     }
-  }, [open]);
+  }, [open, dueTracks]);
 
   async function confirmYes() {
     setBusy(true);
@@ -437,13 +440,14 @@ export function RemainingConfirmDialog({
           pharmacy_id: defaultPharmacyId,
           dispensing_date: todayISO(),
           idempotency_key: idempotencyKey,
+          track_id: selectedTrackId || null,
         },
       });
       if (!res.ok) {
         toast.error("تعذر تسجيل الصرف");
         return;
       }
-      toast.success("تم إكمال الصرف وبدء دورة جديدة");
+      toast.success("تم تسجيل صرف متبقي وبدء دورة مستقلة");
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["patient_history", patientId] }),
         qc.invalidateQueries({ queryKey: ["patient_due_tracks", patientId] }),
@@ -459,11 +463,33 @@ export function RemainingConfirmDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>هل تم الآن صرف باقي الأصناف؟</AlertDialogTitle>
+          <AlertDialogTitle>تأكيد صرف متبقي</AlertDialogTitle>
           <AlertDialogDescription>
-            عند التأكيد يكتمل الصرف وتبدأ دورة الـ28 يوماً القادمة.
+            {dueTracks && dueTracks.length > 1 ? "اختر الموعد الذي تريد صرف المتبقي له. سيؤدي هذا لبدء دورة استحقاق مستقلة لهذا الجزء." : "سيؤدي هذا لبدء دورة استحقاق مستقلة لهذا الجزء المتبقي."}
           </AlertDialogDescription>
         </AlertDialogHeader>
+        
+        {dueTracks && dueTracks.length > 1 && (
+          <div className="space-y-2 py-2">
+            <Label className="text-right block mb-2">اختر موعد الصرف المعني:</Label>
+            {dueTracks.map((track) => (
+              <button
+                key={track.id}
+                type="button"
+                onClick={() => setSelectedTrackId(track.id)}
+                className={`w-full rounded-lg border p-3 text-sm text-right transition flex items-center justify-between ${
+                  selectedTrackId === track.id
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/40"
+                }`}
+              >
+                <span>مستحق في {track.next_due_date}</span>
+                {selectedTrackId === track.id && <Check className="h-4 w-4" />}
+              </button>
+            ))}
+          </div>
+        )}
+
         <AlertDialogFooter className="gap-2">
           <AlertDialogCancel disabled={busy}>لا</AlertDialogCancel>
           <AlertDialogAction onClick={confirmYes} disabled={busy}>

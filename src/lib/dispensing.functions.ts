@@ -5,52 +5,50 @@ async function recalculateTracks(patientId: string, supabase: any) {
   // 1. Get all non-cancelled transactions for patient
   const { data: transactions } = await supabase
     .from("dispensing_transactions")
-    .select("id, dispensing_date, transaction_type")
+    .select("id, dispensing_date, transaction_type, created_at, stream_id")
     .eq("patient_id", patientId)
     .eq("is_cancelled", false)
     .order("dispensing_date", { ascending: true });
 
-  // 2. Clear current tracks
-  await supabase.from("dispensing_due_tracks").delete().eq("patient_id", patientId);
+  if (!transactions || transactions.length === 0) {
+    await supabase.from("dispensing_due_tracks").delete().eq("patient_id", patientId);
+    return;
+  }
 
-  if (!transactions) return;
-
-  // 3. Simple chronological track builder (re-using logic from prompt)
-  // For each transaction, if it fits an existing track (within some window), renew it.
-  // Otherwise, start a new one.
-  const tracks: { lastDate: string; nextDue: string; sourceId: string }[] = [];
+  const HISTORICAL_CUTOFF = "2026-08-09T23:59:59Z";
+  const BASELINE_KEY = "baseline";
+  const streams = new Map<string, any>();
 
   for (const tx of transactions) {
-    const txDate = tx.dispensing_date.slice(0, 10);
-    // Find a track that is "waiting" for renewal near this date (within 14 days of its next_due)
-    let matchedIdx = -1;
-    for (let i = 0; i < tracks.length; i++) {
-        const diff = Math.abs((new Date(txDate).getTime() - new Date(tracks[i].nextDue).getTime()) / (1000 * 60 * 60 * 24));
-        if (diff <= 14) {
-            matchedIdx = i;
-            break;
-        }
+    const isHistorical = tx.created_at <= HISTORICAL_CUTOFF;
+    let streamKey = tx.stream_id || BASELINE_KEY;
+
+    if (isHistorical) {
+      streamKey = BASELINE_KEY;
+    } else if (!tx.stream_id && (tx.transaction_type === "Partial" || tx.transaction_type === "Remaining")) {
+      // If it's a live multi-track tx that somehow doesn't have a stream_id yet,
+      // it effectively starts its own stream.
+      streamKey = tx.id;
     }
 
-    const nextDue = addDays(txDate, 28);
-    if (matchedIdx !== -1) {
-        tracks[matchedIdx] = { lastDate: txDate, nextDue, sourceId: tx.id };
-    } else {
-        tracks.push({ lastDate: txDate, nextDue, sourceId: tx.id });
+    const current = streams.get(streamKey);
+    if (!current || new Date(tx.dispensing_date) >= new Date(current.dispensing_date)) {
+      streams.set(streamKey, { ...tx, streamKey });
     }
   }
 
-  // 4. Insert resulting tracks
-  if (tracks.length > 0) {
-      await supabase.from("dispensing_due_tracks").insert(
-          tracks.map(t => ({
-              patient_id: patientId,
-              source_transaction_id: t.sourceId,
-              last_dispensing_date: t.lastDate,
-              next_due_date: t.nextDue,
-              status: "Waiting"
-          }))
-      );
+  const tracksToInsert = Array.from(streams.values()).map(tx => ({
+    patient_id: patientId,
+    source_transaction_id: tx.id,
+    stream_id: tx.streamKey === BASELINE_KEY ? null : tx.streamKey,
+    last_dispensing_date: tx.dispensing_date.slice(0, 10),
+    next_due_date: addDays(tx.dispensing_date.slice(0, 10), 28),
+    status: "Waiting"
+  }));
+
+  await supabase.from("dispensing_due_tracks").delete().eq("patient_id", patientId);
+  if (tracksToInsert.length > 0) {
+    await supabase.from("dispensing_due_tracks").insert(tracksToInsert);
   }
 }
 
@@ -112,6 +110,23 @@ export const recordDispensing = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!patient) return { ok: false as const, error: "patient_not_found" };
 
+    // 1. Determine stream_id if we are fulfilling a track
+    let stream_id: string | null = null;
+    if (data.track_id) {
+        const { data: track } = await supabaseAdmin
+            .from("dispensing_due_tracks")
+            .select("stream_id")
+            .eq("id", data.track_id)
+            .maybeSingle();
+        if (track) stream_id = track.stream_id;
+    }
+
+    // 2. If it's a new Partial/Remaining that doesn't fulfill a track, it starts its own stream
+    // We'll generate a UUID for it.
+    if (!stream_id && (data.transaction_type === "Partial" || data.transaction_type === "Remaining")) {
+        stream_id = crypto.randomUUID();
+    }
+
     // Record the transaction
     const { data: tx, error: tErr } = await supabaseAdmin
       .from("dispensing_transactions")
@@ -124,48 +139,15 @@ export const recordDispensing = createServerFn({ method: "POST" })
         dispensing_date: `${effectiveDate}T12:00:00Z`,
         idempotency_key: data.idempotency_key ?? null,
         cycle_id: '00000000-0000-0000-0000-000000000000', // Dummy for legacy FK if exists
+        stream_id: stream_id,
       })
       .select("id")
       .single();
     if (tErr || !tx) return { ok: false as const, error: "tx_insert_failed" };
 
-    // Update or Create Track
-    // 1. If we have a track_id, it means we are fulfilling an existing requirement.
-    // 2. If it's Partial, we start a NEW track for the dispensed items.
-    // 3. If it's Completed, we either update the chosen track OR create a new one if none was chosen.
+    // Recalculate tracks will handle updating/creating the due tracks based on this new transaction
+    // and its stream_id. No need to manually insert into dispensing_due_tracks here anymore.
 
-    if (data.transaction_type === "Partial") {
-        // Partial: This creates a new track starting today.
-        // It does NOT fulfill an existing track (or maybe it fulfills one and leaves others?)
-        // The rule says: "Every dispensing creates a track".
-        await supabaseAdmin.from("dispensing_due_tracks").insert({
-            patient_id: data.patient_id,
-            source_transaction_id: tx.id,
-            last_dispensing_date: effectiveDate,
-            next_due_date: addDays(effectiveDate, 28),
-            status: "Waiting"
-        });
-    } else if (data.transaction_type === "Completed" || data.transaction_type === "Remaining") {
-        if (data.track_id) {
-            // Fulfilling a specific track
-            await supabaseAdmin.from("dispensing_due_tracks").update({
-                last_dispensing_date: effectiveDate,
-                next_due_date: addDays(effectiveDate, 28),
-                source_transaction_id: tx.id,
-                status: "Waiting"
-            }).eq("id", data.track_id);
-        } else {
-            // ALWAYS start a new track for a new dispensing batch, 
-            // unless a specific track was explicitly selected to be fulfilled.
-            await supabaseAdmin.from("dispensing_due_tracks").insert({
-                patient_id: data.patient_id,
-                source_transaction_id: tx.id,
-                last_dispensing_date: effectiveDate,
-                next_due_date: addDays(effectiveDate, 28),
-                status: "Waiting"
-            });
-        }
-    }
 
     await writeAudit({
       pharmacy_id,
@@ -307,9 +289,8 @@ export const importExcelRows = createServerFn({ method: "POST" })
         created++;
       }
 
-      // Add dispensing history as transactions and tracks
-      // For each date, create a transaction and a track.
-      // If dates are within 28 days, they result in separate tracks.
+      // Add dispensing history as transactions.
+      // Recalculate will collapse historical transactions into one track.
       for (const dt of row.dispensing_dates) {
         const clean = dt?.slice(0, 10);
         if (!clean) continue;
@@ -322,17 +303,11 @@ export const importExcelRows = createServerFn({ method: "POST" })
           cycle_id: '00000000-0000-0000-0000-000000000000',
         }).select("id").single();
         
-        if (tx) {
-            await supabaseAdmin.from("dispensing_due_tracks").insert({
-                patient_id: patientId,
-                source_transaction_id: tx.id,
-                last_dispensing_date: clean,
-                next_due_date: addDays(clean, 28),
-                status: "Waiting"
-            });
-            txAdded++;
-        }
+        if (tx) txAdded++;
       }
+      
+      // Sync tracks for this patient
+      await recalculateTracks(patientId, supabaseAdmin);
     }
 
     await writeAudit({

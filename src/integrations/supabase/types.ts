@@ -112,7 +112,7 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "communication_logs_pharmacy_id_fkey"
@@ -174,7 +174,7 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -187,6 +187,7 @@ export type Database = {
           patient_id: string
           source_transaction_id: string | null
           status: Database["public"]["Enums"]["cycle_status"]
+          stream_id: string | null
           updated_at: string
         }
         Insert: {
@@ -197,6 +198,7 @@ export type Database = {
           patient_id: string
           source_transaction_id?: string | null
           status?: Database["public"]["Enums"]["cycle_status"]
+          stream_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -207,6 +209,7 @@ export type Database = {
           patient_id?: string
           source_transaction_id?: string | null
           status?: Database["public"]["Enums"]["cycle_status"]
+          stream_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -222,7 +225,7 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "dispensing_due_tracks_source_transaction_id_fkey"
@@ -249,6 +252,7 @@ export type Database = {
           notes: string | null
           patient_id: string
           pharmacy_id: string
+          stream_id: string | null
           transaction_type: Database["public"]["Enums"]["tx_type"]
         }
         Insert: {
@@ -266,6 +270,7 @@ export type Database = {
           notes?: string | null
           patient_id: string
           pharmacy_id: string
+          stream_id?: string | null
           transaction_type: Database["public"]["Enums"]["tx_type"]
         }
         Update: {
@@ -283,6 +288,7 @@ export type Database = {
           notes?: string | null
           patient_id?: string
           pharmacy_id?: string
+          stream_id?: string | null
           transaction_type?: Database["public"]["Enums"]["tx_type"]
         }
         Relationships: [
@@ -308,6 +314,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "dispensing_transactions_fulfilled_track_id_fkey"
+            columns: ["stream_id"]
+            isOneToOne: false
+            referencedRelation: "dispensing_due_tracks"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "dispensing_transactions_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
@@ -319,7 +332,7 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
@@ -417,7 +430,7 @@ export type Database = {
             columns: ["possible_duplicate_of"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -452,43 +465,66 @@ export type Database = {
     Views: {
       v_patient_status: {
         Row: {
-          active_tracks_count: number | null
           address: string | null
+          birth_date: string | null
+          follow_up_suspended_at: string | null
           follow_up_suspension_reason: string | null
+          gender: string | null
+          id: string | null
           insurance_card_number: string | null
           is_archived: boolean | null
           is_favorite: boolean | null
           is_follow_up_suspended: boolean | null
-          is_shared: boolean | null
-          last_dispensing_date: string | null
-          last_pharmacy_id: string | null
           last_pharmacy_name: string | null
           national_id: string | null
           next_due_date: string | null
-          patient_id: string | null
+          notes: string | null
           patient_name: string | null
-          pharmacy_count: number | null
+          patient_name_normalized: string | null
           phone: string | null
-          remaining_days: number | null
-          review_status: Database["public"]["Enums"]["review_status"] | null
           tracks: Json | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
-            columns: ["last_pharmacy_id"]
-            isOneToOne: false
-            referencedRelation: "pharmacies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
-            columns: ["last_pharmacy_id"]
-            isOneToOne: false
-            referencedRelation: "v_pharmacies"
-            referencedColumns: ["id"]
-          },
-        ]
+        Insert: {
+          address?: string | null
+          birth_date?: string | null
+          follow_up_suspended_at?: string | null
+          follow_up_suspension_reason?: string | null
+          gender?: string | null
+          id?: string | null
+          insurance_card_number?: string | null
+          is_archived?: boolean | null
+          is_favorite?: boolean | null
+          is_follow_up_suspended?: boolean | null
+          last_pharmacy_name?: never
+          national_id?: string | null
+          next_due_date?: never
+          notes?: string | null
+          patient_name?: string | null
+          patient_name_normalized?: string | null
+          phone?: string | null
+          tracks?: never
+        }
+        Update: {
+          address?: string | null
+          birth_date?: string | null
+          follow_up_suspended_at?: string | null
+          follow_up_suspension_reason?: string | null
+          gender?: string | null
+          id?: string | null
+          insurance_card_number?: string | null
+          is_archived?: boolean | null
+          is_favorite?: boolean | null
+          is_follow_up_suspended?: boolean | null
+          last_pharmacy_name?: never
+          national_id?: string | null
+          next_due_date?: never
+          notes?: string | null
+          patient_name?: string | null
+          patient_name_normalized?: string | null
+          phone?: string | null
+          tracks?: never
+        }
+        Relationships: []
       }
       v_pharmacies: {
         Row: {
