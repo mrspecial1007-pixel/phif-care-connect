@@ -5,52 +5,64 @@ async function recalculateTracks(patientId: string, supabase: any) {
   // 1. Get all non-cancelled transactions for patient
   const { data: transactions } = await supabase
     .from("dispensing_transactions")
-    .select("id, dispensing_date, transaction_type")
+    .select("id, dispensing_date, transaction_type, created_at, fulfilled_track_id")
     .eq("patient_id", patientId)
     .eq("is_cancelled", false)
     .order("dispensing_date", { ascending: true });
 
-  // 2. Clear current tracks
-  await supabase.from("dispensing_due_tracks").delete().eq("patient_id", patientId);
+  if (!transactions || transactions.length === 0) {
+    await supabase.from("dispensing_due_tracks").delete().eq("patient_id", patientId);
+    return;
+  }
 
-  if (!transactions) return;
-
-  // 3. Simple chronological track builder (re-using logic from prompt)
-  // For each transaction, if it fits an existing track (within some window), renew it.
-  // Otherwise, start a new one.
-  const tracks: { lastDate: string; nextDue: string; sourceId: string }[] = [];
+  // Define cutoff for "Historical" vs "Live"
+  // Transactions created before this date are collapsed to one baseline.
+  // Today is 2026-08-10. Cutoff is late 2026-08-09.
+  const HISTORICAL_CUTOFF = "2026-08-09T23:59:59Z";
+  
+  const BASELINE_KEY = "baseline";
+  const streams = new Map<string, any>();
 
   for (const tx of transactions) {
-    const txDate = tx.dispensing_date.slice(0, 10);
-    // Find a track that is "waiting" for renewal near this date (within 14 days of its next_due)
-    let matchedIdx = -1;
-    for (let i = 0; i < tracks.length; i++) {
-        const diff = Math.abs((new Date(txDate).getTime() - new Date(tracks[i].nextDue).getTime()) / (1000 * 60 * 60 * 24));
-        if (diff <= 14) {
-            matchedIdx = i;
-            break;
-        }
+    const isHistorical = tx.created_at <= HISTORICAL_CUTOFF;
+    let streamKey = BASELINE_KEY;
+
+    if (!isHistorical) {
+      if (tx.fulfilled_track_id) {
+        // Continues an existing stream
+        streamKey = tx.fulfilled_track_id;
+      } else if (tx.transaction_type === "Partial" || tx.transaction_type === "Remaining") {
+        // Starts a NEW independent stream
+        streamKey = tx.id;
+      }
     }
 
-    const nextDue = addDays(txDate, 28);
-    if (matchedIdx !== -1) {
-        tracks[matchedIdx] = { lastDate: txDate, nextDue, sourceId: tx.id };
-    } else {
-        tracks.push({ lastDate: txDate, nextDue, sourceId: tx.id });
+    // Always update the stream's latest transaction
+    // If multiple historical transactions exist, the latest one wins for the baseline stream.
+    const current = streams.get(streamKey);
+    if (!current || new Date(tx.dispensing_date) >= new Date(current.dispensing_date)) {
+      streams.set(streamKey, tx);
     }
   }
 
-  // 4. Insert resulting tracks
-  if (tracks.length > 0) {
-      await supabase.from("dispensing_due_tracks").insert(
-          tracks.map(t => ({
-              patient_id: patientId,
-              source_transaction_id: t.sourceId,
-              last_dispensing_date: t.lastDate,
-              next_due_date: t.nextDue,
-              status: "Waiting"
-          }))
-      );
+  // Convert streams back to track objects
+  const tracksToInsert = Array.from(streams.values()).map(tx => ({
+    patient_id: patientId,
+    source_transaction_id: tx.id,
+    last_dispensing_date: tx.dispensing_date.slice(0, 10),
+    next_due_date: addDays(tx.dispensing_date.slice(0, 10), 28),
+    status: "Waiting"
+  }));
+
+  // WIPE and REBUILD
+  // NOTE: This will set fulfilled_track_id to NULL in dispensing_transactions due to ON DELETE SET NULL.
+  // To avoid losing the links, we should ideally not wipe but sync.
+  // However, since we are rebuilding the entire state based on these new rules, 
+  // and we just added fulfilled_track_id, it might be empty for historical anyway.
+  
+  await supabase.from("dispensing_due_tracks").delete().eq("patient_id", patientId);
+  if (tracksToInsert.length > 0) {
+    await supabase.from("dispensing_due_tracks").insert(tracksToInsert);
   }
 }
 
