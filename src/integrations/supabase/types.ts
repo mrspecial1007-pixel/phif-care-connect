@@ -235,11 +235,15 @@ export type Database = {
       }
       dispensing_transactions: {
         Row: {
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
           created_at: string
           cycle_id: string
           dispensing_date: string
           id: string
           idempotency_key: string | null
+          is_cancelled: boolean | null
           items_dispensed: number | null
           items_remaining: number | null
           notes: string | null
@@ -248,11 +252,15 @@ export type Database = {
           transaction_type: Database["public"]["Enums"]["tx_type"]
         }
         Insert: {
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           created_at?: string
           cycle_id: string
           dispensing_date?: string
           id?: string
           idempotency_key?: string | null
+          is_cancelled?: boolean | null
           items_dispensed?: number | null
           items_remaining?: number | null
           notes?: string | null
@@ -261,11 +269,15 @@ export type Database = {
           transaction_type: Database["public"]["Enums"]["tx_type"]
         }
         Update: {
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           created_at?: string
           cycle_id?: string
           dispensing_date?: string
           id?: string
           idempotency_key?: string | null
+          is_cancelled?: boolean | null
           items_dispensed?: number | null
           items_remaining?: number | null
           notes?: string | null
@@ -274,6 +286,20 @@ export type Database = {
           transaction_type?: Database["public"]["Enums"]["tx_type"]
         }
         Relationships: [
+          {
+            foreignKeyName: "dispensing_transactions_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispensing_transactions_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "dispensing_transactions_cycle_id_fkey"
             columns: ["cycle_id"]
@@ -314,11 +340,13 @@ export type Database = {
       patients: {
         Row: {
           address: string | null
+          archived_at: string | null
           birth_date: string | null
           created_at: string
           gender: string | null
           id: string
           insurance_card_number: string | null
+          is_archived: boolean | null
           is_favorite: boolean | null
           national_id: string | null
           notes: string | null
@@ -331,11 +359,13 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          archived_at?: string | null
           birth_date?: string | null
           created_at?: string
           gender?: string | null
           id?: string
           insurance_card_number?: string | null
+          is_archived?: boolean | null
           is_favorite?: boolean | null
           national_id?: string | null
           notes?: string | null
@@ -348,11 +378,13 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          archived_at?: string | null
           birth_date?: string | null
           created_at?: string
           gender?: string | null
           id?: string
           insurance_card_number?: string | null
+          is_archived?: boolean | null
           is_favorite?: boolean | null
           national_id?: string | null
           notes?: string | null
@@ -412,8 +444,9 @@ export type Database = {
       v_patient_status: {
         Row: {
           active_tracks_count: number | null
-          current_cycle_status: string | null
+          address: string | null
           insurance_card_number: string | null
+          is_archived: boolean | null
           is_favorite: boolean | null
           is_shared: boolean | null
           last_dispensing_date: string | null

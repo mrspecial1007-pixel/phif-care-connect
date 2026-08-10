@@ -26,6 +26,7 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
   const [formData, setFormData] = useState({
     name: "",
     card: "",
+    nationalId: "",
     phone: "",
     address: "",
     hasHistory: "no",
@@ -52,6 +53,7 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
         data: {
           patient_name: formData.name,
           insurance_card_number: formData.card,
+          national_id: formData.nationalId || null,
           phone: formData.phone || null,
           address: formData.address || null,
         }
@@ -118,6 +120,10 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
             <div className="space-y-2">
               <Label>رقم البطاقة (إجباري - نص)</Label>
               <Input value={formData.card} onChange={e => setFormData({...formData, card: e.target.value})} placeholder="رقم البطاقة التأمينية" dir="ltr" />
+            </div>
+            <div className="space-y-2">
+              <Label>الرقم الوطني (اختياري)</Label>
+              <Input value={formData.nationalId} onChange={e => setFormData({...formData, nationalId: e.target.value})} placeholder="الرقم الوطني" dir="ltr" />
             </div>
             <div className="space-y-2">
               <Label>رقم الهاتف (اختياري)</Label>
@@ -187,6 +193,7 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
              <div className="bg-muted p-4 rounded-lg space-y-3 text-sm">
                 <ReviewItem label="الاسم" value={formData.name} />
                 <ReviewItem label="رقم البطاقة" value={formData.card} />
+                <ReviewItem label="الرقم الوطني" value={formData.nationalId || "—"} />
                 <ReviewItem label="الهاتف" value={formData.phone || "—"} />
                 <ReviewItem label="العنوان" value={formData.address || "—"} />
                 {formData.hasHistory === "yes" && (

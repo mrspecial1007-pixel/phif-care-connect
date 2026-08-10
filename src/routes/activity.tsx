@@ -125,10 +125,12 @@ function DispensingActivityPage() {
       { header: "الوقت", key: "time", width: 12 },
       { header: "اسم المستفيد", key: "patient_name", width: 30 },
       { header: "رقم البطاقة", key: "card", width: 20 },
+      { header: "الرقم الوطني", key: "national_id", width: 20 },
       { header: "الصيدلية", key: "pharmacy", width: 20 },
       { header: "نوع الصرف", key: "type", width: 15 },
       { header: "الأصناف المصروفة", key: "items", width: 15 },
       { header: "ملاحظات", key: "notes", width: 40 },
+      { header: "الحالة", key: "status", width: 15 },
     ];
 
     transactions.forEach(t => {
@@ -137,10 +139,12 @@ function DispensingActivityPage() {
         time: format(new Date(t.created_at), "hh:mm a", { locale: ar }),
         patient_name: t.patient_name,
         card: t.insurance_card_number,
+        national_id: (t as any).patients?.national_id || "",
         pharmacy: t.pharmacy_name,
         type: t.transaction_type === "Completed" ? "صرف كامل" : t.transaction_type === "Partial" ? "صرف جزئي" : "صرف متبقي",
         items: t.items_dispensed || 0,
-        notes: t.notes || "",
+        notes: (t as any).is_cancelled ? `[ملغاة: ${(t as any).cancellation_reason}] \${t.notes || ""}` : t.notes || "",
+        status: (t as any).is_cancelled ? "ملغاة" : "نشطة",
       });
     });
 
@@ -154,12 +158,13 @@ function DispensingActivityPage() {
     toast.success("تم تصدير الملف بنجاح");
   };
 
-  const getTypeBadge = (type: string) => {
-    switch (type) {
+  const getTypeBadge = (tx: any) => {
+    if (tx.is_cancelled) return <Badge className="bg-slate-500 text-[10px] px-2 py-0 h-5 rounded-full hover:bg-slate-600">ملغاة</Badge>;
+    switch (tx.transaction_type) {
       case "Completed": return <Badge className="bg-success text-[10px] px-2 py-0 h-5 rounded-full hover:bg-success/90">صرف كامل</Badge>;
       case "Partial": return <Badge className="bg-info text-[10px] px-2 py-0 h-5 rounded-full hover:bg-info/90">صرف جزئي</Badge>;
       case "Remaining": return <Badge className="bg-purple-600 text-[10px] px-2 py-0 h-5 rounded-full hover:bg-purple-700">صرف متبقي</Badge>;
-      default: return <Badge variant="outline" className="text-[10px] px-2 py-0 h-5">{type}</Badge>;
+      default: return <Badge variant="outline" className="text-[10px] px-2 py-0 h-5">{tx.transaction_type}</Badge>;
     }
   };
 
@@ -382,7 +387,7 @@ function DispensingActivityPage() {
                 params={{ id: tx.patient_id }}
                 className="block active:scale-[0.98] transition-transform"
               >
-                <Card className="p-3 bg-white shadow-sm hover:shadow-md transition-shadow border-none ring-1 ring-slate-200 group relative overflow-hidden">
+                <Card className={`p-3 bg-white shadow-sm hover:shadow-md transition-shadow border-none ring-1 ring-slate-200 group relative overflow-hidden ${tx.is_cancelled ? 'opacity-60 grayscale' : ''}`}>
                   <div className="space-y-1">
                     {/* السطر الأول: الاسم ونوع الصرف */}
                     <div className="flex items-center justify-between gap-2">
@@ -390,7 +395,7 @@ function DispensingActivityPage() {
                         {tx.patient_name}
                       </h3>
                       <div className="shrink-0">
-                        {getTypeBadge(tx.transaction_type)}
+                        {getTypeBadge(tx)}
                       </div>
                     </div>
 
@@ -410,6 +415,11 @@ function DispensingActivityPage() {
                       <div className="flex items-center gap-1.5 text-[10px] text-amber-600 bg-amber-50/50 px-2 py-0.5 rounded-md mt-1 w-fit max-w-full">
                         <FileText className="h-3 w-3 shrink-0" />
                         <span className="truncate">{tx.notes}</span>
+                      </div>
+                    )}
+                    {tx.is_cancelled && (
+                      <div className="text-[10px] text-destructive font-bold mt-1 italic">
+                        سبب الإلغاء: {tx.cancellation_reason}
                       </div>
                     )}
                   </div>
