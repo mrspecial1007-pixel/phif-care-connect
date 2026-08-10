@@ -112,7 +112,7 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "communication_logs_pharmacy_id_fkey"
@@ -174,7 +174,7 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -222,7 +222,7 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "dispensing_due_tracks_source_transaction_id_fkey"
@@ -241,6 +241,7 @@ export type Database = {
           created_at: string
           cycle_id: string
           dispensing_date: string
+          fulfilled_track_id: string | null
           id: string
           idempotency_key: string | null
           is_cancelled: boolean | null
@@ -258,6 +259,7 @@ export type Database = {
           created_at?: string
           cycle_id: string
           dispensing_date?: string
+          fulfilled_track_id?: string | null
           id?: string
           idempotency_key?: string | null
           is_cancelled?: boolean | null
@@ -275,6 +277,7 @@ export type Database = {
           created_at?: string
           cycle_id?: string
           dispensing_date?: string
+          fulfilled_track_id?: string | null
           id?: string
           idempotency_key?: string | null
           is_cancelled?: boolean | null
@@ -308,6 +311,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "dispensing_transactions_fulfilled_track_id_fkey"
+            columns: ["fulfilled_track_id"]
+            isOneToOne: false
+            referencedRelation: "dispensing_due_tracks"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "dispensing_transactions_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
@@ -319,7 +329,7 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
@@ -417,7 +427,7 @@ export type Database = {
             columns: ["possible_duplicate_of"]
             isOneToOne: false
             referencedRelation: "v_patient_status"
-            referencedColumns: ["patient_id"]
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -452,43 +462,66 @@ export type Database = {
     Views: {
       v_patient_status: {
         Row: {
-          active_tracks_count: number | null
           address: string | null
+          birth_date: string | null
+          follow_up_suspended_at: string | null
           follow_up_suspension_reason: string | null
+          gender: string | null
+          id: string | null
           insurance_card_number: string | null
           is_archived: boolean | null
           is_favorite: boolean | null
           is_follow_up_suspended: boolean | null
-          is_shared: boolean | null
-          last_dispensing_date: string | null
-          last_pharmacy_id: string | null
           last_pharmacy_name: string | null
           national_id: string | null
           next_due_date: string | null
-          patient_id: string | null
+          notes: string | null
           patient_name: string | null
-          pharmacy_count: number | null
+          patient_name_normalized: string | null
           phone: string | null
-          remaining_days: number | null
-          review_status: Database["public"]["Enums"]["review_status"] | null
           tracks: Json | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
-            columns: ["last_pharmacy_id"]
-            isOneToOne: false
-            referencedRelation: "pharmacies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
-            columns: ["last_pharmacy_id"]
-            isOneToOne: false
-            referencedRelation: "v_pharmacies"
-            referencedColumns: ["id"]
-          },
-        ]
+        Insert: {
+          address?: string | null
+          birth_date?: string | null
+          follow_up_suspended_at?: string | null
+          follow_up_suspension_reason?: string | null
+          gender?: string | null
+          id?: string | null
+          insurance_card_number?: string | null
+          is_archived?: boolean | null
+          is_favorite?: boolean | null
+          is_follow_up_suspended?: boolean | null
+          last_pharmacy_name?: never
+          national_id?: string | null
+          next_due_date?: never
+          notes?: string | null
+          patient_name?: string | null
+          patient_name_normalized?: string | null
+          phone?: string | null
+          tracks?: never
+        }
+        Update: {
+          address?: string | null
+          birth_date?: string | null
+          follow_up_suspended_at?: string | null
+          follow_up_suspension_reason?: string | null
+          gender?: string | null
+          id?: string | null
+          insurance_card_number?: string | null
+          is_archived?: boolean | null
+          is_favorite?: boolean | null
+          is_follow_up_suspended?: boolean | null
+          last_pharmacy_name?: never
+          national_id?: string | null
+          next_due_date?: never
+          notes?: string | null
+          patient_name?: string | null
+          patient_name_normalized?: string | null
+          phone?: string | null
+          tracks?: never
+        }
+        Relationships: []
       }
       v_pharmacies: {
         Row: {
