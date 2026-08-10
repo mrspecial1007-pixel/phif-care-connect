@@ -4,6 +4,7 @@ import { z } from "zod";
 const unlockSchema = z.object({
   pharmacy_id: z.string().uuid(),
   pin: z.string().min(3).max(20),
+  remember: z.boolean().optional(),
 });
 
 export const unlockPharmacy = createServerFn({ method: "POST" })
@@ -41,7 +42,7 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
     }
 
     clearRateLimit(rlKey);
-    const session = await getPharmacySession();
+    const session = await getPharmacySession(data.remember);
     await session.update({
       pharmacy_id: pharm.id,
       pharmacy_name: pharm.name,

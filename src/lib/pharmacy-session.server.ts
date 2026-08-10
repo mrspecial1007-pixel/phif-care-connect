@@ -21,8 +21,13 @@ export const pharmacySessionConfig = {
   },
 };
 
-export async function getPharmacySession() {
-  return useSession<PharmacySessionData>(pharmacySessionConfig);
+export async function getPharmacySession(remember = false) {
+  const config = { ...pharmacySessionConfig };
+  if (remember) {
+    // 30 days if remembered
+    config.maxAge = 60 * 60 * 24 * 30;
+  }
+  return useSession<PharmacySessionData>(config);
 }
 
 export async function requirePharmacySession() {
