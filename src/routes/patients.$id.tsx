@@ -23,7 +23,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { upsertPatient } from "@/lib/dispensing.functions";
+import { upsertPatient, archivePatient } from "@/lib/dispensing.functions";
+import { EditDispenseDialog } from "@/components/EditDispenseDialog";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
 import { PhoneSheet } from "@/components/PhoneSheet";
@@ -42,6 +43,8 @@ import {
   Phone,
   CreditCard,
   Star,
+  Trash2,
+  MoreVertical,
 } from "lucide-react";
 
 export const Route = createFileRoute("/patients/$id")({
@@ -81,9 +84,15 @@ function Detail() {
   const [editFocus, setEditFocus] = useState<string | null>(null);
   const [dispenseOpen, setDispenseOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [editDispenseOpen, setEditDispenseOpen] = useState(false);
+  const [selectedTx, setSelectedTx] = useState<any>(null);
   const [favBusy, setFavBusy] = useState(false);
   const qc = useQueryClient();
   const updatePatient = useServerFn(upsertPatient);
+  const archive = useServerFn(archivePatient);
+  const navigate = Route.useNavigate();
 
   if (isLoading) return <div className="text-center py-10">جاري التحميل…</div>;
   if (!patient) return <div className="text-center py-10">المستفيد غير موجود</div>;
@@ -113,11 +122,32 @@ function Detail() {
     }
   }
 
+  async function handleArchive() {
+    setArchiveLoading(true);
+    try {
+      const res = await archive({ data: { id: patient!.id } });
+      if (res.ok) {
+        toast.success("تم حذف المستفيد بنجاح");
+        qc.invalidateQueries({ queryKey: ["patient_status"] });
+        navigate({ to: "/" });
+      }
+    } catch (err) {
+      toast.error("حدث خطأ ما");
+    } finally {
+      setArchiveLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <Link to="/" className="text-sm text-muted-foreground inline-flex items-center gap-1">
-        <ArrowRight className="h-4 w-4 rotate-180" /> عودة
-      </Link>
+      <div className="flex justify-between items-center">
+        <Link to="/" className="text-sm text-muted-foreground inline-flex items-center gap-1">
+          <ArrowRight className="h-4 w-4 rotate-180" /> عودة
+        </Link>
+        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setArchiveConfirmOpen(true)}>
+          <Trash2 className="h-4 w-4 ml-1" /> حذف المستفيد
+        </Button>
+      </div>
 
       {/* Client info card */}
       <Card className="p-4 space-y-3">
@@ -183,6 +213,21 @@ function Detail() {
             }}
             emptyLabel="لا يوجد رقم بطاقة"
             addLabel="إضافة رقم البطاقة"
+          />
+          <InfoRow
+            icon={<CreditCard className="h-4 w-4" />}
+            label="الرقم الوطني"
+            value={patient.national_id}
+            onCopy={() =>
+              patient.national_id &&
+              copy(patient.national_id, "الرقم الوطني")
+            }
+            onAdd={() => {
+              setEditFocus("national_id");
+              setEditOpen(true);
+            }}
+            emptyLabel="لا يوجد رقم وطني"
+            addLabel="إضافة الرقم الوطني"
           />
           <InfoRow
             icon={<Phone className="h-4 w-4" />}
@@ -268,21 +313,25 @@ function Detail() {
         <h2 className="font-semibold mb-3">سجل الصرف</h2>
         <div className="space-y-2">
           {(history ?? []).map((h: any) => (
-            <div key={h.id} className="border-b pb-2 last:border-0">
+            <div key={h.id} className={`border-b pb-2 last:border-0 ${h.is_cancelled ? 'opacity-50 grayscale' : ''}`}>
               <div className="flex items-center gap-2">
-                <div className="text-xs w-24 text-muted-foreground shrink-0">
+                <div className="text-xs w-20 text-muted-foreground shrink-0">
                   {new Date(h.dispensing_date).toLocaleDateString("en-GB")}
                 </div>
                 <Badge
                   className={`border-0 ${
-                    h.transaction_type === "Partial"
+                    h.is_cancelled
+                      ? "bg-slate-500 text-white"
+                      : h.transaction_type === "Partial"
                       ? "bg-info text-info-foreground"
                       : h.transaction_type === "Remaining"
                       ? "bg-warning text-warning-foreground"
                       : "bg-success text-success-foreground"
                   }`}
                 >
-                  {h.transaction_type === "Partial"
+                  {h.is_cancelled
+                    ? "ملغاة"
+                    : h.transaction_type === "Partial"
                     ? "صرف جزئي"
                     : h.transaction_type === "Remaining"
                     ? "صرف متبقي"
@@ -292,9 +341,20 @@ function Detail() {
                   <Building2 className="h-3.5 w-3.5 inline ml-1 text-muted-foreground" />
                   {h.pharmacies?.name ?? "—"}
                 </div>
+                {!h.is_cancelled && (
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => {
+                    setSelectedTx(h);
+                    setEditDispenseOpen(true);
+                  }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
               {h.notes && (
-                <div className="text-xs text-muted-foreground mt-1 pr-24">{h.notes}</div>
+                <div className="text-xs text-muted-foreground mt-1 pr-20">{h.notes}</div>
+              )}
+              {h.is_cancelled && h.cancellation_reason && (
+                <div className="text-[10px] text-destructive italic mt-0.5 pr-20">سبب الإلغاء: {h.cancellation_reason}</div>
               )}
             </div>
           ))}
