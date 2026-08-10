@@ -343,11 +343,14 @@ export type Database = {
           archived_at: string | null
           birth_date: string | null
           created_at: string
+          follow_up_suspended_at: string | null
+          follow_up_suspension_reason: string | null
           gender: string | null
           id: string
           insurance_card_number: string | null
           is_archived: boolean | null
           is_favorite: boolean | null
+          is_follow_up_suspended: boolean | null
           national_id: string | null
           notes: string | null
           patient_name: string
@@ -362,11 +365,14 @@ export type Database = {
           archived_at?: string | null
           birth_date?: string | null
           created_at?: string
+          follow_up_suspended_at?: string | null
+          follow_up_suspension_reason?: string | null
           gender?: string | null
           id?: string
           insurance_card_number?: string | null
           is_archived?: boolean | null
           is_favorite?: boolean | null
+          is_follow_up_suspended?: boolean | null
           national_id?: string | null
           notes?: string | null
           patient_name: string
@@ -381,11 +387,14 @@ export type Database = {
           archived_at?: string | null
           birth_date?: string | null
           created_at?: string
+          follow_up_suspended_at?: string | null
+          follow_up_suspension_reason?: string | null
           gender?: string | null
           id?: string
           insurance_card_number?: string | null
           is_archived?: boolean | null
           is_favorite?: boolean | null
+          is_follow_up_suspended?: boolean | null
           national_id?: string | null
           notes?: string | null
           patient_name?: string
@@ -445,9 +454,11 @@ export type Database = {
         Row: {
           active_tracks_count: number | null
           address: string | null
+          follow_up_suspension_reason: string | null
           insurance_card_number: string | null
           is_archived: boolean | null
           is_favorite: boolean | null
+          is_follow_up_suspended: boolean | null
           is_shared: boolean | null
           last_dispensing_date: string | null
           last_pharmacy_id: string | null
