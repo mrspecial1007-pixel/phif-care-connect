@@ -177,6 +177,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
               </div>
               <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1 min-w-0">
                 {row.insurance_card_number && <span dir="ltr">بطاقة: {row.insurance_card_number}</span>}
+                {row.national_id && <span dir="ltr">وطني: {row.national_id}</span>}
                 {row.last_pharmacy_name && <span>آخر صرف: {row.last_pharmacy_name}</span>}
               </div>
               {row.phone && (

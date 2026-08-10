@@ -46,7 +46,7 @@ function Dashboard() {
       if (filter === "active" && r.is_follow_up_suspended) return false;
       
       // Default view hides overdue patients and suspended follow-ups
-      if (filter === "all" && (r.is_follow_up_suspended || (r.remaining_days !== null && r.remaining_days < 0))) return false;
+      if (filter === "all" && r.is_follow_up_suspended) return false;
       if (!qn) return true;
       return (
         normalizeArabicName(r.patient_name).includes(qn) ||
