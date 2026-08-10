@@ -187,6 +187,7 @@ export type Database = {
           patient_id: string
           source_transaction_id: string | null
           status: Database["public"]["Enums"]["cycle_status"]
+          stream_id: string | null
           updated_at: string
         }
         Insert: {
@@ -197,6 +198,7 @@ export type Database = {
           patient_id: string
           source_transaction_id?: string | null
           status?: Database["public"]["Enums"]["cycle_status"]
+          stream_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -207,6 +209,7 @@ export type Database = {
           patient_id?: string
           source_transaction_id?: string | null
           status?: Database["public"]["Enums"]["cycle_status"]
+          stream_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -241,7 +244,6 @@ export type Database = {
           created_at: string
           cycle_id: string
           dispensing_date: string
-          fulfilled_track_id: string | null
           id: string
           idempotency_key: string | null
           is_cancelled: boolean | null
@@ -250,6 +252,7 @@ export type Database = {
           notes: string | null
           patient_id: string
           pharmacy_id: string
+          stream_id: string | null
           transaction_type: Database["public"]["Enums"]["tx_type"]
         }
         Insert: {
@@ -259,7 +262,6 @@ export type Database = {
           created_at?: string
           cycle_id: string
           dispensing_date?: string
-          fulfilled_track_id?: string | null
           id?: string
           idempotency_key?: string | null
           is_cancelled?: boolean | null
@@ -268,6 +270,7 @@ export type Database = {
           notes?: string | null
           patient_id: string
           pharmacy_id: string
+          stream_id?: string | null
           transaction_type: Database["public"]["Enums"]["tx_type"]
         }
         Update: {
@@ -277,7 +280,6 @@ export type Database = {
           created_at?: string
           cycle_id?: string
           dispensing_date?: string
-          fulfilled_track_id?: string | null
           id?: string
           idempotency_key?: string | null
           is_cancelled?: boolean | null
@@ -286,6 +288,7 @@ export type Database = {
           notes?: string | null
           patient_id?: string
           pharmacy_id?: string
+          stream_id?: string | null
           transaction_type?: Database["public"]["Enums"]["tx_type"]
         }
         Relationships: [
@@ -312,7 +315,7 @@ export type Database = {
           },
           {
             foreignKeyName: "dispensing_transactions_fulfilled_track_id_fkey"
-            columns: ["fulfilled_track_id"]
+            columns: ["stream_id"]
             isOneToOne: false
             referencedRelation: "dispensing_due_tracks"
             referencedColumns: ["id"]
