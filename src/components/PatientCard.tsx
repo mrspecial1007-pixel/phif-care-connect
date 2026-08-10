@@ -13,6 +13,25 @@ import { upsertPatient } from "@/lib/dispensing.functions";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+function daysUntil(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null;
+  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - today.getTime()) / 86400000);
+}
+
+function trackRemainingDays(track: {
+  next_due_date?: string | null;
+  remaining_days?: number | null;
+}): number | null {
+  if (typeof track.remaining_days === "number" && Number.isFinite(track.remaining_days)) {
+    return track.remaining_days;
+  }
+  return daysUntil(track.next_due_date);
+}
+
 export function statusMeta(row: PatientStatusRow) {
   if (row.is_follow_up_suspended)
     return { key: "suspended", label: "متابعة معلقة", color: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400" };
@@ -85,10 +104,13 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
     }
   };
 
-  const daysNode = !row.is_follow_up_suspended && row.tracks && row.tracks.length > 0 ? (
+  const visibleTracks = (row.tracks ?? [])
+    .map((track) => ({ track, days: trackRemainingDays(track) }))
+    .filter((t) => t.days !== null) as { track: unknown; days: number }[];
+
+  const daysNode = row.is_follow_up_suspended ? null : visibleTracks.length > 0 ? (
     <div className="mt-2 space-y-1">
-      {row.tracks.slice(0, 2).map((track, i) => {
-        const days = track.remaining_days;
+      {visibleTracks.slice(0, 2).map(({ days }, i) => {
         let colorClass = "text-emerald-700 dark:text-emerald-400"; // Default green/turquoise
         let fontClass = "font-extrabold text-sm";
         
@@ -111,18 +133,23 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
           </div>
         );
       })}
-      {row.active_tracks_count > 2 && (
+      {visibleTracks.length > 2 && (
         <Link 
           to="/patients/$id" 
           params={{ id: row.patient_id }}
           onClick={(e) => e.stopPropagation()}
           className="block text-[11px] text-muted-foreground font-medium pr-6 hover:underline"
         >
-          +{row.active_tracks_count - 2} مواعيد أخرى
+          +{visibleTracks.length - 2} مواعيد أخرى
         </Link>
       )}
     </div>
-  ) : null;
+  ) : (
+    <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Clock className="h-3.5 w-3.5 shrink-0" />
+      <span>لا يوجد موعد استحقاق</span>
+    </div>
+  );
 
   return (
     <>
