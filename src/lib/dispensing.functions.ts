@@ -345,3 +345,143 @@ export const importExcelRows = createServerFn({ method: "POST" })
 
     return { ok: true as const, created, matchedByCard, needsReview, txAdded };
   });
+export const updateDispensing = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({
+    id: z.string().uuid(),
+    dispensing_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    pharmacy_id: z.string().uuid(),
+    transaction_type: z.enum(["Partial", "Remaining", "Completed"]),
+    notes: z.string().max(1000).optional().nullable(),
+  }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+    const { writeAudit } = await import("@/lib/audit.server");
+    const { getRequestIP } = await import("@tanstack/react-start/server");
+
+    const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
+    const ip = getRequestIP({ xForwardedFor: true }) ?? null;
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (data.dispensing_date > today) {
+      throw new Error("لا يمكن تسجيل عملية صرف بتاريخ مستقبلي");
+    }
+
+    const { data: before } = await supabaseAdmin
+      .from("dispensing_transactions")
+      .select("*")
+      .eq("id", data.id)
+      .single();
+    
+    if (!before) throw new Error("Transaction not found");
+
+    const { error } = await supabaseAdmin
+      .from("dispensing_transactions")
+      .update({
+        dispensing_date: `${data.dispensing_date}T12:00:00Z`,
+        pharmacy_id: data.pharmacy_id,
+        transaction_type: data.transaction_type,
+        notes: data.notes,
+      })
+      .eq("id", data.id);
+
+    if (error) throw error;
+
+    // Recalculate tracks for this patient
+    await recalculateTracks(before.patient_id, supabaseAdmin);
+
+    await writeAudit({
+      pharmacy_id: sessionPharmacyId,
+      action: "update_dispensing",
+      entity: "dispensing_transaction",
+      entity_id: data.id,
+      before,
+      after: data,
+      ip,
+    });
+
+    return { ok: true };
+  });
+
+export const cancelDispensing = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({
+    id: z.string().uuid(),
+    reason: z.string().min(1).max(500),
+  }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+    const { writeAudit } = await import("@/lib/audit.server");
+    const { getRequestIP } = await import("@tanstack/react-start/server");
+
+    const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
+    const ip = getRequestIP({ xForwardedFor: true }) ?? null;
+
+    const { data: tx } = await supabaseAdmin
+      .from("dispensing_transactions")
+      .select("patient_id")
+      .eq("id", data.id)
+      .single();
+    
+    if (!tx) throw new Error("Transaction not found");
+
+    const { error } = await supabaseAdmin
+      .from("dispensing_transactions")
+      .update({
+        is_cancelled: true,
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: sessionPharmacyId,
+        cancellation_reason: data.reason,
+      })
+      .eq("id", data.id);
+
+    if (error) throw error;
+
+    // Recalculate tracks for this patient
+    await recalculateTracks(tx.patient_id, supabaseAdmin);
+
+    await writeAudit({
+      pharmacy_id: sessionPharmacyId,
+      action: "cancel_dispensing",
+      entity: "dispensing_transaction",
+      entity_id: data.id,
+      after: { reason: data.reason },
+      ip,
+    });
+
+    return { ok: true };
+  });
+
+export const archivePatient = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({
+    id: z.string().uuid(),
+  }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+    const { writeAudit } = await import("@/lib/audit.server");
+    const { getRequestIP } = await import("@tanstack/react-start/server");
+
+    const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
+    const ip = getRequestIP({ xForwardedFor: true }) ?? null;
+
+    const { error } = await supabaseAdmin
+      .from("patients")
+      .update({
+        is_archived: true,
+        archived_at: new Date().toISOString(),
+      })
+      .eq("id", data.id);
+
+    if (error) throw error;
+
+    await writeAudit({
+      pharmacy_id: sessionPharmacyId,
+      action: "archive_patient",
+      entity: "patient",
+      entity_id: data.id,
+      ip,
+    });
+
+    return { ok: true };
+  });
