@@ -85,7 +85,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
     }
   };
 
-  const daysNode = row.tracks && row.tracks.length > 0 ? (
+  const daysNode = !row.is_follow_up_suspended && row.tracks && row.tracks.length > 0 ? (
     <div className="mt-2 space-y-1">
       {row.tracks.slice(0, 2).map((track, i) => {
         const days = track.remaining_days;
