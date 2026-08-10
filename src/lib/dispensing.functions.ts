@@ -1,6 +1,60 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+async function recalculateTracks(patientId: string, supabase: any) {
+  // 1. Get all non-cancelled transactions for patient
+  const { data: transactions } = await supabase
+    .from("dispensing_transactions")
+    .select("id, dispensing_date, transaction_type")
+    .eq("patient_id", patientId)
+    .eq("is_cancelled", false)
+    .order("dispensing_date", { ascending: true });
+
+  // 2. Clear current tracks
+  await supabase.from("dispensing_due_tracks").delete().eq("patient_id", patientId);
+
+  if (!transactions) return;
+
+  // 3. Simple chronological track builder (re-using logic from prompt)
+  // For each transaction, if it fits an existing track (within some window), renew it.
+  // Otherwise, start a new one.
+  const tracks: { lastDate: string; nextDue: string; sourceId: string }[] = [];
+
+  for (const tx of transactions) {
+    const txDate = tx.dispensing_date.slice(0, 10);
+    // Find a track that is "waiting" for renewal near this date (within 14 days of its next_due)
+    let matchedIdx = -1;
+    for (let i = 0; i < tracks.length; i++) {
+        const diff = Math.abs((new Date(txDate).getTime() - new Date(tracks[i].nextDue).getTime()) / (1000 * 60 * 60 * 24));
+        if (diff <= 14) {
+            matchedIdx = i;
+            break;
+        }
+    }
+
+    const nextDue = addDays(txDate, 28);
+    if (matchedIdx !== -1) {
+        tracks[matchedIdx] = { lastDate: txDate, nextDue, sourceId: tx.id };
+    } else {
+        tracks.push({ lastDate: txDate, nextDue, sourceId: tx.id });
+    }
+  }
+
+  // 4. Insert resulting tracks
+  if (tracks.length > 0) {
+      await supabase.from("dispensing_due_tracks").insert(
+          tracks.map(t => ({
+              patient_id: patientId,
+              source_transaction_id: t.sourceId,
+              last_dispensing_date: t.lastDate,
+              next_due_date: t.nextDue,
+              status: "Waiting"
+          }))
+      );
+  }
+}
+
+
 function addDays(iso: string, days: number): string {
   const d = new Date(iso);
   d.setUTCDate(d.getUTCDate() + days);
