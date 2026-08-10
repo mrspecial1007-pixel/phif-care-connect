@@ -176,6 +176,9 @@ export const recordDispensing = createServerFn({ method: "POST" })
       ip,
     });
 
+    // CRITICAL: Always recalculate tracks after ANY dispensing to ensure multi-track consistency
+    await recalculateTracks(data.patient_id, supabaseAdmin);
+
     return { ok: true as const, transaction_id: tx.id };
   });
 
