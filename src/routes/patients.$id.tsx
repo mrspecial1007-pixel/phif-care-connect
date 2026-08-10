@@ -23,7 +23,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { upsertPatient, archivePatient } from "@/lib/dispensing.functions";
+import { upsertPatient, archivePatient, setFollowUpStatus } from "@/lib/dispensing.functions";
 import { EditDispenseDialog } from "@/components/EditDispenseDialog";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
@@ -86,12 +86,16 @@ function Detail() {
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [suspendOpen, setSuspendOpen] = useState(false);
+  const [suspendReason, setSuspendReason] = useState("");
+  const [suspendLoading, setSuspendLoading] = useState(false);
   const [editDispenseOpen, setEditDispenseOpen] = useState(false);
   const [selectedTx, setSelectedTx] = useState<any>(null);
   const [favBusy, setFavBusy] = useState(false);
   const qc = useQueryClient();
   const updatePatient = useServerFn(upsertPatient);
   const archive = useServerFn(archivePatient);
+  const setSuspension = useServerFn(setFollowUpStatus);
   const navigate = Route.useNavigate();
 
   if (isLoading) return <div className="text-center py-10">جاري التحميل…</div>;
@@ -138,15 +142,50 @@ function Detail() {
     }
   }
 
+  async function handleSuspension(suspended: boolean) {
+    setSuspendLoading(true);
+    try {
+      const res = await setSuspension({ 
+        data: { 
+          id: patient!.id, 
+          suspended, 
+          reason: suspended ? suspendReason : null 
+        } 
+      });
+      if (res.ok) {
+        toast.success(suspended ? "تم تعليق المتابعة بنجاح" : "تم استئناف المتابعة بنجاح");
+        qc.invalidateQueries({ queryKey: ["patient", patient!.id] });
+        qc.invalidateQueries({ queryKey: ["patient_status"] });
+        setSuspendOpen(false);
+        setSuspendReason("");
+      }
+    } catch (err) {
+      toast.error("حدث خطأ ما");
+    } finally {
+      setSuspendLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <Link to="/" className="text-sm text-muted-foreground inline-flex items-center gap-1">
           <ArrowRight className="h-4 w-4 rotate-180" /> عودة
         </Link>
-        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setArchiveConfirmOpen(true)}>
-          <Trash2 className="h-4 w-4 ml-1" /> حذف المستفيد
-        </Button>
+        <div className="flex gap-2">
+          {patient.is_follow_up_suspended ? (
+            <Button variant="outline" size="sm" className="text-success hover:text-success hover:bg-success/10" onClick={() => handleSuspension(false)} disabled={suspendLoading}>
+              <Clock className="h-4 w-4 ml-1" /> استئناف المتابعة
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" className="text-warning hover:text-warning hover:bg-warning/10" onClick={() => setSuspendOpen(true)}>
+              <Clock className="h-4 w-4 ml-1" /> تعليق المتابعة
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setArchiveConfirmOpen(true)}>
+            <Trash2 className="h-4 w-4 ml-1" /> حذف المستفيد
+          </Button>
+        </div>
       </div>
 
       {/* Client info card */}
@@ -161,6 +200,11 @@ function Detail() {
               {status?.is_shared && (
                 <Badge variant="outline">
                   <Share2 className="h-3 w-3 ml-1" /> مشترك
+                </Badge>
+              )}
+              {patient.is_follow_up_suspended && (
+                <Badge className="bg-slate-500 text-white border-0">
+                  <Clock className="h-3 w-3 ml-1" /> متابعة معلقة
                 </Badge>
               )}
               {patient.review_status === "needs_review" && (
@@ -263,6 +307,11 @@ function Detail() {
         </div>
         
         <div className="space-y-3">
+          {patient.is_follow_up_suspended && patient.follow_up_suspension_reason && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 p-2 rounded-md text-xs text-amber-800 dark:text-amber-200 mb-2">
+              <strong>سبب التعليق:</strong> {patient.follow_up_suspension_reason}
+            </div>
+          )}
           {(dueTracks ?? []).slice(0, 2).map((track, idx) => (
             <div key={track.id} className="grid grid-cols-2 gap-3 text-sm border-b pb-3 last:border-0 last:pb-0">
               <Stat label={idx === 0 ? "أقرب استحقاق" : "موعد إضافي"} value={track.next_due_date} />
@@ -396,6 +445,72 @@ function Detail() {
             name: session.pharmacy.name, 
             address: (session.pharmacy as any).address 
           } : undefined}
+        />
+      )}
+
+      {/* Suspend Follow-up Dialog */}
+      <Dialog open={suspendOpen} onOpenChange={setSuspendOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>تعليق متابعة المستفيد</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="suspend-reason">سبب تعليق المتابعة (اختياري)</Label>
+              <Input
+                id="suspend-reason"
+                placeholder="مثال: يصرف حالياً من صيدلية أخرى"
+                value={suspendReason}
+                onChange={(e) => setSuspendReason(e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              سيتم استبعاد المستفيد من قوائم المتابعة اليومية والإحصائيات، مع الاحتفاظ بكافة بياناته وسجله التاريخي.
+            </p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setSuspendOpen(false)}>إلغاء</Button>
+            <Button 
+              variant="outline" 
+              onClick={() => handleSuspension(true)} 
+              disabled={suspendLoading}
+              className="text-warning border-warning hover:bg-warning/10"
+            >
+              {suspendLoading ? "جاري التعليق..." : "تعليق المتابعة"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>حذف المستفيد</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-3 text-destructive">
+              <AlertTriangle className="h-6 w-6" />
+              <p className="font-semibold text-sm">سيتم حذف المستفيد وبياناته المرتبطة. هل أنت متأكد؟</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              هذا الإجراء سيقوم بأرشفة بيانات المستفيد، ولن يظهر في القوائم النشطة.
+            </p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setArchiveConfirmOpen(false)}>إلغاء</Button>
+            <Button variant="destructive" onClick={handleArchive} disabled={archiveLoading}>
+              {archiveLoading ? "جاري الحذف..." : "نعم، متأكد"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {selectedTx && (
+        <EditDispenseDialog
+          open={editDispenseOpen}
+          onOpenChange={setEditDispenseOpen}
+          transaction={selectedTx}
+          patientId={id}
         />
       )}
     </div>

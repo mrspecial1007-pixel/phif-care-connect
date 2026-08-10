@@ -485,3 +485,48 @@ export const archivePatient = createServerFn({ method: "POST" })
 
     return { ok: true };
   });
+
+export const setFollowUpStatus = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({
+    id: z.string().uuid(),
+    suspended: z.boolean(),
+    reason: z.string().max(500).optional().nullable(),
+  }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+    const { writeAudit } = await import("@/lib/audit.server");
+    const { getRequestIP } = await import("@tanstack/react-start/server");
+
+    const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
+    const ip = getRequestIP({ xForwardedFor: true }) ?? null;
+
+    const { data: before } = await supabaseAdmin
+      .from("patients")
+      .select("is_follow_up_suspended, follow_up_suspension_reason")
+      .eq("id", data.id)
+      .single();
+
+    const { error } = await supabaseAdmin
+      .from("patients")
+      .update({
+        is_follow_up_suspended: data.suspended,
+        follow_up_suspended_at: data.suspended ? new Date().toISOString() : null,
+        follow_up_suspension_reason: data.suspended ? (data.reason || null) : null,
+      })
+      .eq("id", data.id);
+
+    if (error) throw error;
+
+    await writeAudit({
+      pharmacy_id: sessionPharmacyId,
+      action: data.suspended ? "suspend_follow_up" : "resume_follow_up",
+      entity: "patient",
+      entity_id: data.id,
+      before,
+      after: { is_follow_up_suspended: data.suspended, reason: data.reason },
+      ip,
+    });
+
+    return { ok: true };
+  });

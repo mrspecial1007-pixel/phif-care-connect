@@ -13,12 +13,13 @@ export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard />
 function Dashboard() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite">("all");
 
   const stats = useMemo(() => {
     const r = rows ?? [];
     let review = 0, partial = 0, overdue = 0, due = 0, shared = 0, withPhone = 0, noPhone = 0;
     for (const x of r) {
+      if (x.is_follow_up_suspended) continue;
       const m = statusMeta(x);
       if (m.key === "review") review++;
       else if (m.key === "partial") partial++;
@@ -41,9 +42,11 @@ function Dashboard() {
       if (filter === "has_phone" && !(r.phone && r.phone.trim())) return false;
       if (filter === "no_phone" && r.phone && r.phone.trim()) return false;
       if (filter === "favorite" && !r.is_favorite) return false;
+      if (filter === "suspended" && !r.is_follow_up_suspended) return false;
+      if (filter === "active" && r.is_follow_up_suspended) return false;
       
-      // Default view hides overdue patients (they live under the "overdue" filter)
-      if (filter === "all" && r.remaining_days !== null && r.remaining_days < 0) return false;
+      // Default view hides overdue patients and suspended follow-ups
+      if (filter === "all" && (r.is_follow_up_suspended || (r.remaining_days !== null && r.remaining_days < 0))) return false;
       if (!qn) return true;
       return (
         normalizeArabicName(r.patient_name).includes(qn) ||
@@ -73,6 +76,8 @@ function Dashboard() {
 
   const chips = [
     { k: "all", label: "الكل" },
+    { k: "active", label: "نشط" },
+    { k: "suspended", label: "معلقة" },
     { k: "favorite", label: "المفضلة" },
     { k: "overdue", label: "متأخر" },
     { k: "partial", label: "جزئي" },
