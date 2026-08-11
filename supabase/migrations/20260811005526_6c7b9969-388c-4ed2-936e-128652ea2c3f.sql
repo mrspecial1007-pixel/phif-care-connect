@@ -1,0 +1,1 @@
+ALTER TABLE public.dispensing_transactions ALTER COLUMN cycle_id DROP NOT NULL;
