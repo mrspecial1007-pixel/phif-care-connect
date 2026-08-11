@@ -115,6 +115,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "communication_logs_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
             foreignKeyName: "communication_logs_pharmacy_id_fkey"
             columns: ["pharmacy_id"]
             isOneToOne: false
@@ -176,6 +183,13 @@ export type Database = {
             referencedRelation: "v_patient_status"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "dispensing_cycles_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
         ]
       }
       dispensing_due_tracks: {
@@ -226,6 +240,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_patient_status"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispensing_due_tracks_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "dispensing_due_tracks_source_transaction_id_fkey"
@@ -335,6 +356,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "dispensing_transactions_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
             foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
             columns: ["pharmacy_id"]
             isOneToOne: false
@@ -432,6 +460,13 @@ export type Database = {
             referencedRelation: "v_patient_status"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "patients_possible_duplicate_of_fkey"
+            columns: ["possible_duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
         ]
       }
       pharmacies: {
@@ -465,6 +500,7 @@ export type Database = {
     Views: {
       v_patient_status: {
         Row: {
+          active_tracks_count: number | null
           address: string | null
           birth_date: string | null
           follow_up_suspended_at: string | null
@@ -475,16 +511,21 @@ export type Database = {
           is_archived: boolean | null
           is_favorite: boolean | null
           is_follow_up_suspended: boolean | null
+          last_dispensing_date: string | null
+          last_pharmacy_id: string | null
           last_pharmacy_name: string | null
           national_id: string | null
           next_due_date: string | null
           notes: string | null
+          patient_id: string | null
           patient_name: string | null
           patient_name_normalized: string | null
           phone: string | null
+          remaining_days: number | null
           tracks: Json | null
         }
         Insert: {
+          active_tracks_count?: never
           address?: string | null
           birth_date?: string | null
           follow_up_suspended_at?: string | null
@@ -495,16 +536,21 @@ export type Database = {
           is_archived?: boolean | null
           is_favorite?: boolean | null
           is_follow_up_suspended?: boolean | null
+          last_dispensing_date?: never
+          last_pharmacy_id?: never
           last_pharmacy_name?: never
           national_id?: string | null
           next_due_date?: never
           notes?: string | null
+          patient_id?: string | null
           patient_name?: string | null
           patient_name_normalized?: string | null
           phone?: string | null
+          remaining_days?: never
           tracks?: never
         }
         Update: {
+          active_tracks_count?: never
           address?: string | null
           birth_date?: string | null
           follow_up_suspended_at?: string | null
@@ -515,13 +561,17 @@ export type Database = {
           is_archived?: boolean | null
           is_favorite?: boolean | null
           is_follow_up_suspended?: boolean | null
+          last_dispensing_date?: never
+          last_pharmacy_id?: never
           last_pharmacy_name?: never
           national_id?: string | null
           next_due_date?: never
           notes?: string | null
+          patient_id?: string | null
           patient_name?: string | null
           patient_name_normalized?: string | null
           phone?: string | null
+          remaining_days?: never
           tracks?: never
         }
         Relationships: []

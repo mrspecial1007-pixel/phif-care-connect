@@ -1,0 +1,35 @@
+DROP VIEW IF EXISTS public.v_patient_status;
+CREATE VIEW public.v_patient_status
+WITH (security_invoker = true) AS
+SELECT
+  p.id,
+  p.id AS patient_id,
+  p.patient_name,
+  p.patient_name_normalized,
+  p.insurance_card_number,
+  p.national_id,
+  p.phone,
+  p.address,
+  p.birth_date,
+  p.gender,
+  p.notes,
+  p.is_favorite,
+  p.is_archived,
+  p.is_follow_up_suspended,
+  p.follow_up_suspended_at,
+  p.follow_up_suspension_reason,
+  COALESCE((SELECT jsonb_agg(s.track_data) FROM (
+      SELECT jsonb_build_object('id', t.id, 'last_dispensing_date', t.last_dispensing_date, 'next_due_date', t.next_due_date, 'remaining_days', t.next_due_date - CURRENT_DATE, 'status', t.status) AS track_data
+      FROM dispensing_due_tracks t
+      WHERE t.patient_id = p.id AND t.status = 'Waiting'::cycle_status
+      ORDER BY t.next_due_date) s), '[]'::jsonb) AS tracks,
+  (SELECT count(*) FROM dispensing_due_tracks t WHERE t.patient_id = p.id AND t.status = 'Waiting'::cycle_status) AS active_tracks_count,
+  (SELECT t.next_due_date FROM dispensing_due_tracks t WHERE t.patient_id = p.id AND t.status = 'Waiting'::cycle_status ORDER BY t.next_due_date LIMIT 1) AS next_due_date,
+  (SELECT t.next_due_date - CURRENT_DATE FROM dispensing_due_tracks t WHERE t.patient_id = p.id AND t.status = 'Waiting'::cycle_status ORDER BY t.next_due_date LIMIT 1) AS remaining_days,
+  (SELECT t.last_dispensing_date FROM dispensing_due_tracks t WHERE t.patient_id = p.id AND t.status = 'Waiting'::cycle_status ORDER BY t.next_due_date LIMIT 1) AS last_dispensing_date,
+  (SELECT tx.pharmacy_id FROM dispensing_transactions tx WHERE tx.patient_id = p.id AND tx.is_cancelled = false ORDER BY tx.dispensing_date DESC, tx.created_at DESC LIMIT 1) AS last_pharmacy_id,
+  (SELECT ph.name FROM dispensing_transactions tx JOIN pharmacies ph ON tx.pharmacy_id = ph.id WHERE tx.patient_id = p.id AND tx.is_cancelled = false ORDER BY tx.dispensing_date DESC, tx.created_at DESC LIMIT 1) AS last_pharmacy_name
+FROM patients p
+WHERE p.is_archived = false;
+
+GRANT SELECT ON public.v_patient_status TO anon, authenticated;
