@@ -263,7 +263,7 @@ export type Database = {
           cancelled_at: string | null
           cancelled_by: string | null
           created_at: string
-          cycle_id: string
+          cycle_id: string | null
           dispensing_date: string
           id: string
           idempotency_key: string | null
@@ -281,7 +281,7 @@ export type Database = {
           cancelled_at?: string | null
           cancelled_by?: string | null
           created_at?: string
-          cycle_id: string
+          cycle_id?: string | null
           dispensing_date?: string
           id?: string
           idempotency_key?: string | null
@@ -299,7 +299,7 @@ export type Database = {
           cancelled_at?: string | null
           cancelled_by?: string | null
           created_at?: string
-          cycle_id?: string
+          cycle_id?: string | null
           dispensing_date?: string
           id?: string
           idempotency_key?: string | null
