@@ -138,7 +138,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
         notes: data.notes ?? null,
         dispensing_date: `${effectiveDate}T12:00:00Z`,
         idempotency_key: data.idempotency_key ?? null,
-        cycle_id: '00000000-0000-0000-0000-000000000000', // Dummy for legacy FK if exists
+        cycle_id: null,
         stream_id: stream_id,
       })
       .select("id")
@@ -300,7 +300,7 @@ export const importExcelRows = createServerFn({ method: "POST" })
           pharmacy_id,
           dispensing_date: `${clean}T12:00:00Z`,
           transaction_type: "Completed",
-          cycle_id: '00000000-0000-0000-0000-000000000000',
+          cycle_id: null,
         }).select("id").single();
         
         if (tx) txAdded++;
