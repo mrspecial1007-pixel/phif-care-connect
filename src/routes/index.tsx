@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
 import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff, Star } from "lucide-react";
-import { normalizeArabicName, nameMatchesQuery } from "@/lib/name-normalize";
+import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard, statusMeta } from "@/components/PatientCard";
 
 export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard /></Gate> });
@@ -33,7 +33,6 @@ function Dashboard() {
 
   const filtered = useMemo(() => {
     if (!rows) return [];
-    const qn = normalizeArabicName(q);
     const searching = !!q.trim();
     const list = rows.filter((r) => {
       const matchSearch =
