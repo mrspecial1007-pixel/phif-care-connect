@@ -42,37 +42,50 @@ function Dashboard() {
         (r.national_id ?? "").includes(q.trim()) ||
         (r.phone ?? "").includes(q.trim());
       if (!matchSearch) return false;
-      // While searching, never hide results behind the active chip filter.
       if (searching) return true;
       if (filter === "shared" && !r.is_shared) return false;
       if (filter === "review" && r.review_status !== "needs_review") return false;
-      if (filter === "overdue" && !(r.remaining_days !== null && r.remaining_days < 0)) return false;
+      if (filter === "overdue" && !(r.remaining_days !== null && r.remaining_days < 0 && r.remaining_days >= -50)) return false;
+      if (filter === "old_follow_up" && !(r.remaining_days !== null && r.remaining_days < -50)) return false;
       if (filter === "partial" && r.current_cycle_status !== "Partial") return false;
       if (filter === "has_phone" && !(r.phone && r.phone.trim())) return false;
       if (filter === "no_phone" && r.phone && r.phone.trim()) return false;
       if (filter === "favorite" && !r.is_favorite) return false;
       if (filter === "suspended" && !r.is_follow_up_suspended) return false;
-      if (filter === "active" && r.is_follow_up_suspended) return false;
       
-      // Default view hides overdue patients and suspended follow-ups
-      if (filter === "all" && r.is_follow_up_suspended) return false;
+      if (filter === "active") {
+        if (r.is_follow_up_suspended) return false;
+        if (r.remaining_days !== null && r.remaining_days < -50) return false;
+        if (r.remaining_days !== null && r.remaining_days < -2 && r.remaining_days >= -50) return false;
+        return true;
+      }
+      
+      if (filter === "all") return true;
+
       return true;
     });
 
     const sorted = [...list].sort((a, b) => {
-      if (filter === "overdue") {
-        // Most overdue first (most negative remaining_days)
-        const av = a.remaining_days ?? Number.NEGATIVE_INFINITY;
-        const bv = b.remaining_days ?? Number.NEGATIVE_INFINITY;
-        return av - bv;
+      const getPriority = (row: any) => {
+        const days = row.remaining_days;
+        if (days === -1) return 0;
+        if (days === -2) return 1;
+        if (days === 0) return 2;
+        if (days > 0) return 3;
+        if (days !== null && days < -2) return 4;
+        return 5;
+      };
+
+      const pa = getPriority(a);
+      const pb = getPriority(b);
+
+      if (pa !== pb) return pa - pb;
+
+      if (a.remaining_days !== null && b.remaining_days !== null) {
+        if (pa === 0 || pa === 1) return b.remaining_days - a.remaining_days;
+        return a.remaining_days - b.remaining_days;
       }
-      // Nearest due first; nulls last
-      const av = a.remaining_days;
-      const bv = b.remaining_days;
-      if (av === null && bv === null) return a.patient_name.localeCompare(b.patient_name, "ar");
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      return av - bv;
+      return a.patient_name.localeCompare(b.patient_name, "ar");
     });
 
     return sorted.slice(0, 500);
