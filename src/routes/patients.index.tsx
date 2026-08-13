@@ -18,10 +18,11 @@ export const Route = createFileRoute("/patients/")({
 });
 
 type Filter =
+  | "active"
   | "all"
-  | "nearest"
   | "favorite"
   | "overdue"
+  | "old_follow_up"
   | "partial"
   | "shared"
   | "has_phone"
@@ -29,10 +30,11 @@ type Filter =
   | "review";
 
 const CHIPS: { k: Filter; label: string }[] = [
+  { k: "active", label: "نشط" },
   { k: "all", label: "الكل" },
-  { k: "nearest", label: "الأقرب" },
   { k: "favorite", label: "المفضلة" },
   { k: "overdue", label: "متأخر" },
+  { k: "old_follow_up", label: "متابعة قديمة" },
   { k: "partial", label: "صرف جزئي" },
   { k: "shared", label: "مشترك" },
   { k: "has_phone", label: "لديه هاتف" },
