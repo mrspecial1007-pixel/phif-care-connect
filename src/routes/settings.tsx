@@ -194,7 +194,7 @@ function NotificationSettingsCard() {
     if (!confirm("هل أنت متأكد من إلغاء الإشعارات لهذا الجهاز؟")) return;
     
     try {
-      await deleteSubFn({ id: subscriptionId });
+      await deleteSubFn({ data: { id: subscriptionId } });
       setSubscriptionId(null);
       setSettings(null);
       localStorage.removeItem('push_subscription_id');
