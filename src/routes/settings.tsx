@@ -282,32 +282,32 @@ function NotificationSettingsCard() {
                   description="تنبيه بمجرد حلول موعد الصرف"
                   enabled={settings.due_today_enabled}
                   time={settings.due_today_time}
-                  onEnabledChange={(v) => setSettings({...settings, due_today_enabled: v})}
-                  onTimeChange={(v) => setSettings({...settings, due_today_time: v})}
+                  onEnabledChange={(v: boolean) => setSettings({...settings, due_today_enabled: v})}
+                  onTimeChange={(v: string) => setSettings({...settings, due_today_time: v})}
                 />
                 <NotificationTypeRow 
                   label="مستحقون غدًا"
                   description="تنبيه مسبق للمستحقين غداً"
                   enabled={settings.due_tomorrow_enabled}
                   time={settings.due_tomorrow_time}
-                  onEnabledChange={(v) => setSettings({...settings, due_tomorrow_enabled: v})}
-                  onTimeChange={(v) => setSettings({...settings, due_tomorrow_time: v})}
+                  onEnabledChange={(v: boolean) => setSettings({...settings, due_tomorrow_enabled: v})}
+                  onTimeChange={(v: string) => setSettings({...settings, due_tomorrow_time: v})}
                 />
                 <NotificationTypeRow 
                   label="متأخر يوم أو يومين"
                   description="تنبيه للمتأخرين فقط لأول يومين"
                   enabled={settings.overdue_enabled}
                   time={settings.overdue_time}
-                  onEnabledChange={(v) => setSettings({...settings, overdue_enabled: v})}
-                  onTimeChange={(v) => setSettings({...settings, overdue_time: v})}
+                  onEnabledChange={(v: boolean) => setSettings({...settings, overdue_enabled: v})}
+                  onTimeChange={(v: string) => setSettings({...settings, overdue_time: v})}
                 />
                 <NotificationTypeRow 
                   label="صرف جزئي"
                   description="متابعة حالات الصرف غير المكتملة"
                   enabled={settings.partial_enabled}
                   time={settings.partial_time}
-                  onEnabledChange={(v) => setSettings({...settings, partial_enabled: v})}
-                  onTimeChange={(v) => setSettings({...settings, partial_time: v})}
+                  onEnabledChange={(v: boolean) => setSettings({...settings, partial_enabled: v})}
+                  onTimeChange={(v: string) => setSettings({...settings, partial_time: v})}
                 />
 
                 <div className="pt-4 border-t space-y-4">
