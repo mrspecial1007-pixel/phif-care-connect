@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
 import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff, Star } from "lucide-react";
-import { normalizeArabicName } from "@/lib/name-normalize";
+import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard, statusMeta } from "@/components/PatientCard";
 
 export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard /></Gate> });
@@ -33,8 +33,17 @@ function Dashboard() {
 
   const filtered = useMemo(() => {
     if (!rows) return [];
-    const qn = normalizeArabicName(q);
+    const searching = !!q.trim();
     const list = rows.filter((r) => {
+      const matchSearch =
+        !searching ||
+        nameMatchesQuery(r.patient_name, q) ||
+        (r.insurance_card_number ?? "").includes(q.trim()) ||
+        (r.national_id ?? "").includes(q.trim()) ||
+        (r.phone ?? "").includes(q.trim());
+      if (!matchSearch) return false;
+      // While searching, never hide results behind the active chip filter.
+      if (searching) return true;
       if (filter === "shared" && !r.is_shared) return false;
       if (filter === "review" && r.review_status !== "needs_review") return false;
       if (filter === "overdue" && !(r.remaining_days !== null && r.remaining_days < 0)) return false;
@@ -47,12 +56,7 @@ function Dashboard() {
       
       // Default view hides overdue patients and suspended follow-ups
       if (filter === "all" && r.is_follow_up_suspended) return false;
-      if (!qn) return true;
-      return (
-        normalizeArabicName(r.patient_name).includes(qn) ||
-        (r.insurance_card_number ?? "").includes(q.trim()) ||
-        (r.national_id ?? "").includes(q.trim())
-      );
+      return true;
     });
 
     const sorted = [...list].sort((a, b) => {

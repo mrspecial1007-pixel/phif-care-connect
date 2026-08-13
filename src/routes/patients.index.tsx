@@ -4,7 +4,7 @@ import { usePatientStatuses } from "@/lib/queries";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useState } from "react";
-import { normalizeArabicName } from "@/lib/name-normalize";
+import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard } from "@/components/PatientCard";
 import { Plus, Star } from "lucide-react";
 import { AddBeneficiaryDialog } from "@/components/AddBeneficiaryDialog";
@@ -55,16 +55,18 @@ function List() {
 
   const items = useMemo(() => {
     if (!rows) return [];
-    const qn = normalizeArabicName(q);
     const qd = q.trim();
     const list = rows.filter((r) => {
       const matchSearch =
         !qd ||
-        normalizeArabicName(r.patient_name).includes(qn) ||
+        nameMatchesQuery(r.patient_name, q) ||
         (r.insurance_card_number ?? "").includes(qd) ||
         (r.national_id ?? "").includes(qd) ||
         (r.phone ?? "").includes(qd);
       if (!matchSearch) return false;
+
+      // While searching, show every match regardless of the active chip filter.
+      if (qd) return true;
 
       // "الكل" = no status/favorite/phone/pharmacy filtering at all
       switch (filter) {

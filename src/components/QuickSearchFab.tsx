@@ -3,7 +3,7 @@ import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "@tanstack/react-router";
 import { usePatientStatuses } from "@/lib/queries";
-import { normalizeArabicName } from "@/lib/name-normalize";
+import { nameMatchesQuery } from "@/lib/name-normalize";
 import { Badge } from "@/components/ui/badge";
 
 export function QuickSearchFab() {
@@ -20,13 +20,13 @@ export function QuickSearchFab() {
 
   const results = useMemo(() => {
     if (!rows || !q.trim()) return [];
-    const qn = normalizeArabicName(q);
     const digits = q.replace(/\D/g, "");
     return rows
       .filter(
         (r) =>
-          normalizeArabicName(r.patient_name).includes(qn) ||
+          nameMatchesQuery(r.patient_name, q) ||
           (digits && (r.insurance_card_number ?? "").includes(digits)) ||
+          (digits && (r.national_id ?? "").includes(digits)) ||
           (digits && (r.phone ?? "").includes(digits)),
       )
       .slice(0, 30);

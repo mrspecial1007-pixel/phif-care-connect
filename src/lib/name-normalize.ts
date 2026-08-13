@@ -13,3 +13,12 @@ export function normalizeArabicName(input: string | null | undefined): string {
   s = s.replace(/\s+/g, " ");
   return s;
 }
+
+// Loose search: every token in the query must appear somewhere in the name,
+// regardless of order or extra middle names.
+export function nameMatchesQuery(name: string | null | undefined, query: string): boolean {
+  const n = normalizeArabicName(name);
+  const tokens = normalizeArabicName(query).split(" ").filter(Boolean);
+  if (tokens.length === 0) return true;
+  return tokens.every((t) => n.includes(t));
+}
