@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+export const LIVE_MULTITRACK_CUTOFF = "2026-08-09T23:59:59Z";
+
 async function recalculateTracks(patientId: string, supabase: any) {
   // 1. Get all non-cancelled transactions for patient
   const { data: transactions } = await supabase
@@ -15,43 +17,71 @@ async function recalculateTracks(patientId: string, supabase: any) {
     return;
   }
 
-  const HISTORICAL_CUTOFF = "2026-08-09T23:59:59Z";
-  const BASELINE_KEY = "baseline";
-  const streams = new Map<string, any>();
+  // Group transactions by stream
+  // 1. Historical Baseline (latest tx before or at cutoff)
+  // 2. Live Streams (tx after cutoff with stream_id)
+  
+  let baselineTx: any = null;
+  const liveStreams = new Map<string, any>();
 
   for (const tx of transactions) {
-    const isHistorical = tx.created_at <= HISTORICAL_CUTOFF;
-    let streamKey = tx.stream_id || BASELINE_KEY;
-
+    const isHistorical = tx.created_at <= LIVE_MULTITRACK_CUTOFF;
+    
     if (isHistorical) {
-      streamKey = BASELINE_KEY;
-    } else if (!tx.stream_id && (tx.transaction_type === "Partial" || tx.transaction_type === "Remaining")) {
-      // If it's a live multi-track tx that somehow doesn't have a stream_id yet,
-      // it effectively starts its own stream.
-      streamKey = tx.id;
-    }
-
-    const current = streams.get(streamKey);
-    if (!current || new Date(tx.dispensing_date) >= new Date(current.dispensing_date)) {
-      streams.set(streamKey, { ...tx, streamKey });
+      if (!baselineTx || new Date(tx.dispensing_date) >= new Date(baselineTx.dispensing_date)) {
+        baselineTx = tx;
+      }
+    } else {
+      // Live transaction
+      if (tx.stream_id) {
+        const current = liveStreams.get(tx.stream_id);
+        if (!current || new Date(tx.dispensing_date) >= new Date(current.dispensing_date)) {
+          liveStreams.set(tx.stream_id, tx);
+        }
+      } else {
+        // Live tx without stream_id becomes the new baseline or updates it
+        if (!baselineTx || new Date(tx.dispensing_date) >= new Date(baselineTx.dispensing_date)) {
+          baselineTx = tx;
+        }
+      }
     }
   }
 
-  const tracksToInsert = Array.from(streams.values()).map(tx => ({
-    patient_id: patientId,
-    source_transaction_id: tx.id,
-    stream_id: tx.streamKey === BASELINE_KEY ? null : tx.streamKey,
-    last_dispensing_date: tx.dispensing_date.slice(0, 10),
-    next_due_date: addDays(tx.dispensing_date.slice(0, 10), 28),
-    status: "Waiting"
-  }));
+  const tracksToInsert: any[] = [];
+  
+  if (baselineTx) {
+    tracksToInsert.push({
+      patient_id: patientId,
+      source_transaction_id: baselineTx.id,
+      stream_id: null,
+      last_dispensing_date: baselineTx.dispensing_date.slice(0, 10),
+      next_due_date: addDays(baselineTx.dispensing_date.slice(0, 10), 28),
+      status: "Waiting"
+    });
+  }
+
+  // Add live streams, but limit to 2 total tracks
+  for (const tx of liveStreams.values()) {
+    if (tracksToInsert.length >= 2) break; 
+    
+    // Skip if this live stream IS the baseline source (unlikely due to stream_id check above)
+    if (baselineTx && tx.id === baselineTx.id) continue;
+
+    tracksToInsert.push({
+      patient_id: patientId,
+      source_transaction_id: tx.id,
+      stream_id: tx.stream_id,
+      last_dispensing_date: tx.dispensing_date.slice(0, 10),
+      next_due_date: addDays(tx.dispensing_date.slice(0, 10), 28),
+      status: "Waiting"
+    });
+  }
 
   await supabase.from("dispensing_due_tracks").delete().eq("patient_id", patientId);
   if (tracksToInsert.length > 0) {
     await supabase.from("dispensing_due_tracks").insert(tracksToInsert);
   }
 }
-
 
 function addDays(iso: string, days: number): string {
   const d = new Date(iso);
@@ -110,6 +140,19 @@ export const recordDispensing = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!patient) return { ok: false as const, error: "patient_not_found" };
 
+    // 0. Check track count limit
+    const { data: existingTracks } = await supabaseAdmin
+      .from("dispensing_due_tracks")
+      .select("id, stream_id")
+      .eq("patient_id", data.patient_id);
+    
+    const trackCount = existingTracks?.length ?? 0;
+    const isCreatingNewStream = !data.track_id && (data.transaction_type === "Partial" || data.transaction_type === "Remaining");
+
+    if (trackCount >= 2 && isCreatingNewStream) {
+      throw new Error("لا يمكن إنشاء موعد صرف ثالث لهذا المستفيد. يجب إكمال أو معالجة أحد الموعدين الحاليين أولاً.");
+    }
+
     // 1. Determine stream_id if we are fulfilling a track
     let stream_id: string | null = null;
     if (data.track_id) {
@@ -122,8 +165,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
     }
 
     // 2. If it's a new Partial/Remaining that doesn't fulfill a track, it starts its own stream
-    // We'll generate a UUID for it.
-    if (!stream_id && (data.transaction_type === "Partial" || data.transaction_type === "Remaining")) {
+    if (!stream_id && isCreatingNewStream) {
         stream_id = crypto.randomUUID();
     }
 

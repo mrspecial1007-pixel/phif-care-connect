@@ -134,14 +134,9 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
         );
       })}
       {visibleTracks.length > 2 && (
-        <Link 
-          to="/patients/$id" 
-          params={{ id: row.patient_id }}
-          onClick={(e) => e.stopPropagation()}
-          className="block text-[11px] text-muted-foreground font-medium pr-6 hover:underline"
-        >
-          +{visibleTracks.length - 2} مواعيد أخرى
-        </Link>
+        <div className="text-[11px] text-muted-foreground font-medium pr-6">
+          + مواعيد إضافية
+        </div>
       )}
     </div>
   ) : (
