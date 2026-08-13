@@ -182,7 +182,7 @@ function NotificationSettingsCard() {
   async function sendTest() {
     if (!subscriptionId) return;
     try {
-      await testPushFn({ subscriptionId });
+      await testPushFn({ data: { subscriptionId } });
       toast.success("تم إرسال إشعار تجريبي");
     } catch (err) {
       toast.error("فشل إرسال الإشعار التجريبي");
