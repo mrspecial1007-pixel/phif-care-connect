@@ -142,8 +142,10 @@ function NotificationSettingsCard() {
         });
 
         const res = await saveSubFn({
-          subscription: subscription,
-          userAgent: navigator.userAgent
+          data: {
+            subscription: subscription,
+            userAgent: navigator.userAgent
+          }
         });
 
         if (res.ok) {
