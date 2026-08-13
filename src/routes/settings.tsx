@@ -5,10 +5,21 @@ import { Button } from "@/components/ui/button";
 import { useServerFn } from "@tanstack/react-start";
 import { exportAllData } from "@/lib/activity.functions";
 import { Download, Database } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { useSession } from "@/lib/queries";
+import { Bell, Shield, Clock, Send, Trash2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  saveSubscription,
+  getSubscriptionSettings,
+  updateSubscriptionSettings,
+  deleteSubscription,
+  sendTestNotification
+} from "@/lib/notifications/notifications.functions";
 
 export const Route = createFileRoute("/settings")({
   component: () => <Gate><SettingsPage /></Gate>,
