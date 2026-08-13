@@ -42,7 +42,12 @@ export type PatientStatusRow = {
   remaining_days: number | null;
   active_tracks_count: number;
   tracks:
-    | { id?: string; next_due_date: string | null; remaining_days?: number | null; status: string }[]
+    | { 
+        id?: string; 
+        next_due_date: string | null; 
+        remaining_days?: number | null; 
+        status: string;
+      }[]
     | null;
   last_pharmacy_id: string | null;
   last_pharmacy_name: string | null;

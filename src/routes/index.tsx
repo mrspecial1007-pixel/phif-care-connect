@@ -13,7 +13,7 @@ export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard />
 function Dashboard() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite" | "old_follow_up">("active");
 
   const stats = useMemo(() => {
     const r = rows ?? [];
@@ -23,7 +23,7 @@ function Dashboard() {
       const m = statusMeta(x);
       if (m.key === "review") review++;
       else if (m.key === "partial") partial++;
-      else if (m.key === "overdue") overdue++;
+      else if (m.key === "overdue" && x.remaining_days !== null && x.remaining_days >= -50) overdue++;
       else if (m.key === "due") due++;
       if (x.is_shared) shared++;
       if (x.phone && x.phone.trim()) withPhone++; else noPhone++;
@@ -79,11 +79,12 @@ function Dashboard() {
   }, [rows, q, filter]);
 
   const chips = [
-    { k: "all", label: "الكل" },
     { k: "active", label: "نشط" },
+    { k: "all", label: "الكل" },
+    { k: "overdue", label: "متأخر" },
+    { k: "old_follow_up", label: "متابعة قديمة" },
     { k: "suspended", label: "معلقة" },
     { k: "favorite", label: "المفضلة" },
-    { k: "overdue", label: "متأخر" },
     { k: "partial", label: "جزئي" },
     { k: "review", label: "مراجعة" },
     { k: "shared", label: "مشترك" },

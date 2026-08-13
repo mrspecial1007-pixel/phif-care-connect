@@ -36,6 +36,9 @@ export function statusMeta(row: PatientStatusRow) {
   if (row.is_follow_up_suspended)
     return { key: "suspended", label: "متابعة معلقة", color: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400" };
 
+  if (row.remaining_days !== null && row.remaining_days < -50)
+    return { key: "old_follow_up", label: "متابعة قديمة", color: "bg-slate-300 text-slate-700 dark:bg-slate-700 dark:text-slate-300" };
+
   if (row.review_status === "needs_review")
     return { key: "review", label: "يحتاج مراجعة", color: "bg-warning text-warning-foreground" };
   
@@ -60,6 +63,7 @@ function borderTone(key: string) {
     case "review": return "border-r-warning";
     case "waiting": return "border-r-success";
     case "suspended": return "border-r-slate-300";
+    case "old_follow_up": return "border-r-slate-400";
     default: return "border-r-border";
   }
 }

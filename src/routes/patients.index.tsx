@@ -45,7 +45,7 @@ const PAGE_SIZE = 100;
 function List() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<Filter>("nearest");
+  const [filter, setFilter] = useState<Filter>("active");
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   // Any change to search or filter resets pagination
@@ -72,12 +72,14 @@ function List() {
       switch (filter) {
         case "all":
           return true;
-        case "nearest":
-          return r.remaining_days !== null && r.remaining_days >= 0 && r.remaining_days <= 28;
+        case "active":
+          return !r.is_follow_up_suspended && (r.remaining_days === null || r.remaining_days >= -2);
         case "favorite":
           return !!r.is_favorite;
         case "overdue":
-          return r.remaining_days !== null && r.remaining_days < 0;
+          return r.remaining_days !== null && r.remaining_days < 0 && r.remaining_days >= -50;
+        case "old_follow_up":
+          return r.remaining_days !== null && r.remaining_days < -50;
         case "partial":
           return r.current_cycle_status === "Partial";
         case "shared":
@@ -94,17 +96,26 @@ function List() {
     });
 
     return [...list].sort((a, b) => {
-      if (filter === "overdue") {
-        const av = a.remaining_days ?? 0;
-        const bv = b.remaining_days ?? 0;
-        return av - bv;
+      const getPriority = (row: any) => {
+        const days = row.remaining_days;
+        if (days === -1) return 0;
+        if (days === -2) return 1;
+        if (days === 0) return 2;
+        if (days > 0) return 3;
+        if (days !== null && days < -2) return 4;
+        return 5;
+      };
+
+      const pa = getPriority(a);
+      const pb = getPriority(b);
+
+      if (pa !== pb) return pa - pb;
+
+      if (a.remaining_days !== null && b.remaining_days !== null) {
+        if (pa === 0 || pa === 1) return b.remaining_days - a.remaining_days; // -1 before -2
+        return a.remaining_days - b.remaining_days;
       }
-      const av = a.remaining_days;
-      const bv = b.remaining_days;
-      if (av === null && bv === null) return a.patient_name.localeCompare(b.patient_name, "ar");
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      return av - bv;
+      return a.patient_name.localeCompare(b.patient_name, "ar");
     });
   }, [rows, q, filter]);
 
