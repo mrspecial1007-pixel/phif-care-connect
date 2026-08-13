@@ -114,7 +114,14 @@ function List() {
       if (pa !== pb) return pa - pb;
 
       if (a.remaining_days !== null && b.remaining_days !== null) {
-        if (pa === 0 || pa === 1) return b.remaining_days - a.remaining_days; // -1 before -2
+        if (pa === 0 || pa === 1) {
+          return b.remaining_days - a.remaining_days; // -1 before -2
+        }
+        if (pa === 4) {
+          // General overdue (days < -2)
+          // Closest first: -3, -4, -5...
+          return b.remaining_days - a.remaining_days;
+        }
         return a.remaining_days - b.remaining_days;
       }
       return a.patient_name.localeCompare(b.patient_name, "ar");

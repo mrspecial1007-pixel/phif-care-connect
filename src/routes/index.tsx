@@ -82,7 +82,18 @@ function Dashboard() {
       if (pa !== pb) return pa - pb;
 
       if (a.remaining_days !== null && b.remaining_days !== null) {
-        if (pa === 0 || pa === 1) return b.remaining_days - a.remaining_days;
+        if (pa === 0 || pa === 1) {
+          // Both are high-priority overdue (-1 or -2)
+          // We want the closest to being due first (least negative absolute value)
+          // -1 (overdue 1 day) should come before -2 (overdue 2 days)
+          return b.remaining_days - a.remaining_days; 
+        }
+        if (pa === 4) {
+          // General overdue (days < -2)
+          // Closest first: -3, -4, -5...
+          // Higher numeric value (closer to 0) first
+          return b.remaining_days - a.remaining_days;
+        }
         return a.remaining_days - b.remaining_days;
       }
       return a.patient_name.localeCompare(b.patient_name, "ar");
