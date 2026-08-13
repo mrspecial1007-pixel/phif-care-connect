@@ -116,7 +116,10 @@ export function DispenseDialog({
           setHistorical({ latest: res.latest_date });
           return;
         }
-        // Special case for future date error message
+        if (res.error?.includes("ثالث") || res.message?.includes("ثالث") || res.error?.includes("third") || res.message?.includes("third")) {
+          toast.error("لا يمكن إنشاء موعد صرف ثالث لهذا المستفيد. يجب إكمال أو معالجة أحد الموعدين الحاليين أولاً.");
+          return;
+        }
         if (res.error?.includes("مستقبلي") || res.message?.includes("مستقبلي")) {
           toast.error("لا يمكن تسجيل عملية صرف بتاريخ مستقبلي");
           return;
