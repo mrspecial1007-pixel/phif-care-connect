@@ -134,7 +134,7 @@ function NotificationSettingsCard() {
         const registration = await navigator.serviceWorker.ready;
         
         // Use placeholder public key or fetch from server if possible
-        const VAPID_PUBLIC_KEY = 'BCR5TfX7E8Jk0kH0gZ9_6mB2q5p5L9yX5TjX7E8Jk0kH0gZ9_6mB2q5p5L9yX5Tj';
+        const VAPID_PUBLIC_KEY = 'BDpNHZ8PR7jNQlQqZ9ttKvlr6sMnPEqIbF2il9jtH-9jYFy5xIlmgTOITnxde6sDryRp79lQb25F9VRJ9UPme3s';
         
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
