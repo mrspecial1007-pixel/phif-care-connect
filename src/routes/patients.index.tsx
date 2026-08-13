@@ -4,7 +4,7 @@ import { usePatientStatuses } from "@/lib/queries";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useState } from "react";
-import { normalizeArabicName, nameMatchesQuery } from "@/lib/name-normalize";
+import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard } from "@/components/PatientCard";
 import { Plus, Star } from "lucide-react";
 import { AddBeneficiaryDialog } from "@/components/AddBeneficiaryDialog";
@@ -55,7 +55,6 @@ function List() {
 
   const items = useMemo(() => {
     if (!rows) return [];
-    const qn = normalizeArabicName(q);
     const qd = q.trim();
     const list = rows.filter((r) => {
       const matchSearch =
