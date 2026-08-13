@@ -1,7 +1,7 @@
 import webpush from 'web-push';
 
-const publicVapidKey = process.env['VAPID_PUBLIC_KEY'] || 'BCR5TfX7E8Jk0kH0gZ9_6mB2q5p5L9yX5TjX7E8Jk0kH0gZ9_6mB2q5p5L9yX5Tj'; // Placeholders
-const privateVapidKey = process.env['VAPID_PRIVATE_KEY'];
+const publicVapidKey = process.env['VAPID_PUBLIC_KEY'] || 'BDpNHZ8PR7jNQlQqZ9ttKvlr6sMnPEqIbF2il9jtH-9jYFy5xIlmgTOITnxde6sDryRp79lQb25F9VRJ9UPme3s';
+const privateVapidKey = process.env['VAPID_PRIVATE_KEY'] || 'dOIokTloUA4OPFn4jLbRI5Cb6RvTARUkMc53j516Z2A';
 
 if (publicVapidKey && privateVapidKey) {
   webpush.setVapidDetails(
@@ -22,7 +22,6 @@ export async function pushNotification(subscription: any, payload: { title: stri
   } catch (error: any) {
     if (error.statusCode === 404 || error.statusCode === 410) {
       console.log('Subscription expired or removed:', error.statusCode);
-      // We could mark as inactive here if we had the ID
     } else {
       console.error('Error sending push notification:', error);
     }
