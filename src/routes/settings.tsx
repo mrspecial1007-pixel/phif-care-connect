@@ -274,8 +274,8 @@ function NotificationSettingsCard() {
                   description="يومياً، يجمع كل المواعيد"
                   enabled={settings.morning_summary_enabled}
                   time={settings.morning_summary_time}
-                  onEnabledChange={(v) => setSettings({...settings, morning_summary_enabled: v})}
-                  onTimeChange={(v) => setSettings({...settings, morning_summary_time: v})}
+                  onEnabledChange={(v: boolean) => setSettings({...settings, morning_summary_enabled: v})}
+                  onTimeChange={(v: string) => setSettings({...settings, morning_summary_time: v})}
                 />
                 <NotificationTypeRow 
                   label="مستحقون اليوم"
