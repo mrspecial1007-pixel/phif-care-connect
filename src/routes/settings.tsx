@@ -107,7 +107,7 @@ function NotificationSettingsCard() {
   async function loadSettings(id: string) {
     setLoading(true);
     try {
-      const data = await getSettingsFn({ subscriptionId: id });
+      const data = await getSettingsFn({ data: { subscriptionId: id } });
       setSettings(data);
     } catch (err) {
       console.error('Failed to load settings', err);
