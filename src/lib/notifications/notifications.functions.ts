@@ -15,7 +15,7 @@ export const saveSubscription = createServerFn({ method: "POST" })
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     
-    const { data: existing, error: searchError } = await supabaseAdmin
+    const { data: existing, error: searchError } = await (supabaseAdmin as any)
       .from("push_subscriptions")
       .select("id")
       .eq("pharmacy_id", session.data.pharmacy_id)
@@ -25,14 +25,14 @@ export const saveSubscription = createServerFn({ method: "POST" })
     if (searchError) throw searchError;
 
     if (existing) {
-      await supabaseAdmin
+      await (supabaseAdmin as any)
         .from("push_subscriptions")
         .update({ is_active: true, user_agent: data.userAgent, updated_at: new Date().toISOString() })
         .eq("id", existing.id);
       return { ok: true, id: existing.id };
     }
 
-    const { data: inserted, error: insertError } = await supabaseAdmin
+    const { data: inserted, error: insertError } = await (supabaseAdmin as any)
       .from("push_subscriptions")
       .insert({
         pharmacy_id: session.data.pharmacy_id,
@@ -55,7 +55,7 @@ export const getSubscriptionSettings = createServerFn({ method: "GET" })
     if (!session.data.pharmacy_id) throw new Error("Unauthorized");
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: settings, error } = await supabaseAdmin
+    const { data: settings, error } = await (supabaseAdmin as any)
       .from("push_subscriptions")
       .select("*")
       .eq("id", data.subscriptionId)
@@ -77,7 +77,7 @@ export const updateSubscriptionSettings = createServerFn({ method: "POST" })
     if (!session.data.pharmacy_id) throw new Error("Unauthorized");
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
+    const { error } = await (supabaseAdmin as any)
       .from("push_subscriptions")
       .update({
         ...data.settings,
@@ -98,7 +98,7 @@ export const deleteSubscription = createServerFn({ method: "POST" })
     if (!session.data.pharmacy_id) throw new Error("Unauthorized");
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
+    const { error } = await (supabaseAdmin as any)
       .from("push_subscriptions")
       .delete()
       .eq("id", data.id)
@@ -116,7 +116,7 @@ export const sendTestNotification = createServerFn({ method: "POST" })
     if (!session.data.pharmacy_id) throw new Error("Unauthorized");
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: sub } = await supabaseAdmin
+    const { data: sub } = await (supabaseAdmin as any)
       .from("push_subscriptions")
       .select("*")
       .eq("id", data.subscriptionId)
