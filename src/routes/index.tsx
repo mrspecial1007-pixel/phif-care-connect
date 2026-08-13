@@ -13,7 +13,7 @@ export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard />
 function Dashboard() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite" | "old_follow_up">("active");
 
   const stats = useMemo(() => {
     const r = rows ?? [];
@@ -23,7 +23,7 @@ function Dashboard() {
       const m = statusMeta(x);
       if (m.key === "review") review++;
       else if (m.key === "partial") partial++;
-      else if (m.key === "overdue") overdue++;
+      else if (m.key === "overdue" && x.remaining_days !== null && x.remaining_days >= -50) overdue++;
       else if (m.key === "due") due++;
       if (x.is_shared) shared++;
       if (x.phone && x.phone.trim()) withPhone++; else noPhone++;
@@ -42,48 +42,62 @@ function Dashboard() {
         (r.national_id ?? "").includes(q.trim()) ||
         (r.phone ?? "").includes(q.trim());
       if (!matchSearch) return false;
-      // While searching, never hide results behind the active chip filter.
       if (searching) return true;
       if (filter === "shared" && !r.is_shared) return false;
       if (filter === "review" && r.review_status !== "needs_review") return false;
-      if (filter === "overdue" && !(r.remaining_days !== null && r.remaining_days < 0)) return false;
+      if (filter === "overdue" && !(r.remaining_days !== null && r.remaining_days < 0 && r.remaining_days >= -50)) return false;
+      if (filter === "old_follow_up" && !(r.remaining_days !== null && r.remaining_days < -50)) return false;
       if (filter === "partial" && r.current_cycle_status !== "Partial") return false;
       if (filter === "has_phone" && !(r.phone && r.phone.trim())) return false;
       if (filter === "no_phone" && r.phone && r.phone.trim()) return false;
       if (filter === "favorite" && !r.is_favorite) return false;
       if (filter === "suspended" && !r.is_follow_up_suspended) return false;
-      if (filter === "active" && r.is_follow_up_suspended) return false;
       
-      // Default view hides overdue patients and suspended follow-ups
-      if (filter === "all" && r.is_follow_up_suspended) return false;
+      if (filter === "active") {
+        if (r.is_follow_up_suspended) return false;
+        if (r.remaining_days !== null && r.remaining_days < -50) return false;
+        if (r.remaining_days !== null && r.remaining_days < -2 && r.remaining_days >= -50) return false;
+        return true;
+      }
+      
+      if (filter === "all") return true;
+
       return true;
     });
 
     const sorted = [...list].sort((a, b) => {
-      if (filter === "overdue") {
-        // Most overdue first (most negative remaining_days)
-        const av = a.remaining_days ?? Number.NEGATIVE_INFINITY;
-        const bv = b.remaining_days ?? Number.NEGATIVE_INFINITY;
-        return av - bv;
+      const getPriority = (row: any) => {
+        const days = row.remaining_days;
+        if (days === -1) return 0;
+        if (days === -2) return 1;
+        if (days === 0) return 2;
+        if (days > 0) return 3;
+        if (days !== null && days < -2) return 4;
+        return 5;
+      };
+
+      const pa = getPriority(a);
+      const pb = getPriority(b);
+
+      if (pa !== pb) return pa - pb;
+
+      if (a.remaining_days !== null && b.remaining_days !== null) {
+        if (pa === 0 || pa === 1) return b.remaining_days - a.remaining_days;
+        return a.remaining_days - b.remaining_days;
       }
-      // Nearest due first; nulls last
-      const av = a.remaining_days;
-      const bv = b.remaining_days;
-      if (av === null && bv === null) return a.patient_name.localeCompare(b.patient_name, "ar");
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      return av - bv;
+      return a.patient_name.localeCompare(b.patient_name, "ar");
     });
 
     return sorted.slice(0, 500);
   }, [rows, q, filter]);
 
   const chips = [
-    { k: "all", label: "الكل" },
     { k: "active", label: "نشط" },
+    { k: "all", label: "الكل" },
+    { k: "overdue", label: "متأخر" },
+    { k: "old_follow_up", label: "متابعة قديمة" },
     { k: "suspended", label: "معلقة" },
     { k: "favorite", label: "المفضلة" },
-    { k: "overdue", label: "متأخر" },
     { k: "partial", label: "جزئي" },
     { k: "review", label: "مراجعة" },
     { k: "shared", label: "مشترك" },
