@@ -170,7 +170,7 @@ function NotificationSettingsCard() {
     try {
       // Exclude read-only fields
       const { id, pharmacy_id, created_at, updated_at, subscription_json, ...updatable } = settings;
-      await updateSettingsFn({ id: subscriptionId, settings: updatable });
+      await updateSettingsFn({ data: { id: subscriptionId, settings: updatable } });
       toast.success("تم حفظ إعدادات الإشعارات");
     } catch (err) {
       toast.error("فشل حفظ الإعدادات");
