@@ -2,7 +2,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Pill, LayoutDashboard, Upload, LogOut, Users, Activity, ShieldCheck, Settings } from "lucide-react";
+import { Pill, LayoutDashboard, Upload, LogOut, Users, Activity, ShieldCheck, Settings, MessageSquare } from "lucide-react";
 import { lockPharmacy } from "@/lib/auth.functions";
 import { useSession } from "@/lib/queries";
 import type { ReactNode } from "react";
