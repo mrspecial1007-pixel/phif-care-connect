@@ -91,44 +91,37 @@ We will create new tables to separate logical messages from physical attempts.
 
 1. **Trigger**: Backend sends a high-priority "wake" signal via FCM. **FCM delivery does not change message state.**
 2. **Action**: Gateway background listener receives FCM, calls `GET /gateway/jobs` to **claim** the job.
-3. **Recovery**: WorkManager periodically calls `GET /gateway/jobs` to catch missed signals or jobs with expired leases.
+3. **Recovery**: WorkManager periodically (e.g., every hour) calls `GET /gateway/jobs` to catch missed signals or jobs with expired leases.
 4. **Lease Handling**: If a Gateway claims a job but fails to report back within 5 minutes, the next `GET /gateway/jobs` call (from any device in the pharmacy) will re-claim it.
-
----
-
-### 3. Revised Gateway Communication Architecture: Real-time Wake + Pull
-
-The Android Gateway must respond to new messages in near-real-time. We will move away from aggressive polling and use a hybrid "Wake-up & Fetch" approach.
 
 #### Architecture Comparison for Dedicated Gateway Phone:
 
 | Mechanism | Latency | Battery/Reliability | Android Suitability |
 | :--- | :--- | :--- | :--- |
-| **Option A: FCM Wake + Pull** | Low (seconds) | High (System-level) | Recommended for modern Android (Doze-safe). |
-| **Option B: Foreground Service** | Near Zero | Medium (Persistent) | Reliable on dedicated phones; requires user permission & notification. |
+| **Option A: FCM Wake + Pull** | Low (seconds) | High (System-level) | Recommended (Doze-safe). |
+| **Option B: Foreground Service** | Near Zero | Medium (Persistent) | Reliable on dedicated phones. |
 | **Option C: WorkManager** | High (15min min) | High | **Recovery Fallback Only.** |
-
-#### Recommended Strategy: "Push-to-Fetch"
-1. **Trigger**: When the Backend receives an SMS request from the PHIF App, it sends a high-priority "data-only" push notification (FCM) to the registered Gateway device.
-2. **Action**: The Android app's background listener wakes up, fetches the pending job via `GET /api/public/gateway/jobs` (authenticated), and processes it immediately.
-3. **Fallback**: A WorkManager job runs every 1 hour (or upon connectivity change) to pull any "stuck" pending messages that might have been missed due to transient network drops.
 
 ---
 
-### 4. Revised API Contract & Phase 1 Changes
+### 4. Phase 1 Implementation Scope
 
-#### Updated Gateway Endpoints (`/api/public/gateway/*`)
-- **`POST /gateway/register`**: Now also accepts and stores the `FCM_Registration_Token` for the device.
-- **`GET /gateway/jobs`**: Secure pull endpoint. Returns an array of pending jobs.
-    - *Request*: `X-Gateway-Token`, `device_id`.
-    - *Response*: `[{ message_id, phone_number, message_body, sim_slot, idempotency_key }]`.
-- **`POST /gateway/jobs/:id/status`**: Updates attempt status.
-    - *Body*: `{ status: 'sent' | 'delivered' | 'failed', error_code?, timestamp, sim_used }`.
+#### Database (Supabase Migration)
+- `sms_status` Enum.
+- `sms_messages` & `sms_send_attempts` tables with RLS and Grants.
+- `gateway_devices` table with `token_hash` and `fcm_token`.
+- Unique constraint on `(pharmacy_id, idempotency_key)`.
 
-#### Phase 1 Implementation Adjustments:
-- **Supabase**: Add `fcm_token` to `gateway_devices` table.
-- **Backend Logic**: Integrate with a Push provider (e.g., Firebase via Lovable Secrets) to trigger the Gateway.
-- **Idempotency**: The Gateway *must* include the `message_id` and its own `attempt_id` in status updates to ensure the Backend correctly links reports to the specific SIM attempt.
+#### Backend (Server Functions & API)
+- `sendSmsRequest`: Handles pharmacy session and backend idempotency.
+- `GET /api/public/gateway/jobs`: Implements the **atomic claim/lease** logic.
+- `POST /api/public/gateway/status`: Processes updates from the Gateway.
+- `POST /api/public/gateway/register`: Secure device pairing with token hashing.
+
+#### UI Changes
+- **SMS Preview (`PhoneSheet.tsx`)**: Character count, segments (GSM-7 vs Unicode), and backend-only dispatch.
+- **Messages History**: A new route to search and filter messages, with status badges.
+- **Audit**: Log all manual SMS creations and status updates in `audit_log`.
 
 ---
 
