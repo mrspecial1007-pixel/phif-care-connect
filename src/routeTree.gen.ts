@@ -11,12 +11,16 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as QualityRouteImport } from './routes/quality'
+import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as ApiPublicSchedulerRouteImport } from './routes/api/public/scheduler'
+import { Route as ApiPublicGatewayStatusRouteImport } from './routes/api/public/gateway/status'
+import { Route as ApiPublicGatewayRegisterRouteImport } from './routes/api/public/gateway/register'
+import { Route as ApiPublicGatewayJobsRouteImport } from './routes/api/public/gateway/jobs'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -26,6 +30,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const QualityRoute = QualityRouteImport.update({
   id: '/quality',
   path: '/quality',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ImportRoute = ImportRouteImport.update({
@@ -58,37 +67,65 @@ const ApiPublicSchedulerRoute = ApiPublicSchedulerRouteImport.update({
   path: '/api/public/scheduler',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGatewayStatusRoute = ApiPublicGatewayStatusRouteImport.update({
+  id: '/api/public/gateway/status',
+  path: '/api/public/gateway/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicGatewayRegisterRoute =
+  ApiPublicGatewayRegisterRouteImport.update({
+    id: '/api/public/gateway/register',
+    path: '/api/public/gateway/register',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicGatewayJobsRoute = ApiPublicGatewayJobsRouteImport.update({
+  id: '/api/public/gateway/jobs',
+  path: '/api/public/gateway/jobs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/messages': typeof MessagesRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/': typeof PatientsIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
+  '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
+  '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/messages': typeof MessagesRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients': typeof PatientsIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
+  '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
+  '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/messages': typeof MessagesRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/': typeof PatientsIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
+  '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
+  '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,42 +133,58 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/import'
+    | '/messages'
     | '/quality'
     | '/settings'
     | '/patients/$id'
     | '/patients/'
     | '/api/public/scheduler'
+    | '/api/public/gateway/jobs'
+    | '/api/public/gateway/register'
+    | '/api/public/gateway/status'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/activity'
     | '/import'
+    | '/messages'
     | '/quality'
     | '/settings'
     | '/patients/$id'
     | '/patients'
     | '/api/public/scheduler'
+    | '/api/public/gateway/jobs'
+    | '/api/public/gateway/register'
+    | '/api/public/gateway/status'
   id:
     | '__root__'
     | '/'
     | '/activity'
     | '/import'
+    | '/messages'
     | '/quality'
     | '/settings'
     | '/patients/$id'
     | '/patients/'
     | '/api/public/scheduler'
+    | '/api/public/gateway/jobs'
+    | '/api/public/gateway/register'
+    | '/api/public/gateway/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActivityRoute: typeof ActivityRoute
   ImportRoute: typeof ImportRoute
+  MessagesRoute: typeof MessagesRoute
   QualityRoute: typeof QualityRoute
   SettingsRoute: typeof SettingsRoute
   PatientsIdRoute: typeof PatientsIdRoute
   PatientsIndexRoute: typeof PatientsIndexRoute
   ApiPublicSchedulerRoute: typeof ApiPublicSchedulerRoute
+  ApiPublicGatewayJobsRoute: typeof ApiPublicGatewayJobsRoute
+  ApiPublicGatewayRegisterRoute: typeof ApiPublicGatewayRegisterRoute
+  ApiPublicGatewayStatusRoute: typeof ApiPublicGatewayStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -148,6 +201,13 @@ declare module '@tanstack/react-router' {
       path: '/quality'
       fullPath: '/quality'
       preLoaderRoute: typeof QualityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/import': {
@@ -192,6 +252,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicSchedulerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/gateway/status': {
+      id: '/api/public/gateway/status'
+      path: '/api/public/gateway/status'
+      fullPath: '/api/public/gateway/status'
+      preLoaderRoute: typeof ApiPublicGatewayStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gateway/register': {
+      id: '/api/public/gateway/register'
+      path: '/api/public/gateway/register'
+      fullPath: '/api/public/gateway/register'
+      preLoaderRoute: typeof ApiPublicGatewayRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gateway/jobs': {
+      id: '/api/public/gateway/jobs'
+      path: '/api/public/gateway/jobs'
+      fullPath: '/api/public/gateway/jobs'
+      preLoaderRoute: typeof ApiPublicGatewayJobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -199,11 +280,15 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActivityRoute: ActivityRoute,
   ImportRoute: ImportRoute,
+  MessagesRoute: MessagesRoute,
   QualityRoute: QualityRoute,
   SettingsRoute: SettingsRoute,
   PatientsIdRoute: PatientsIdRoute,
   PatientsIndexRoute: PatientsIndexRoute,
   ApiPublicSchedulerRoute: ApiPublicSchedulerRoute,
+  ApiPublicGatewayJobsRoute: ApiPublicGatewayJobsRoute,
+  ApiPublicGatewayRegisterRoute: ApiPublicGatewayRegisterRoute,
+  ApiPublicGatewayStatusRoute: ApiPublicGatewayStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

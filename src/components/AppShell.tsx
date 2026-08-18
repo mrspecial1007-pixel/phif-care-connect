@@ -2,7 +2,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Pill, LayoutDashboard, Upload, LogOut, Users, Activity, ShieldCheck, Settings } from "lucide-react";
+import { Pill, LayoutDashboard, Upload, LogOut, Users, Activity, ShieldCheck, Settings, MessageSquare } from "lucide-react";
 import { lockPharmacy } from "@/lib/auth.functions";
 import { useSession } from "@/lib/queries";
 import type { ReactNode } from "react";
@@ -25,6 +25,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     { to: "/patients", label: "المستفيدون", icon: Users },
     { to: "/activity", label: "حركات الصرف", icon: Activity },
     { to: "/quality", label: "جودة البيانات", icon: ShieldCheck },
+    { to: "/messages", label: "الرسائل", icon: MessageSquare },
     { to: "/import", label: "استيراد", icon: Upload },
     { to: "/settings", label: "الإعدادات", icon: Settings },
   ] as const;
@@ -67,8 +68,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="max-w-6xl mx-auto px-4 py-4 w-full box-border">{children}</main>
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t bg-card">
-        <div className="grid grid-cols-5">
-          {nav.slice(0, 5).map((n) => {
+        <div className="grid grid-cols-6">
+          {nav.slice(0, 6).map((n) => {
             const Icon = n.icon;
             const active = loc.pathname === n.to || (n.to !== "/" && loc.pathname.startsWith(n.to));
             return (
