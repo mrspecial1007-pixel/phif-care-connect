@@ -82,12 +82,39 @@ We will create new tables to separate logical messages from physical attempts.
 
 ---
 
-### 3. Gateway Communication Model: Pull (Option A)
-**Decision**: The Android Gateway will **Poll** the server every 30-60 seconds.
-- **Why**: 
-    - **Reliability**: Android battery optimizations often kill long-lived WebSocket/Push connections. A recurring Worker is easier to whitelist.
-    - **Offline Recovery**: When the phone regains internet, it naturally catches up on the next poll.
-    - **Simplicity**: No need for Firebase/Google Play Services dependence.
+### 3. Revised Gateway Communication Architecture: Real-time Wake + Pull
+
+The Android Gateway must respond to new messages in near-real-time. We will move away from aggressive polling and use a hybrid "Wake-up & Fetch" approach.
+
+#### Architecture Comparison for Dedicated Gateway Phone:
+
+| Mechanism | Latency | Battery/Reliability | Android Suitability |
+| :--- | :--- | :--- | :--- |
+| **Option A: FCM Wake + Pull** | Low (seconds) | High (System-level) | Recommended for modern Android (Doze-safe). |
+| **Option B: Foreground Service** | Near Zero | Medium (Persistent) | Reliable on dedicated phones; requires user permission & notification. |
+| **Option C: WorkManager** | High (15min min) | High | **Recovery Fallback Only.** |
+
+#### Recommended Strategy: "Push-to-Fetch"
+1. **Trigger**: When the Backend receives an SMS request from the PHIF App, it sends a high-priority "data-only" push notification (FCM) to the registered Gateway device.
+2. **Action**: The Android app's background listener wakes up, fetches the pending job via `GET /api/public/gateway/jobs` (authenticated), and processes it immediately.
+3. **Fallback**: A WorkManager job runs every 1 hour (or upon connectivity change) to pull any "stuck" pending messages that might have been missed due to transient network drops.
+
+---
+
+### 4. Revised API Contract & Phase 1 Changes
+
+#### Updated Gateway Endpoints (`/api/public/gateway/*`)
+- **`POST /gateway/register`**: Now also accepts and stores the `FCM_Registration_Token` for the device.
+- **`GET /gateway/jobs`**: Secure pull endpoint. Returns an array of pending jobs.
+    - *Request*: `X-Gateway-Token`, `device_id`.
+    - *Response*: `[{ message_id, phone_number, message_body, sim_slot, idempotency_key }]`.
+- **`POST /gateway/jobs/:id/status`**: Updates attempt status.
+    - *Body*: `{ status: 'sent' | 'delivered' | 'failed', error_code?, timestamp, sim_used }`.
+
+#### Phase 1 Implementation Adjustments:
+- **Supabase**: Add `fcm_token` to `gateway_devices` table.
+- **Backend Logic**: Integrate with a Push provider (e.g., Firebase via Lovable Secrets) to trigger the Gateway.
+- **Idempotency**: The Gateway *must* include the `message_id` and its own `attempt_id` in status updates to ensure the Backend correctly links reports to the specific SIM attempt.
 
 ---
 
