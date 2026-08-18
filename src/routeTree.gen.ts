@@ -18,6 +18,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as ApiPublicSchedulerRouteImport } from './routes/api/public/scheduler'
+import { Route as ApiPublicGatewayRegisterRouteImport } from './routes/api/public/gateway/register'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -64,6 +65,12 @@ const ApiPublicSchedulerRoute = ApiPublicSchedulerRouteImport.update({
   path: '/api/public/scheduler',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGatewayRegisterRoute =
+  ApiPublicGatewayRegisterRouteImport.update({
+    id: '/api/public/gateway/register',
+    path: '/api/public/gateway/register',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/patients/$id': typeof PatientsIdRoute
   '/patients/': typeof PatientsIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +94,7 @@ export interface FileRoutesByTo {
   '/patients/$id': typeof PatientsIdRoute
   '/patients': typeof PatientsIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +107,7 @@ export interface FileRoutesById {
   '/patients/$id': typeof PatientsIdRoute
   '/patients/': typeof PatientsIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
     | '/patients/$id'
     | '/patients/'
     | '/api/public/scheduler'
+    | '/api/public/gateway/register'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
     | '/patients/$id'
     | '/patients'
     | '/api/public/scheduler'
+    | '/api/public/gateway/register'
   id:
     | '__root__'
     | '/'
@@ -133,6 +145,7 @@ export interface FileRouteTypes {
     | '/patients/$id'
     | '/patients/'
     | '/api/public/scheduler'
+    | '/api/public/gateway/register'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +158,7 @@ export interface RootRouteChildren {
   PatientsIdRoute: typeof PatientsIdRoute
   PatientsIndexRoute: typeof PatientsIndexRoute
   ApiPublicSchedulerRoute: typeof ApiPublicSchedulerRoute
+  ApiPublicGatewayRegisterRoute: typeof ApiPublicGatewayRegisterRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,6 +226,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicSchedulerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/gateway/register': {
+      id: '/api/public/gateway/register'
+      path: '/api/public/gateway/register'
+      fullPath: '/api/public/gateway/register'
+      preLoaderRoute: typeof ApiPublicGatewayRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,6 +246,7 @@ const rootRouteChildren: RootRouteChildren = {
   PatientsIdRoute: PatientsIdRoute,
   PatientsIndexRoute: PatientsIndexRoute,
   ApiPublicSchedulerRoute: ApiPublicSchedulerRoute,
+  ApiPublicGatewayRegisterRoute: ApiPublicGatewayRegisterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
