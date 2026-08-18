@@ -109,6 +109,18 @@ export const claimSmsJobs = createServerFn({ method: "POST" })
     if (claimError) return { jobs: [] };
 
     // Create the attempt record
+    const { data: attempt, error: attemptError } = await supabaseAdmin
+      .from("sms_send_attempts")
+      .insert({
+        message_id: messageToClaim,
+        gateway_device_id: device.id,
+        claimed_at: now.toISOString(),
+        lease_expires_at: new Date(now.getTime() + leaseTimeoutMinutes * 60000).toISOString(),
+        attempt_number: 1,
+      })
+      .select()
+      .single();
+
     if (attemptError || !attempt) throw new Error("Failed to create send attempt");
 
     return {
