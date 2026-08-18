@@ -378,6 +378,57 @@ export type Database = {
           },
         ]
       }
+      gateway_devices: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          fcm_token: string | null
+          id: string
+          last_seen_at: string | null
+          name: string
+          pharmacy_id: string
+          status: string
+          token_hash: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          fcm_token?: string | null
+          id?: string
+          last_seen_at?: string | null
+          name: string
+          pharmacy_id: string
+          status?: string
+          token_hash: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          fcm_token?: string | null
+          id?: string
+          last_seen_at?: string | null
+          name?: string
+          pharmacy_id?: string
+          status?: string
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gateway_devices_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gateway_devices_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           address: string | null
@@ -496,6 +547,158 @@ export type Database = {
         }
         Relationships: []
       }
+      sms_messages: {
+        Row: {
+          created_at: string
+          created_by: string
+          current_status: Database["public"]["Enums"]["sms_status"]
+          id: string
+          idempotency_key: string
+          message_body: string
+          patient_id: string
+          pharmacy_id: string
+          phone_number: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          current_status?: Database["public"]["Enums"]["sms_status"]
+          id?: string
+          idempotency_key: string
+          message_body: string
+          patient_id: string
+          pharmacy_id: string
+          phone_number: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          current_status?: Database["public"]["Enums"]["sms_status"]
+          id?: string
+          idempotency_key?: string
+          message_body?: string
+          patient_id?: string
+          pharmacy_id?: string
+          phone_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_messages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "sms_messages_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_send_attempts: {
+        Row: {
+          attempt_number: number
+          claimed_at: string | null
+          created_at: string
+          delivered_at: string | null
+          error_code: string | null
+          error_message: string | null
+          failed_at: string | null
+          gateway_device_id: string | null
+          id: string
+          lease_expires_at: string | null
+          message_id: string
+          requested_at: string
+          sent_at: string | null
+          sim_slot: number | null
+        }
+        Insert: {
+          attempt_number?: number
+          claimed_at?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          failed_at?: string | null
+          gateway_device_id?: string | null
+          id?: string
+          lease_expires_at?: string | null
+          message_id: string
+          requested_at?: string
+          sent_at?: string | null
+          sim_slot?: number | null
+        }
+        Update: {
+          attempt_number?: number
+          claimed_at?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          failed_at?: string | null
+          gateway_device_id?: string | null
+          id?: string
+          lease_expires_at?: string | null
+          message_id?: string
+          requested_at?: string
+          sent_at?: string | null
+          sim_slot?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_send_attempts_gateway_device_id_fkey"
+            columns: ["gateway_device_id"]
+            isOneToOne: false
+            referencedRelation: "gateway_devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_send_attempts_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "sms_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       v_patient_status: {
@@ -601,6 +804,13 @@ export type Database = {
     Enums: {
       cycle_status: "Waiting" | "Partial" | "Completed"
       review_status: "ok" | "needs_review"
+      sms_status:
+        | "pending"
+        | "sending"
+        | "sent"
+        | "delivered"
+        | "failed"
+        | "cancelled"
       tx_type: "Partial" | "Remaining" | "Completed"
     }
     CompositeTypes: {
@@ -731,6 +941,14 @@ export const Constants = {
     Enums: {
       cycle_status: ["Waiting", "Partial", "Completed"],
       review_status: ["ok", "needs_review"],
+      sms_status: [
+        "pending",
+        "sending",
+        "sent",
+        "delivered",
+        "failed",
+        "cancelled",
+      ],
       tx_type: ["Partial", "Remaining", "Completed"],
     },
   },
