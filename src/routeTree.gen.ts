@@ -18,6 +18,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as ApiPublicSchedulerRouteImport } from './routes/api/public/scheduler'
+import { Route as ApiPublicGatewayStatusRouteImport } from './routes/api/public/gateway/status'
 import { Route as ApiPublicGatewayRegisterRouteImport } from './routes/api/public/gateway/register'
 import { Route as ApiPublicGatewayJobsRouteImport } from './routes/api/public/gateway/jobs'
 
@@ -66,6 +67,11 @@ const ApiPublicSchedulerRoute = ApiPublicSchedulerRouteImport.update({
   path: '/api/public/scheduler',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGatewayStatusRoute = ApiPublicGatewayStatusRouteImport.update({
+  id: '/api/public/gateway/status',
+  path: '/api/public/gateway/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicGatewayRegisterRoute =
   ApiPublicGatewayRegisterRouteImport.update({
     id: '/api/public/gateway/register',
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
+  '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
+  '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
+  '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
     | '/api/public/scheduler'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
+    | '/api/public/gateway/status'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
     | '/api/public/scheduler'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
+    | '/api/public/gateway/status'
   id:
     | '__root__'
     | '/'
@@ -158,6 +169,7 @@ export interface FileRouteTypes {
     | '/api/public/scheduler'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
+    | '/api/public/gateway/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -172,6 +184,7 @@ export interface RootRouteChildren {
   ApiPublicSchedulerRoute: typeof ApiPublicSchedulerRoute
   ApiPublicGatewayJobsRoute: typeof ApiPublicGatewayJobsRoute
   ApiPublicGatewayRegisterRoute: typeof ApiPublicGatewayRegisterRoute
+  ApiPublicGatewayStatusRoute: typeof ApiPublicGatewayStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -239,6 +252,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicSchedulerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/gateway/status': {
+      id: '/api/public/gateway/status'
+      path: '/api/public/gateway/status'
+      fullPath: '/api/public/gateway/status'
+      preLoaderRoute: typeof ApiPublicGatewayStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/gateway/register': {
       id: '/api/public/gateway/register'
       path: '/api/public/gateway/register'
@@ -268,6 +288,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicSchedulerRoute: ApiPublicSchedulerRoute,
   ApiPublicGatewayJobsRoute: ApiPublicGatewayJobsRoute,
   ApiPublicGatewayRegisterRoute: ApiPublicGatewayRegisterRoute,
+  ApiPublicGatewayStatusRoute: ApiPublicGatewayStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
