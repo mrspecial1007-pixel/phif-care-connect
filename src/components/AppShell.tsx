@@ -25,6 +25,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     { to: "/patients", label: "المستفيدون", icon: Users },
     { to: "/activity", label: "حركات الصرف", icon: Activity },
     { to: "/quality", label: "جودة البيانات", icon: ShieldCheck },
+    { to: "/messages", label: "الرسائل", icon: MessageSquare },
     { to: "/import", label: "استيراد", icon: Upload },
     { to: "/settings", label: "الإعدادات", icon: Settings },
   ] as const;
