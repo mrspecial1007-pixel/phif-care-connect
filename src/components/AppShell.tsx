@@ -68,8 +68,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="max-w-6xl mx-auto px-4 py-4 w-full box-border">{children}</main>
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t bg-card">
-        <div className="grid grid-cols-5">
-          {nav.slice(0, 5).map((n) => {
+        <div className="grid grid-cols-6">
+          {nav.slice(0, 6).map((n) => {
             const Icon = n.icon;
             const active = loc.pathname === n.to || (n.to !== "/" && loc.pathname.startsWith(n.to));
             return (
