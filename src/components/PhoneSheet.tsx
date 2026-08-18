@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Phone, MessageSquare, Copy, X, ArrowRight } from "lucide-react";
+import { Phone, MessageSquare, Copy, X, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { logCommunication } from "@/lib/activity.functions";
+import { sendSmsRequest } from "@/lib/sms.functions";
 import type { PatientStatusRow } from "@/lib/queries";
 
 function normalizeLibyaIntl(raw: string): string | null {
@@ -79,7 +80,9 @@ export function PhoneSheet({
   const [view, setView] = useState<"options" | "preview">("options");
   const [channel, setChannel] = useState<"WhatsApp" | "SMS" | "Call">("WhatsApp");
   const [message, setMessage] = useState("");
+  const [isSending, setIsSending] = useState(false);
   const doLog = useServerFn(logCommunication);
+  const doSendSms = useServerFn(sendSmsRequest);
 
   useEffect(() => {
     if (open) {
@@ -145,12 +148,39 @@ export function PhoneSheet({
     onOpenChange(false);
   };
 
-  const openSMS = () => {
-    handleLog("SMS");
-    const smsUrl = `sms:${phone}${window.navigator.userAgent.match(/iPhone/i) ? "&" : "?"}body=${encodeURIComponent(message)}`;
-    window.location.href = smsUrl;
-    onOpenChange(false);
+  const openSMS = async () => {
+    setIsSending(true);
+    try {
+      const idempotencyKey = crypto.randomUUID();
+      await doSendSms({
+        data: {
+          patientId: patient.patient_id,
+          phoneNumber: phone,
+          messageBody: message,
+          idempotencyKey
+        }
+      });
+      
+      await handleLog("SMS");
+      toast.success("تم إدراج الرسالة في قائمة الانتظار");
+      onOpenChange(false);
+    } catch (e) {
+      console.error(e);
+      toast.error("فشل في إرسال طلب الرسالة");
+    } finally {
+      setIsSending(false);
+    }
   };
+
+  const getSmsSegments = (text: string) => {
+    // Very basic GSM-7 vs Unicode detection
+    const isUnicode = /[^\u0000-\u007F]/.test(text);
+    const limit = isUnicode ? 70 : 160;
+    const segments = Math.ceil(text.length / limit) || 1;
+    return { segments, isUnicode, charCount: text.length };
+  };
+
+  const smsInfo = getSmsSegments(message);
 
   if (view === "preview") {
     return (
