@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { crypto } from "crypto";
+import crypto from "crypto";
 
 // Schema for creating an SMS request
 const sendSmsSchema = z.object({
