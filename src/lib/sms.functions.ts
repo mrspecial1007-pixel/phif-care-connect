@@ -86,7 +86,7 @@ export const getSmsHistory = createServerFn({ method: "GET" })
       .limit(data.limit);
 
     if (data.patientId) query = query.eq("patient_id", data.patientId);
-    if (data.status) query = query.eq("current_status", data.status);
+    if (data.status) query = query.eq("current_status", data.status as any);
 
     const { data: history, error } = await query;
     if (error) throw error;
