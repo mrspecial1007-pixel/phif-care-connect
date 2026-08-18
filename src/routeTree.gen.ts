@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as QualityRouteImport } from './routes/quality'
+import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
@@ -26,6 +27,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const QualityRoute = QualityRouteImport.update({
   id: '/quality',
   path: '/quality',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ImportRoute = ImportRouteImport.update({
@@ -63,6 +69,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/messages': typeof MessagesRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/messages': typeof MessagesRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/messages': typeof MessagesRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/import'
+    | '/messages'
     | '/quality'
     | '/settings'
     | '/patients/$id'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/import'
+    | '/messages'
     | '/quality'
     | '/settings'
     | '/patients/$id'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/import'
+    | '/messages'
     | '/quality'
     | '/settings'
     | '/patients/$id'
@@ -127,6 +139,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActivityRoute: typeof ActivityRoute
   ImportRoute: typeof ImportRoute
+  MessagesRoute: typeof MessagesRoute
   QualityRoute: typeof QualityRoute
   SettingsRoute: typeof SettingsRoute
   PatientsIdRoute: typeof PatientsIdRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/quality'
       fullPath: '/quality'
       preLoaderRoute: typeof QualityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/import': {
@@ -199,6 +219,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActivityRoute: ActivityRoute,
   ImportRoute: ImportRoute,
+  MessagesRoute: MessagesRoute,
   QualityRoute: QualityRoute,
   SettingsRoute: SettingsRoute,
   PatientsIdRoute: PatientsIdRoute,
