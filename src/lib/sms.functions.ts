@@ -36,7 +36,7 @@ export const sendSmsRequest = createServerFn({ method: "POST" })
           message_body: data.messageBody,
           idempotency_key: data.idempotencyKey,
           created_by: pharmacyId,
-          current_status: "cancelled", // Marked as cancelled/manual since it's a browser handoff
+          current_status: "handoff" as any, // Marked as handoff for manual browser redirection
         },
         { onConflict: "pharmacy_id, idempotency_key" }
       )

@@ -811,6 +811,7 @@ export type Database = {
         | "delivered"
         | "failed"
         | "cancelled"
+        | "handoff"
       tx_type: "Partial" | "Remaining" | "Completed"
     }
     CompositeTypes: {
@@ -948,6 +949,7 @@ export const Constants = {
         "delivered",
         "failed",
         "cancelled",
+        "handoff",
       ],
       tx_type: ["Partial", "Remaining", "Completed"],
     },

@@ -168,8 +168,9 @@ export function PhoneSheet({
     // Attempt to open the SMS handler
     window.location.href = smsUrl;
     
-    // We also queue it in the background for tracking/history if the session is active,
-    // but the immediate user action is the manual handoff to the SMS app.
+    // We record the handoff in communication_logs via handleLog above.
+    // We also record it in the SMS history as a 'handoff' status for record-keeping,
+    // but it never enters the automated Gateway queue because we don't trigger the FCM signal.
     try {
       const idempotencyKey = crypto.randomUUID();
       await doSendSms({
@@ -180,10 +181,8 @@ export function PhoneSheet({
           idempotencyKey
         }
       });
-      toast.success("تم فتح تطبيق الرسائل وجدولة السجل");
     } catch (e) {
-      console.error("Failed to queue background SMS log", e);
-      // Don't toast error since the primary action (opening SMS app) likely succeeded
+      console.error("Failed to record SMS handoff", e);
     }
 
     onOpenChange(false);
