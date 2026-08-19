@@ -149,27 +149,41 @@ export function PhoneSheet({
   };
 
   const openSMS = async () => {
-    setIsSending(true);
+    if (!intl) {
+      toast.error("رقم الهاتف غير صالح لرسائل SMS");
+      return;
+    }
+
+    handleLog("SMS");
+
+    // We use the standard 'sms:' URI which is supported by Android and iOS.
+    // Standard format is: sms:<number>?body=<message>
+    // However, Android handles '?' vs ';' differently in some versions.
+    // '?' is the RFC standard.
+    const smsUrl = `sms:${intl}?body=${encodeURIComponent(message)}`;
+    
+    // Attempt to open the SMS handler
+    window.location.href = smsUrl;
+    
+    // We also queue it in the background for tracking/history if the session is active,
+    // but the immediate user action is the manual handoff to the SMS app.
     try {
       const idempotencyKey = crypto.randomUUID();
       await doSendSms({
         data: {
           patientId: patient.patient_id,
-          phoneNumber: phone,
+          phoneNumber: intl,
           messageBody: message,
           idempotencyKey
         }
       });
-      
-      await handleLog("SMS");
-      toast.success("تم إدراج الرسالة في قائمة الانتظار");
-      onOpenChange(false);
+      toast.success("تم فتح تطبيق الرسائل وجدولة السجل");
     } catch (e) {
-      console.error(e);
-      toast.error("فشل في إرسال طلب الرسالة");
-    } finally {
-      setIsSending(false);
+      console.error("Failed to queue background SMS log", e);
+      // Don't toast error since the primary action (opening SMS app) likely succeeded
     }
+
+    onOpenChange(false);
   };
 
   const getSmsSegments = (text: string) => {
