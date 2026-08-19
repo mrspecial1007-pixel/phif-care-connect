@@ -162,6 +162,9 @@ export function PhoneSheet({
     // '?' is the RFC standard.
     const smsUrl = `sms:${intl}?body=${encodeURIComponent(message)}`;
     
+    // Diagnostic logging
+    console.log("SMS URI Triggered:", smsUrl);
+    
     // Attempt to open the SMS handler
     window.location.href = smsUrl;
     
