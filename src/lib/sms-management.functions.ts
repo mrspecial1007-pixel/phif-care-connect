@@ -43,7 +43,7 @@ export const deleteOrArchiveSmsMessage = createServerFn({ method: "POST" })
         throw new Error("لا يمكن حذف الرسالة لأنها قيد المعالجة بواسطة جهاز الإرسال.");
       }
 
-      // Safe to delete (manually delete attempts to be sure, though FK cascade is enabled)
+      // Safe to delete 
       await supabaseAdmin.from("sms_messages").delete().eq("id", data.id);
       return { action: "deleted" };
     }

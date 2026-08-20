@@ -33,7 +33,7 @@ function SmsMessagesPage() {
   const [showArchived, setShowArchived] = useState(false);
   const fetchHistory = useServerFn(getSmsHistory);
   
-  const { data: messages } = useSuspenseQuery({
+  const { data: messages, refetch } = useSuspenseQuery({
     queryKey: ["sms_history"],
     queryFn: () => fetchHistory({ data: {} }),
   });
@@ -42,7 +42,7 @@ function SmsMessagesPage() {
     if (!messages) return [];
     const s = search.toLowerCase();
     return messages.filter(m => {
-      if (m.current_status === "handoff") return false; // Hide handoff
+      if (m.current_status === "handoff") return false; 
       if (!showArchived && m.is_archived) return false;
       return (
         m.phone_number.includes(s) || 
