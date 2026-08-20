@@ -140,6 +140,7 @@ export const claimSmsJobs = createServerFn({ method: "POST" })
       .select("*")
       .eq("id", data.deviceId)
       .eq("enabled", true)
+      .is("revoked_at", null)
       .single();
 
     if (deviceError || !device || device.token_hash !== hashToken(data.deviceToken)) {
