@@ -14,8 +14,10 @@ Clean up SMS semantics and UI to distinguish between actual Gateway SMS operatio
 - **Audit Logging**: Ensure manual handoffs are logged to `communication_logs` with a specific action (`sms_handoff`).
 - **Archiving Support**: Add `is_archived` boolean column to `sms_messages` table via migration.
 - **Message Management**: Implement `deleteOrArchiveSmsMessage` server function:
-    - Permanently delete `handoff`, `pending`, or `failed` messages.
+    - Permanently delete `handoff` records (no validation needed).
+    - Permanently delete `pending` or `failed` messages ONLY if not currently claimed/leased by a gateway (verify `sms_send_attempts` for active `lease_expires_at`).
     - Set `is_archived = true` for `sent` or `delivered` messages.
+    - All operations strictly validated against `pharmacy_id`.
 - **Status Filter**: Update `getSmsHistory` to exclude `handoff` and `is_archived` records by default.
 
 ### Frontend - SMS Logic
@@ -35,7 +37,7 @@ Clean up SMS semantics and UI to distinguish between actual Gateway SMS operatio
 ## Technical Details
 
 ### Server Functions
-- `deleteOrArchiveSmsMessage`: Validates pharmacy session, checks message status, and either deletes or archives the record.
+- `deleteOrArchiveSmsMessage`: Validates pharmacy session, checks status/lease/attempts, and either deletes or archives the record.
 - `getSmsHistory`: Add `includeHandoff` and `includeArchived` flags (default `false`).
 
 ### UI Components
