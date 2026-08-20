@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Phone, MessageSquare, Copy, X, ArrowRight, Loader2 } from "lucide-react";
+import { Phone, MessageSquare, Copy, X, ArrowRight, Loader2, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { logCommunication } from "@/lib/activity.functions";
