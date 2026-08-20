@@ -554,6 +554,7 @@ export type Database = {
           current_status: Database["public"]["Enums"]["sms_status"]
           id: string
           idempotency_key: string
+          is_archived: boolean | null
           message_body: string
           patient_id: string
           pharmacy_id: string
@@ -565,6 +566,7 @@ export type Database = {
           current_status?: Database["public"]["Enums"]["sms_status"]
           id?: string
           idempotency_key: string
+          is_archived?: boolean | null
           message_body: string
           patient_id: string
           pharmacy_id: string
@@ -576,6 +578,7 @@ export type Database = {
           current_status?: Database["public"]["Enums"]["sms_status"]
           id?: string
           idempotency_key?: string
+          is_archived?: boolean | null
           message_body?: string
           patient_id?: string
           pharmacy_id?: string
