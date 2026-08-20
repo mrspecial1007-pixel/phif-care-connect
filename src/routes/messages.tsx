@@ -16,13 +16,30 @@ import {
   ChevronLeft,
   Calendar,
   User,
-  History
+  History,
+  Trash2,
+  EyeOff,
+  MoreVertical,
+  Loader2,
+  Archive
 } from "lucide-react";
 import { format } from "date-fns";
 import { ar } from "date-fns/locale";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { deleteOrArchiveSmsMessage } from "@/lib/sms-management.functions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/messages")({
   component: () => <Gate><SmsMessagesPage /></Gate>,
@@ -32,6 +49,10 @@ function SmsMessagesPage() {
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const fetchHistory = useServerFn(getSmsHistory);
+  const deleteOrArchive = useServerFn(deleteOrArchiveSmsMessage);
+  
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   const { data: messages, refetch } = useSuspenseQuery({
     queryKey: ["sms_history"],
@@ -63,6 +84,24 @@ function SmsMessagesPage() {
       default: return <Badge variant="outline">{status}</Badge>;
     }
   };
+  
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    setIsProcessing(true);
+    try {
+      const result = await deleteOrArchive({ data: { id: deletingId } });
+      toast.success(result.action === "archived" ? "تم إخفاء الرسالة من السجل" : "تم حذف الرسالة بنجاح");
+      await refetch();
+    } catch (e: any) {
+      toast.error(e.message || "فشل تنفيذ العملية");
+    } finally {
+      setIsProcessing(false);
+      setDeletingId(null);
+    }
+  };
+
+  const selectedMessage = messages?.find(m => m.id === deletingId);
+  const isArchiveOnly = selectedMessage?.current_status === "sent" || selectedMessage?.current_status === "delivered";
 
   return (
     <div className="space-y-6 pb-24 rtl min-h-screen bg-slate-50/50">
@@ -75,7 +114,18 @@ function SmsMessagesPage() {
             </div>
             <h1 className="text-xl font-bold text-slate-900">سجل الرسائل SMS</h1>
           </div>
-          <Badge variant="secondary" className="font-mono" dir="ltr">{filteredMessages.length}</Badge>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setShowArchived(!showArchived)}
+              className={showArchived ? "text-info bg-info/5" : "text-slate-400"}
+            >
+              <Archive className="h-4 w-4 ml-2" />
+              {showArchived ? "إخفاء المؤرشف" : "عرض المؤرشف"}
+            </Button>
+            <Badge variant="secondary" className="font-mono" dir="ltr">{filteredMessages.length}</Badge>
+          </div>
         </div>
       </div>
 
@@ -113,8 +163,20 @@ function SmsMessagesPage() {
                         <span>{m.phone_number}</span>
                       </div>
                     </div>
-                    <div className="shrink-0">
+                     <div className="shrink-0 flex items-center gap-2">
                       {getStatusBadge(m.current_status)}
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-slate-400 hover:text-red-500"
+                        onClick={() => setDeletingId(m.id)}
+                      >
+                        {m.current_status === "sent" || m.current_status === "delivered" ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
                   </div>
 
@@ -146,6 +208,32 @@ function SmsMessagesPage() {
           )}
         </div>
       </div>
+
+      <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
+        <AlertDialogContent className="rtl text-right">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isArchiveOnly ? "إخفاء الرسالة" : "حذف الرسالة"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isArchiveOnly 
+                ? "سيتم إخفاء هذه الرسالة من السجل الرئيسي مع الاحتفاظ بها في قاعدة البيانات للأغراض التدقيقية."
+                : "هل تريد حذف هذه الرسالة من السجل؟ لا يمكن التراجع عن هذه العملية."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row-reverse gap-2">
+            <AlertDialogCancel disabled={isProcessing}>إلغاء</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={(e) => { e.preventDefault(); handleDelete(); }}
+              disabled={isProcessing}
+              className={isArchiveOnly ? "bg-slate-900" : "bg-red-600 hover:bg-red-700"}
+            >
+              {isProcessing && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+              {isArchiveOnly ? "إخفاء من السجل" : "حذف"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

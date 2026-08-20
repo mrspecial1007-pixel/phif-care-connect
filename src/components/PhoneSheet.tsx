@@ -220,26 +220,56 @@ export function PhoneSheet({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              {channel === "WhatsApp" ? (
-                <Button onClick={openWhatsApp} className="bg-success hover:bg-success/90 text-white col-span-2 h-12">
-                  <MessageSquare className="h-5 w-5 ml-2" /> فتح في WhatsApp
-                </Button>
-              ) : (
+              <Button 
+                onClick={openWhatsApp} 
+                className="bg-success hover:bg-success/90 text-white col-span-2 h-12"
+              >
+                <MessageSquare className="h-5 w-5 ml-2" /> WhatsApp
+              </Button>
+
+              <Button 
+                onClick={openSMS} 
+                className="bg-slate-100 hover:bg-slate-200 text-slate-900 col-span-2 h-12"
+              >
+                <MessageSquare className="h-5 w-5 ml-2" /> فتح تطبيق الرسائل (يدوي)
+              </Button>
+
+              <div className="col-span-2 pt-4 border-t mt-2">
                 <Button 
-                  onClick={openSMS} 
+                  onClick={async () => {
+                    setIsSending(true);
+                    try {
+                      const idempotencyKey = crypto.randomUUID();
+                      await doSendSms({
+                        data: {
+                          patientId: patient.patient_id,
+                          phoneNumber: intl!,
+                          messageBody: message,
+                          idempotencyKey
+                        }
+                      });
+                      toast.success("تم إرسال الطلب إلى بوابة SMS");
+                      onOpenChange(false);
+                    } catch (e: any) {
+                      toast.error(e.message || "فشل إرسال الطلب");
+                    } finally {
+                      setIsSending(false);
+                    }
+                  }} 
                   disabled={isSending}
-                  className="bg-info hover:bg-info/90 text-info-foreground col-span-2 h-12"
+                  className="bg-info hover:bg-info/90 text-info-foreground w-full h-12 font-bold"
                 >
                   {isSending ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
                     <>
-                      <MessageSquare className="h-5 w-5 ml-2" /> إرسال رسالة SMS
+                      <Smartphone className="h-5 w-5 ml-2" /> إرسال عبر Gateway
                     </>
                   )}
                 </Button>
-              )}
-              <Button variant="outline" disabled={isSending} onClick={() => setView("options")} className="col-span-2 h-12">
+              </div>
+
+              <Button variant="ghost" disabled={isSending} onClick={() => setView("options")} className="col-span-2 h-10">
                 إلغاء
               </Button>
             </div>
@@ -264,11 +294,7 @@ export function PhoneSheet({
           </Button>
           
           <Button variant="outline" className="w-full h-12 justify-start" onClick={() => { setChannel("WhatsApp"); setView("preview"); }}>
-            <MessageSquare className="h-5 w-5 ml-3 text-success" /> WhatsApp
-          </Button>
-
-          <Button variant="outline" className="w-full h-12 justify-start" onClick={() => { setChannel("SMS"); setView("preview"); }}>
-            <MessageSquare className="h-5 w-5 ml-3 text-info" /> SMS
+            <MessageSquare className="h-5 w-5 ml-3 text-success" /> تواصل (WhatsApp / SMS)
           </Button>
 
           <Button variant="outline" className="w-full h-12 justify-start" onClick={copy}>
