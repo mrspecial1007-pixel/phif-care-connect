@@ -387,6 +387,7 @@ export type Database = {
           last_seen_at: string | null
           name: string
           pharmacy_id: string
+          revoked_at: string | null
           status: string
           token_hash: string
         }
@@ -398,6 +399,7 @@ export type Database = {
           last_seen_at?: string | null
           name: string
           pharmacy_id: string
+          revoked_at?: string | null
           status?: string
           token_hash: string
         }
@@ -409,6 +411,7 @@ export type Database = {
           last_seen_at?: string | null
           name?: string
           pharmacy_id?: string
+          revoked_at?: string | null
           status?: string
           token_hash?: string
         }
@@ -422,6 +425,48 @@ export type Database = {
           },
           {
             foreignKeyName: "gateway_devices_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gateway_pairing_codes: {
+        Row: {
+          code_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          pharmacy_id: string
+          used_at: string | null
+        }
+        Insert: {
+          code_hash: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          pharmacy_id: string
+          used_at?: string | null
+        }
+        Update: {
+          code_hash?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          pharmacy_id?: string
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gateway_pairing_codes_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gateway_pairing_codes_pharmacy_id_fkey"
             columns: ["pharmacy_id"]
             isOneToOne: false
             referencedRelation: "v_pharmacies"
@@ -802,7 +847,10 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      register_gateway_device_with_code: {
+        Args: { _code_hash: string; _device_name: string; _fcm_token?: string }
+        Returns: Json
+      }
     }
     Enums: {
       cycle_status: "Waiting" | "Partial" | "Completed"

@@ -4,7 +4,8 @@ import com.google.gson.annotations.SerializedName
 
 data class RegisterRequest(
     val name: String,
-    val fcmToken: String? = null
+    @SerializedName("pairingCode") val pairingCode: String,
+    @SerializedName("fcmToken") val fcmToken: String? = null
 )
 
 data class RegisterResponse(

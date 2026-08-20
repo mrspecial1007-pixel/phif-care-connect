@@ -9,7 +9,7 @@ import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { useSession } from "@/lib/queries";
-import { Bell, Shield, Clock, Send, Trash2 } from "lucide-react";
+import { Bell, Shield, Clock, Send, Trash2, Smartphone, Key, AlertTriangle, CheckCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,10 @@ import {
   deleteSubscription,
   sendTestNotification
 } from "@/lib/notifications/notifications.functions";
+import { generatePairingCode, listGatewayDevices, revokeGatewayDevice } from "@/lib/sms-gateway.functions";
+import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { ar } from "date-fns/locale";
 
 export const Route = createFileRoute("/settings")({
   component: () => <Gate><SettingsPage /></Gate>,
@@ -76,8 +80,123 @@ function SettingsPage() {
       </Card>
 
       <PharmacySettingsCard />
+      <SmsGatewaySettingsCard />
       <NotificationSettingsCard />
     </div>
+  );
+}
+
+function SmsGatewaySettingsCard() {
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [expiry, setExpiry] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const generateCodeFn = useServerFn(generatePairingCode);
+  const revokeDeviceFn = useServerFn(revokeGatewayDevice);
+  const listDevicesFn = useServerFn(listGatewayDevices);
+
+  const { data: devices, refetch } = useQuery({
+    queryKey: ["gateway_devices"],
+    queryFn: () => listDevicesFn(),
+  });
+
+  async function handleGenerateCode() {
+    setBusy(true);
+    try {
+      const res = await generateCodeFn();
+      setPairingCode(res.pairingCode);
+      setExpiry(res.expiresAt);
+      toast.success("تم إنشاء رمز الإقران");
+    } catch (err: any) {
+      toast.error(err.message || "فشل إنشاء رمز الإقران");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRevoke(id: string) {
+    if (!confirm("هل أنت متأكد من سحب صلاحية هذا الجهاز؟ سيتوقف عن إرسال الرسائل فوراً.")) return;
+    try {
+      await revokeDeviceFn({ data: { deviceId: id } });
+      toast.success("تم سحب صلاحية الجهاز");
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message || "فشل سحب صلاحية الجهاز");
+    }
+  }
+
+  return (
+    <Card className="p-4 space-y-6">
+      <div className="flex items-center justify-between border-b pb-2">
+        <div className="flex items-center gap-2">
+          <Smartphone className="h-5 w-5 text-primary" />
+          <h2 className="font-semibold text-lg">بوابة SMS Gateway</h2>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {!pairingCode ? (
+          <div className="p-4 bg-primary/5 rounded-lg border border-primary/10 text-center space-y-3">
+            <p className="text-sm text-slate-600">لربط تطبيق Gateway على هاتفك الأندرويد، قم بإنشاء رمز إقران مؤقت.</p>
+            <Button onClick={handleGenerateCode} disabled={busy} className="w-full h-11">
+              <Key className="h-4 w-4 ml-2" />
+              {busy ? "جاري الإنشاء..." : "ربط جهاز جديد (إنشاء رمز)"}
+            </Button>
+          </div>
+        ) : (
+          <div className="p-4 bg-info/5 rounded-lg border border-info/20 text-center space-y-3">
+            <div className="text-sm font-medium text-info">رمز الإقران الخاص بك هو:</div>
+            <div className="text-4xl font-black tracking-[0.5em] text-slate-900 font-mono py-2">{pairingCode}</div>
+            <div className="text-xs text-slate-500 flex items-center justify-center gap-1">
+              <Clock className="h-3 w-3" />
+              صالح لمدة 10 دقائق (حتى {format(new Date(expiry!), "HH:mm")})
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setPairingCode(null)} className="mt-2">إغلاق</Button>
+          </div>
+        )}
+
+        <div className="space-y-3 pt-2">
+          <div className="text-sm font-bold text-slate-900 px-1">الأجهزة المرتبطة</div>
+          {!devices || devices.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 border rounded-xl bg-slate-50/50">
+              <Smartphone className="h-8 w-8 mx-auto mb-2 opacity-20" />
+              <p className="text-xs">لا توجد أجهزة مرتبطة حالياً</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {devices.map((device: any) => (
+                <div key={device.id} className="flex items-center justify-between p-3 border rounded-xl bg-white shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${device.revoked_at || !device.enabled ? 'bg-slate-100 text-slate-400' : 'bg-success/10 text-success'}`}>
+                      <Smartphone className="h-5 w-5" />
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-sm text-slate-900">{device.name}</div>
+                      <div className="text-[10px] text-slate-500">
+                        {device.revoked_at ? (
+                          <span className="text-red-500 flex items-center gap-0.5">
+                            <AlertTriangle className="h-2 w-2" /> تم سحب الصلاحية
+                          </span>
+                        ) : (
+                          <span>أضيف في {format(new Date(device.created_at), "yyyy/MM/dd", { locale: ar })}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!device.revoked_at && device.enabled && (
+                      <Button variant="ghost" size="icon" onClick={() => handleRevoke(device.id)} className="h-8 w-8 text-red-500 hover:bg-red-50">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
 

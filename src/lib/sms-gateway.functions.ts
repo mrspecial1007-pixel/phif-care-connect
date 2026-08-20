@@ -10,13 +10,77 @@ function hashToken(token: string): string {
 }
 
 /**
- * Register a new Gateway Device
- * Returns the plaintext token once.
+ * Generate a new secure pairing code for the current pharmacy
+ */
+export const generatePairingCode = createServerFn({ method: "POST" })
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { getPharmacySession } = await import("@/lib/pharmacy-session.server");
+    
+    const session = await getPharmacySession();
+    if (!session.data.pharmacy_id) throw new Error("Unauthorized");
+
+    // Generate 6-char code (A-Z, 0-9)
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Omitted 0, 1, I, O for clarity
+    let pairingCode = "";
+    for (let i = 0; i < 6; i++) {
+      pairingCode += chars.charAt(crypto.randomInt(chars.length));
+    }
+
+    const codeHash = hashToken(pairingCode);
+    const expiresAt = new Date(Date.now() + 10 * 60000).toISOString(); // 10 minutes
+
+    const { error } = await supabaseAdmin
+      .from("gateway_pairing_codes")
+      .insert({
+        pharmacy_id: session.data.pharmacy_id,
+        code_hash: codeHash,
+        expires_at: expiresAt
+      });
+
+    if (error) throw error;
+
+    return { 
+      pairingCode, 
+      expiresAt 
+    };
+  });
+
+/**
+ * Register a new Gateway Device using a pairing code
  */
 export const registerGatewayDevice = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({
     name: z.string(),
+    pairingCode: z.string(),
     fcmToken: z.string().optional(),
+  }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    
+    const codeHash = hashToken(data.pairingCode.trim().toUpperCase());
+
+    // Use the RPC for atomic validation and creation
+    const { data: result, error } = await supabaseAdmin.rpc('register_gateway_device_with_code', {
+      _device_name: data.name,
+      _code_hash: codeHash,
+      _fcm_token: data.fcmToken
+    });
+
+    if (error) {
+      console.error("Gateway pairing error:", error);
+      throw new Error(error.message || "Pairing failed: Invalid or expired code");
+    }
+
+    return result as { deviceId: string; deviceToken: string };
+  });
+
+/**
+ * Revoke a Gateway Device
+ */
+export const revokeGatewayDevice = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({
+    deviceId: z.string().uuid(),
   }).parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -25,28 +89,37 @@ export const registerGatewayDevice = createServerFn({ method: "POST" })
     const session = await getPharmacySession();
     if (!session.data.pharmacy_id) throw new Error("Unauthorized");
 
-    const deviceToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = hashToken(deviceToken);
-
-    const { data: device, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from("gateway_devices")
-      .insert({
-        name: data.name,
-        pharmacy_id: session.data.pharmacy_id,
-        token_hash: tokenHash,
-        fcm_token: data.fcmToken,
-        status: "active",
-        enabled: true,
-      })
-      .select()
-      .single();
+      .update({ revoked_at: new Date().toISOString(), enabled: false })
+      .eq("id", data.deviceId)
+      .eq("pharmacy_id", session.data.pharmacy_id);
 
     if (error) throw error;
 
-    return {
-      deviceId: device.id,
-      deviceToken, // Return once to the Android Gateway
-    };
+    return { success: true };
+  });
+
+/**
+ * List Gateway Devices for current pharmacy
+ */
+export const listGatewayDevices = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { getPharmacySession } = await import("@/lib/pharmacy-session.server");
+    
+    const session = await getPharmacySession();
+    if (!session.data.pharmacy_id) throw new Error("Unauthorized");
+
+    const { data: devices, error } = await supabaseAdmin
+      .from("gateway_devices")
+      .select("*")
+      .eq("pharmacy_id", session.data.pharmacy_id)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    return devices;
   });
 
 /**
@@ -67,6 +140,7 @@ export const claimSmsJobs = createServerFn({ method: "POST" })
       .select("*")
       .eq("id", data.deviceId)
       .eq("enabled", true)
+      .is("revoked_at", null)
       .single();
 
     if (deviceError || !device || device.token_hash !== hashToken(data.deviceToken)) {
@@ -156,6 +230,7 @@ export const updateSmsStatus = createServerFn({ method: "POST" })
       .select("token_hash")
       .eq("id", data.deviceId)
       .eq("enabled", true)
+      .is("revoked_at", null)
       .single();
 
     if (deviceError || !device || device.token_hash !== hashToken(data.deviceToken)) {
