@@ -130,8 +130,15 @@ class SmsWorker(context: Context, workerParams: WorkerParameters) : CoroutineWor
     }
 
     private fun getSmsManager(): SmsManager {
-        // Placeholder for SIM selection logic
-        return applicationContext.getSystemService(SmsManager::class.java)
+        val simManager = SimManager(applicationContext)
+        val subscriptionId = simManager.getDefaultSimSubscriptionId()
+        
+        return if (subscriptionId != null) {
+            applicationContext.getSystemService(SmsManager::class.java)
+                .createForSubscriptionId(subscriptionId)
+        } else {
+            applicationContext.getSystemService(SmsManager::class.java)
+        }
     }
 
     private fun createApi(baseUrl: String): GatewayApi {

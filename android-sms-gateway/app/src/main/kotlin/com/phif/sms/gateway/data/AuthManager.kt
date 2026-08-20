@@ -30,6 +30,12 @@ class AuthManager(context: Context) {
     fun getDeviceToken(): String? = prefs.getString("device_token", null)
     fun getBaseUrl(): String? = prefs.getString("base_url", null)
     
+    fun getDefaultSimId(): Int = prefs.getInt("default_sim_id", -1)
+    
+    fun setDefaultSimId(id: Int) {
+        prefs.edit().putInt("default_sim_id", id).apply()
+    }
+    
     fun isPaired(): Boolean = getDeviceId() != null && getDeviceToken() != null
 
     fun clear() {
