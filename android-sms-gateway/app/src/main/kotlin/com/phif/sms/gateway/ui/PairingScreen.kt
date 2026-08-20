@@ -13,10 +13,12 @@ import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import org.json.JSONObject
 
 @Composable
 fun PairingScreen(authManager: AuthManager, onPaired: () -> Unit) {
     var name by remember { mutableStateOf("") }
+    var pairingCode by remember { mutableStateOf("") }
     var baseUrl by remember { mutableStateOf("https://") }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -45,7 +47,17 @@ fun PairingScreen(authManager: AuthManager, onPaired: () -> Unit) {
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("اسم الجهاز") },
+            label = { Text("اسم الجهاز (مثل: Redmi Pad)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = pairingCode,
+            onValueChange = { pairingCode = it.uppercase().trim() },
+            label = { Text("رمز الإقران (6 رموز)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
@@ -80,14 +92,20 @@ fun PairingScreen(authManager: AuthManager, onPaired: () -> Unit) {
                             .build()
                         
                         val api = retrofit.create(GatewayApi::class.java)
-                        val response = api.registerDevice(RegisterRequest(name))
+                        val response = api.registerDevice(RegisterRequest(name, pairingCode))
                         
                         if (response.isSuccessful) {
                             val data = response.body()!!
                             authManager.saveCredentials(data.deviceId, data.deviceToken, baseUrl)
                             onPaired()
                         } else {
-                            error = "فشل الإقران: ${response.code()}"
+                            val errorBody = response.errorBody()?.string()
+                            val message = try {
+                                JSONObject(errorBody ?: "").getString("error")
+                            } catch (e: Exception) {
+                                "فشل الإقران: ${response.code()}"
+                            }
+                            error = message
                         }
                     } catch (e: Exception) {
                         error = "خطأ في الاتصال: ${e.message}"
@@ -97,7 +115,7 @@ fun PairingScreen(authManager: AuthManager, onPaired: () -> Unit) {
                 }
             },
             modifier = Modifier.fillMaxWidth().height(56.dp),
-            enabled = name.isNotBlank() && baseUrl.isNotBlank() && !isLoading
+            enabled = name.isNotBlank() && pairingCode.isNotBlank() && baseUrl.isNotBlank() && !isLoading
         ) {
             if (isLoading) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
