@@ -5,15 +5,18 @@ Clean up SMS semantics and UI to distinguish between actual Gateway SMS operatio
 ## User Review Required
 
 > [!IMPORTANT]
-> - Deleting an SMS message will also delete all associated sending attempts (physical tracking).
-> - "Handoff" records will no longer be created in the `sms_messages` table for manual "Open Messages App" actions.
+> - **Deletion Safety**: "Handoff" and `pending`/`failed` Gateway messages can be permanently deleted. `sent` and `delivered` messages will be **archived** (hidden) instead of deleted to preserve the audit trail.
+> - **Foreign Keys**: Cascade behavior will be verified and handled server-side to prevent orphans.
 
 ## Proposed Changes
 
 ### Database & Backend
 - **Audit Logging**: Ensure manual handoffs are logged to `communication_logs` with a specific action (`sms_handoff`).
-- **SMS Deletion**: Implement a server function `deleteSmsMessage` to safely remove `sms_messages` and their cascaded `sms_send_attempts`.
-- **Status Filter**: Update `getSmsHistory` to exclude `handoff` status by default.
+- **Archiving Support**: Add `is_archived` boolean column to `sms_messages` table via migration.
+- **Message Management**: Implement `deleteOrArchiveSmsMessage` server function:
+    - Permanently delete `handoff`, `pending`, or `failed` messages.
+    - Set `is_archived = true` for `sent` or `delivered` messages.
+- **Status Filter**: Update `getSmsHistory` to exclude `handoff` and `is_archived` records by default.
 
 ### Frontend - SMS Logic
 - **PhoneSheet.tsx**:
@@ -32,13 +35,13 @@ Clean up SMS semantics and UI to distinguish between actual Gateway SMS operatio
 ## Technical Details
 
 ### Server Functions
-- `deleteSmsMessage`: Validates pharmacy session and deletes from `sms_messages`.
-- `getSmsHistory`: Add `includeHandoff` boolean (default `false`) and date filtering.
+- `deleteOrArchiveSmsMessage`: Validates pharmacy session, checks message status, and either deletes or archives the record.
+- `getSmsHistory`: Add `includeHandoff` and `includeArchived` flags (default `false`).
 
 ### UI Components
 - Update `PhoneSheet` to handle the dual-action logic.
-- Update `SmsMessagesPage` with new filters and delete functionality.
-- Add `DeleteMessageDialog` component.
+- Update `SmsMessagesPage` with new filters and delete/archive functionality.
+- Add `DeleteMessageDialog` component with Arabic text "هل تريد حذف هذه الرسالة من السجل؟". For archived messages, the button will be "إخفاء من السجل" or similar.
 
 ## Verification Plan
 
