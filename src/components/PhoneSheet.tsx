@@ -154,39 +154,16 @@ export function PhoneSheet({
       return;
     }
 
+    // 1. Log to communication_logs (external handoff)
     handleLog("SMS");
 
-    // We use the standard 'sms:' URI which is supported by Android and iOS.
-    // Standard format is: sms:<number>?body=<message>
-    // However, Android handles '?' vs ';' differently in some versions.
-    // '?' is the RFC standard.
+    // 2. Open external app
     const smsUrl = `sms:${intl}?body=${encodeURIComponent(message)}`;
-    
-    // Diagnostic logging
-    console.log("SMS URI Triggered:", smsUrl);
-    
-    // Attempt to open the SMS handler
     window.location.href = smsUrl;
     
-    // We record the handoff in communication_logs via handleLog above.
-    // We also record it in the SMS history as a 'handoff' status for record-keeping,
-    // but it never enters the automated Gateway queue because we don't trigger the FCM signal.
-    try {
-      const idempotencyKey = crypto.randomUUID();
-      await doSendSms({
-        data: {
-          patientId: patient.patient_id,
-          phoneNumber: intl,
-          messageBody: message,
-          idempotencyKey
-        }
-      });
-    } catch (e) {
-      console.error("Failed to record SMS handoff", e);
-    }
-
     onOpenChange(false);
   };
+
 
   const getSmsSegments = (text: string) => {
     // Very basic GSM-7 vs Unicode detection

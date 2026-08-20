@@ -30,6 +30,7 @@ export const Route = createFileRoute("/messages")({
 
 function SmsMessagesPage() {
   const [search, setSearch] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const fetchHistory = useServerFn(getSmsHistory);
   
   const { data: messages } = useSuspenseQuery({
@@ -40,12 +41,16 @@ function SmsMessagesPage() {
   const filteredMessages = useMemo(() => {
     if (!messages) return [];
     const s = search.toLowerCase();
-    return messages.filter(m => 
-      m.phone_number.includes(s) || 
-      (m.patients?.patient_name || "").toLowerCase().includes(s) ||
-      m.message_body.toLowerCase().includes(s)
-    );
-  }, [messages, search]);
+    return messages.filter(m => {
+      if (m.current_status === "handoff") return false; // Hide handoff
+      if (!showArchived && m.is_archived) return false;
+      return (
+        m.phone_number.includes(s) || 
+        (m.patients?.patient_name || "").toLowerCase().includes(s) ||
+        m.message_body.toLowerCase().includes(s)
+      );
+    });
+  }, [messages, search, showArchived]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
