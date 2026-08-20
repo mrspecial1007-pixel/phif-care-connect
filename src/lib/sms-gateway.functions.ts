@@ -230,6 +230,7 @@ export const updateSmsStatus = createServerFn({ method: "POST" })
       .select("token_hash")
       .eq("id", data.deviceId)
       .eq("enabled", true)
+      .is("revoked_at", null)
       .single();
 
     if (deviceError || !device || device.token_hash !== hashToken(data.deviceToken)) {
