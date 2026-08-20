@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Phone, MessageSquare, Copy, X, ArrowRight, Loader2 } from "lucide-react";
+import { Phone, MessageSquare, Copy, X, ArrowRight, Loader2, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { logCommunication } from "@/lib/activity.functions";
@@ -154,39 +154,16 @@ export function PhoneSheet({
       return;
     }
 
+    // 1. Log to communication_logs (external handoff)
     handleLog("SMS");
 
-    // We use the standard 'sms:' URI which is supported by Android and iOS.
-    // Standard format is: sms:<number>?body=<message>
-    // However, Android handles '?' vs ';' differently in some versions.
-    // '?' is the RFC standard.
+    // 2. Open external app
     const smsUrl = `sms:${intl}?body=${encodeURIComponent(message)}`;
-    
-    // Diagnostic logging
-    console.log("SMS URI Triggered:", smsUrl);
-    
-    // Attempt to open the SMS handler
     window.location.href = smsUrl;
     
-    // We record the handoff in communication_logs via handleLog above.
-    // We also record it in the SMS history as a 'handoff' status for record-keeping,
-    // but it never enters the automated Gateway queue because we don't trigger the FCM signal.
-    try {
-      const idempotencyKey = crypto.randomUUID();
-      await doSendSms({
-        data: {
-          patientId: patient.patient_id,
-          phoneNumber: intl,
-          messageBody: message,
-          idempotencyKey
-        }
-      });
-    } catch (e) {
-      console.error("Failed to record SMS handoff", e);
-    }
-
     onOpenChange(false);
   };
+
 
   const getSmsSegments = (text: string) => {
     // Very basic GSM-7 vs Unicode detection
@@ -243,26 +220,56 @@ export function PhoneSheet({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              {channel === "WhatsApp" ? (
-                <Button onClick={openWhatsApp} className="bg-success hover:bg-success/90 text-white col-span-2 h-12">
-                  <MessageSquare className="h-5 w-5 ml-2" /> فتح في WhatsApp
-                </Button>
-              ) : (
+              <Button 
+                onClick={openWhatsApp} 
+                className="bg-success hover:bg-success/90 text-white col-span-2 h-12"
+              >
+                <MessageSquare className="h-5 w-5 ml-2" /> WhatsApp
+              </Button>
+
+              <Button 
+                onClick={openSMS} 
+                className="bg-slate-100 hover:bg-slate-200 text-slate-900 col-span-2 h-12"
+              >
+                <MessageSquare className="h-5 w-5 ml-2" /> فتح تطبيق الرسائل (يدوي)
+              </Button>
+
+              <div className="col-span-2 pt-4 border-t mt-2">
                 <Button 
-                  onClick={openSMS} 
+                  onClick={async () => {
+                    setIsSending(true);
+                    try {
+                      const idempotencyKey = crypto.randomUUID();
+                      await doSendSms({
+                        data: {
+                          patientId: patient.patient_id,
+                          phoneNumber: intl!,
+                          messageBody: message,
+                          idempotencyKey
+                        }
+                      });
+                      toast.success("تم إرسال الطلب إلى بوابة SMS");
+                      onOpenChange(false);
+                    } catch (e: any) {
+                      toast.error(e.message || "فشل إرسال الطلب");
+                    } finally {
+                      setIsSending(false);
+                    }
+                  }} 
                   disabled={isSending}
-                  className="bg-info hover:bg-info/90 text-info-foreground col-span-2 h-12"
+                  className="bg-info hover:bg-info/90 text-info-foreground w-full h-12 font-bold"
                 >
                   {isSending ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
                     <>
-                      <MessageSquare className="h-5 w-5 ml-2" /> إرسال رسالة SMS
+                      <Smartphone className="h-5 w-5 ml-2" /> إرسال عبر Gateway
                     </>
                   )}
                 </Button>
-              )}
-              <Button variant="outline" disabled={isSending} onClick={() => setView("options")} className="col-span-2 h-12">
+              </div>
+
+              <Button variant="ghost" disabled={isSending} onClick={() => setView("options")} className="col-span-2 h-10">
                 إلغاء
               </Button>
             </div>
@@ -287,11 +294,7 @@ export function PhoneSheet({
           </Button>
           
           <Button variant="outline" className="w-full h-12 justify-start" onClick={() => { setChannel("WhatsApp"); setView("preview"); }}>
-            <MessageSquare className="h-5 w-5 ml-3 text-success" /> WhatsApp
-          </Button>
-
-          <Button variant="outline" className="w-full h-12 justify-start" onClick={() => { setChannel("SMS"); setView("preview"); }}>
-            <MessageSquare className="h-5 w-5 ml-3 text-info" /> SMS
+            <MessageSquare className="h-5 w-5 ml-3 text-success" /> تواصل (WhatsApp / SMS)
           </Button>
 
           <Button variant="outline" className="w-full h-12 justify-start" onClick={copy}>
