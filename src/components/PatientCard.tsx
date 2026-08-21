@@ -15,10 +15,14 @@ import { toast } from "sonner";
 
 function daysUntil(dateStr: string | null | undefined): number | null {
   if (!dateStr) return null;
-  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
+  // Parse YYYY-MM-DD as local date to match database date logic
+  const parts = dateStr.slice(0, 10).split('-');
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  d.setHours(0, 0, 0, 0);
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  
   return Math.round((d.getTime() - today.getTime()) / 86400000);
 }
 
