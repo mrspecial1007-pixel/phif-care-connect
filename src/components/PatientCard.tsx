@@ -30,9 +30,7 @@ function trackRemainingDays(track: {
   next_due_date?: string | null;
   remaining_days?: number | null;
 }): number | null {
-  if (typeof track.remaining_days === "number" && Number.isFinite(track.remaining_days)) {
-    return track.remaining_days;
-  }
+  // Always prefer local recalculation to avoid server/client sync issues on "Today"
   return daysUntil(track.next_due_date);
 }
 
