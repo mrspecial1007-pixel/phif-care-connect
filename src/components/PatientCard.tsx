@@ -12,26 +12,14 @@ import { useServerFn } from "@tanstack/react-start";
 import { upsertPatient } from "@/lib/dispensing.functions";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-
-function daysUntil(dateStr: string | null | undefined): number | null {
-  if (!dateStr) return null;
-  // Parse YYYY-MM-DD as local date to match database date logic
-  const parts = dateStr.slice(0, 10).split('-');
-  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-  d.setHours(0, 0, 0, 0);
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  return Math.round((d.getTime() - today.getTime()) / 86400000);
-}
+import { daysUntilDate } from "@/lib/date";
 
 function trackRemainingDays(track: {
   next_due_date?: string | null;
   remaining_days?: number | null;
 }): number | null {
   // Always prefer local recalculation to avoid server/client sync issues on "Today"
-  return daysUntil(track.next_due_date);
+  return daysUntilDate(track.next_due_date);
 }
 
 export function statusMeta(row: PatientStatusRow) {

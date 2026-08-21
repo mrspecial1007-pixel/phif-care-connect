@@ -28,6 +28,7 @@ import { EditDispenseDialog } from "@/components/EditDispenseDialog";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
 import { PhoneSheet } from "@/components/PhoneSheet";
+import { daysUntilDate } from "@/lib/date";
 import {
   ArrowRight,
   Pill,
@@ -319,13 +320,13 @@ function Detail() {
                 label="الأيام"
                 value={
                   (() => {
-                    const diff = Math.ceil((new Date(track.next_due_date).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+                    const diff = daysUntilDate(track.next_due_date) ?? 0;
                     return diff >= 0 ? `متبقي ${diff} يوم` : `متأخر ${Math.abs(diff)} يوم`;
                   })()
                 }
                 tone={
                   (() => {
-                    const diff = Math.ceil((new Date(track.next_due_date).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+                    const diff = daysUntilDate(track.next_due_date) ?? 0;
                     return diff < 0 ? "danger" : diff <= 3 ? "warning" : "muted";
                   })()
                 }
