@@ -1,0 +1,1 @@
+ALTER TABLE public.dispensing_transactions DROP CONSTRAINT IF EXISTS dispensing_transactions_fulfilled_track_id_fkey;
