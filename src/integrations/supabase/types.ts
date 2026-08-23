@@ -335,13 +335,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "dispensing_transactions_fulfilled_track_id_fkey"
-            columns: ["stream_id"]
-            isOneToOne: false
-            referencedRelation: "dispensing_due_tracks"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "dispensing_transactions_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
