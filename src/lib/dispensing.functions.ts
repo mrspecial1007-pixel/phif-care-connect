@@ -147,7 +147,12 @@ export const recordDispensing = createServerFn({ method: "POST" })
       .eq("patient_id", data.patient_id);
     
     const trackCount = existingTracks?.length ?? 0;
-    const isCreatingNewStream = !data.track_id && (data.transaction_type === "Partial" || data.transaction_type === "Remaining");
+    // Every newly-recorded partial batch starts its own 28-day track. The UI may
+    // send the currently-visible track_id even when there is only one track;
+    // that selection must not merge a new partial batch into the old stream.
+    const isCreatingNewStream =
+      data.transaction_type === "Partial" ||
+      (data.transaction_type === "Remaining" && !data.track_id);
 
     if (trackCount >= 2 && isCreatingNewStream) {
       throw new Error("لا يمكن إنشاء موعد صرف ثالث لهذا المستفيد. يجب إكمال أو معالجة أحد الموعدين الحاليين أولاً.");
@@ -155,7 +160,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
 
     // 1. Determine stream_id if we are fulfilling a track
     let stream_id: string | null = null;
-    if (data.track_id) {
+    if (data.track_id && data.transaction_type !== "Partial") {
         const { data: track } = await supabaseAdmin
             .from("dispensing_due_tracks")
             .select("stream_id")
@@ -165,7 +170,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
     }
 
     // 2. If it's a new Partial/Remaining that doesn't fulfill a track, it starts its own stream
-    if (!stream_id && isCreatingNewStream) {
+    if (isCreatingNewStream) {
         stream_id = crypto.randomUUID();
     }
 
@@ -177,6 +182,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
         pharmacy_id,
         transaction_type: data.transaction_type,
         items_dispensed: data.items_dispensed ?? null,
+        items_remaining: data.items_remaining ?? null,
         notes: data.notes ?? null,
         dispensing_date: `${effectiveDate}T12:00:00Z`,
         idempotency_key: data.idempotency_key ?? null,
