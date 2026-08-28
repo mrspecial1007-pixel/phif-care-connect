@@ -30,7 +30,7 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
     phone: "",
     address: "",
     hasHistory: "no",
-    lastDispenseDate: new Date().toISOString().slice(0, 10),
+    lastDispenseDate: todayISOLocal(),
     pharmacyId: "",
     isFull: "yes",
   });

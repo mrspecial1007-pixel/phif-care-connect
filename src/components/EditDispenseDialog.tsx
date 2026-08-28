@@ -109,7 +109,7 @@ export function EditDispenseDialog({
           <div className="space-y-4 py-4">
             <div className="grid gap-2">
               <Label>تاريخ الصرف</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} max={todayISOLocal()} />
             </div>
             <div className="grid gap-2">
               <Label>نوع الصرف</Label>

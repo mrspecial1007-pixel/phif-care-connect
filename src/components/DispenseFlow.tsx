@@ -27,9 +27,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { recordDispensing } from "@/lib/dispensing.functions";
 import { usePharmacies, useSession, usePatientDueTracks } from "@/lib/queries";
+import { todayISOLocal } from "@/lib/date";
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return todayISOLocal();
 }
 
 function addDays(iso: string, n: number) {

@@ -57,7 +57,7 @@ export const Route = createFileRoute("/patients/$id")({
 });
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return todayISOLocal();
 }
 
 async function copy(text: string, label: string) {
