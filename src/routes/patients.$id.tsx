@@ -28,7 +28,7 @@ import { EditDispenseDialog } from "@/components/EditDispenseDialog";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
 import { PhoneSheet } from "@/components/PhoneSheet";
-import { daysUntilDate } from "@/lib/date";
+import { daysUntilDate, todayISOLocal } from "@/lib/date";
 import {
   ArrowRight,
   Pill,
@@ -57,7 +57,7 @@ export const Route = createFileRoute("/patients/$id")({
 });
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return todayISOLocal();
 }
 
 async function copy(text: string, label: string) {

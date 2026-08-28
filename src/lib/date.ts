@@ -13,3 +13,10 @@ export function daysUntilDate(dateString: string | null | undefined): number | n
 
   return Math.round((dueUtc - todayUtc) / DAY_MS);
 }
+/** Today's date (YYYY-MM-DD) in the device's local timezone. */
+export function todayISOLocal(): string {
+  const d = new Date();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
