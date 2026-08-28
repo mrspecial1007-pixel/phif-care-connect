@@ -11,6 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { usePharmacies } from "@/lib/queries";
 import { AlertTriangle, Trash2 } from "lucide-react";
+import { todayISOLocal } from "@/lib/date";
 
 export function EditDispenseDialog({
   open,

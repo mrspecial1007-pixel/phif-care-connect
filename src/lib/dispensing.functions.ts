@@ -112,7 +112,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
 
     const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
     const ip = getRequestIP({ xForwardedFor: true }) ?? null;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Tripoli" }).format(new Date());
     const effectiveDate = data.dispensing_date ?? today;
     const pharmacy_id = data.pharmacy_id ?? sessionPharmacyId;
 
@@ -384,7 +384,7 @@ export const updateDispensing = createServerFn({ method: "POST" })
 
     const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
     const ip = getRequestIP({ xForwardedFor: true }) ?? null;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Tripoli" }).format(new Date());
 
     if (data.dispensing_date > today) {
       throw new Error("لا يمكن تسجيل عملية صرف بتاريخ مستقبلي");

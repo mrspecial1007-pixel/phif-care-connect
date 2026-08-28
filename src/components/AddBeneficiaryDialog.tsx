@@ -12,6 +12,7 @@ import { usePharmacies, usePatientStatuses } from "@/lib/queries";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { todayISOLocal } from "@/lib/date";
 
 export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, onOpenChange: (v: boolean) => void }) {
   const [step, setStep] = useState<"form" | "review">("form");
