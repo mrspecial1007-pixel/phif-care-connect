@@ -63,6 +63,13 @@ export type Database = {
             referencedRelation: "v_pharmacies"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "audit_log_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       communication_logs: {
@@ -133,6 +140,13 @@ export type Database = {
             columns: ["pharmacy_id"]
             isOneToOne: false
             referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "communication_logs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
             referencedColumns: ["id"]
           },
         ]
@@ -328,6 +342,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "dispensing_transactions_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "dispensing_transactions_cycle_id_fkey"
             columns: ["cycle_id"]
             isOneToOne: false
@@ -367,6 +388,13 @@ export type Database = {
             columns: ["pharmacy_id"]
             isOneToOne: false
             referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
             referencedColumns: ["id"]
           },
         ]
@@ -423,6 +451,13 @@ export type Database = {
             referencedRelation: "v_pharmacies"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "gateway_devices_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       gateway_pairing_codes: {
@@ -463,6 +498,13 @@ export type Database = {
             columns: ["pharmacy_id"]
             isOneToOne: false
             referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gateway_pairing_codes_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
             referencedColumns: ["id"]
           },
         ]
@@ -638,6 +680,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "sms_messages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sms_messages_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
@@ -670,6 +719,13 @@ export type Database = {
             columns: ["pharmacy_id"]
             isOneToOne: false
             referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
             referencedColumns: ["id"]
           },
         ]
@@ -833,6 +889,21 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          id?: string | null
+          name?: string | null
+        }
+        Relationships: []
+      }
+      v_pharmacies_public: {
+        Row: {
+          id: string | null
+          name: string | null
+        }
+        Insert: {
+          id?: string | null
+          name?: string | null
+        }
+        Update: {
           id?: string | null
           name?: string | null
         }
