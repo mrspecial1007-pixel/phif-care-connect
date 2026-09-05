@@ -522,13 +522,9 @@ function PharmacySettingsCard() {
     const phone = formData.get("phone") as string;
 
     try {
-      const { supabase } = await import("@/integrations/supabase/client");
-      const { error } = await supabase
-        .from("pharmacies")
-        .update({ name, address, phone })
-        .eq("id", pharmacy.id);
-      
-      if (error) throw error;
+      const { updateCurrentPharmacy } = await import("@/lib/reads.functions");
+      const res = await updateCurrentPharmacy({ data: { name, address, phone } });
+      if (!res.ok) throw new Error("update_failed");
       toast.success("تم تحديث بيانات الصيدلية");
       window.location.reload(); // Refresh to update session data
     } catch (err) {
