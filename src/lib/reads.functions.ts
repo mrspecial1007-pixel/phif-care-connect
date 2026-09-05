@@ -175,7 +175,7 @@ export const listDispensingTransactions = createServerFn({ method: "POST" })
 
     if (data.startDate) q = q.gte("dispensing_date", `${data.startDate}T00:00:00Z`);
     if (data.endDate) q = q.lte("dispensing_date", `${data.endDate}T23:59:59Z`);
-    if (data.type && data.type !== "all") q = q.eq("transaction_type", data.type);
+    if (data.type && data.type !== "all") q = q.eq("transaction_type", data.type as never);
 
     const { data: rows, error } = await q.limit(1000);
     if (error) throw new Error(error.message);

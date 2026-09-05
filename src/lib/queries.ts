@@ -21,13 +21,13 @@ export function useSession() {
 export function usePharmacies() {
   return useQuery({
     queryKey: ["pharmacies"],
-    queryFn: async () => {
+    queryFn: async (): Promise<{ id: string; name: string }[]> => {
       const { data, error } = await supabase
         .from("v_pharmacies_public" as never)
         .select("id, name")
         .order("name");
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as unknown as { id: string; name: string }[];
     },
     staleTime: 5 * 60_000,
   });
