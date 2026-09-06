@@ -29,20 +29,31 @@ async function ctx() {
   return { pharmacy_id, admin: supabaseAdmin };
 }
 
-/** Returns { served, unserved } sets over all patients (cheap 2-column scan). */
+/**
+ * Returns { served, anyTx } sets over all patients.
+ * Paged: PostgREST caps a single response at 1000 rows, so an unpaged scan
+ * would silently under-report and leak other pharmacies' beneficiaries.
+ */
 async function patientAccessSets(admin: any, pharmacyId: string) {
-  const { data } = await admin
-    .from("dispensing_transactions")
-    .select("patient_id, pharmacy_id")
-    .limit(100000);
   const served = new Set<string>();
   const anyTx = new Set<string>();
-  for (const r of data ?? []) {
-    anyTx.add(r.patient_id);
-    if (r.pharmacy_id === pharmacyId) served.add(r.patient_id);
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from("dispensing_transactions")
+      .select("patient_id, pharmacy_id")
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    for (const r of rows) {
+      anyTx.add(r.patient_id);
+      if (r.pharmacy_id === pharmacyId) served.add(r.patient_id);
+    }
+    if (rows.length < PAGE) break;
   }
   return { served, anyTx };
 }
+
 
 async function authorizePatient(admin: any, pharmacyId: string, patientId: string) {
   const { count: mine } = await admin
