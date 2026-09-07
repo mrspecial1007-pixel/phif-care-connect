@@ -72,6 +72,51 @@ export type Database = {
           },
         ]
       }
+      commercial_products: {
+        Row: {
+          barcode: string | null
+          brand_name: string
+          brand_name_normalized: string
+          created_at: string
+          id: string
+          is_active: boolean
+          manufacturer: string | null
+          package_size: number | null
+          package_unit: string | null
+          phif_code: string | null
+          supplier: string | null
+          updated_at: string
+        }
+        Insert: {
+          barcode?: string | null
+          brand_name: string
+          brand_name_normalized: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          manufacturer?: string | null
+          package_size?: number | null
+          package_unit?: string | null
+          phif_code?: string | null
+          supplier?: string | null
+          updated_at?: string
+        }
+        Update: {
+          barcode?: string | null
+          brand_name?: string
+          brand_name_normalized?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          manufacturer?: string | null
+          package_size?: number | null
+          package_unit?: string | null
+          phif_code?: string | null
+          supplier?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       communication_logs: {
         Row: {
           action_type: string
@@ -509,6 +554,57 @@ export type Database = {
           },
         ]
       }
+      medications: {
+        Row: {
+          active_ingredient: string
+          active_ingredient_normalized: string
+          atc_code: string | null
+          created_at: string
+          dosage_form: string
+          dosage_form_normalized: string
+          id: string
+          notes: string | null
+          route: string | null
+          strength_denominator_unit: string | null
+          strength_denominator_value: number | null
+          strength_unit: string
+          strength_value: number
+          updated_at: string
+        }
+        Insert: {
+          active_ingredient: string
+          active_ingredient_normalized: string
+          atc_code?: string | null
+          created_at?: string
+          dosage_form: string
+          dosage_form_normalized: string
+          id?: string
+          notes?: string | null
+          route?: string | null
+          strength_denominator_unit?: string | null
+          strength_denominator_value?: number | null
+          strength_unit: string
+          strength_value: number
+          updated_at?: string
+        }
+        Update: {
+          active_ingredient?: string
+          active_ingredient_normalized?: string
+          atc_code?: string | null
+          created_at?: string
+          dosage_form?: string
+          dosage_form_normalized?: string
+          id?: string
+          notes?: string | null
+          route?: string | null
+          strength_denominator_unit?: string | null
+          strength_denominator_value?: number | null
+          strength_unit?: string
+          strength_value?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       patients: {
         Row: {
           address: string | null
@@ -626,6 +722,253 @@ export type Database = {
           pin_hash?: string
         }
         Relationships: []
+      }
+      prescription_items: {
+        Row: {
+          created_at: string
+          days_supply: number | null
+          dose_instructions: string | null
+          id: string
+          line_number: number
+          medication_id: string | null
+          pharmacy_id: string
+          prescription_id: string
+          quantity_prescribed: number | null
+          quantity_unit: string | null
+          raw_text: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          days_supply?: number | null
+          dose_instructions?: string | null
+          id?: string
+          line_number: number
+          medication_id?: string | null
+          pharmacy_id: string
+          prescription_id: string
+          quantity_prescribed?: number | null
+          quantity_unit?: string | null
+          raw_text: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          days_supply?: number | null
+          dose_instructions?: string | null
+          id?: string
+          line_number?: number
+          medication_id?: string | null
+          pharmacy_id?: string
+          prescription_id?: string
+          quantity_prescribed?: number | null
+          quantity_unit?: string | null
+          raw_text?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prescription_items_medication_id_fkey"
+            columns: ["medication_id"]
+            isOneToOne: false
+            referencedRelation: "medications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescription_items_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescription_items_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescription_items_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescription_items_prescription_id_fkey"
+            columns: ["prescription_id"]
+            isOneToOne: false
+            referencedRelation: "prescriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prescriptions: {
+        Row: {
+          created_at: string
+          external_ref: string | null
+          id: string
+          notes: string | null
+          patient_id: string
+          pharmacy_id: string
+          prescriber_name: string | null
+          prescription_date: string
+          source: string
+          status: string
+          updated_at: string
+          valid_until: string | null
+        }
+        Insert: {
+          created_at?: string
+          external_ref?: string | null
+          id?: string
+          notes?: string | null
+          patient_id: string
+          pharmacy_id: string
+          prescriber_name?: string | null
+          prescription_date: string
+          source: string
+          status?: string
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Update: {
+          created_at?: string
+          external_ref?: string | null
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          pharmacy_id?: string
+          prescriber_name?: string | null
+          prescription_date?: string
+          source?: string
+          status?: string
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prescriptions_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "prescriptions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_medication_mappings: {
+        Row: {
+          confidence: string
+          created_at: string
+          created_by_pharmacy_id: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          medication_id: string
+          product_id: string
+          source: string
+          units_per_package: number | null
+          updated_at: string
+        }
+        Insert: {
+          confidence: string
+          created_at?: string
+          created_by_pharmacy_id?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          medication_id: string
+          product_id: string
+          source: string
+          units_per_package?: number | null
+          updated_at?: string
+        }
+        Update: {
+          confidence?: string
+          created_at?: string
+          created_by_pharmacy_id?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          medication_id?: string
+          product_id?: string
+          source?: string
+          units_per_package?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_medication_mappings_created_by_pharmacy_id_fkey"
+            columns: ["created_by_pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_medication_mappings_created_by_pharmacy_id_fkey"
+            columns: ["created_by_pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_medication_mappings_created_by_pharmacy_id_fkey"
+            columns: ["created_by_pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_medication_mappings_medication_id_fkey"
+            columns: ["medication_id"]
+            isOneToOne: false
+            referencedRelation: "medications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_medication_mappings_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "commercial_products"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sms_messages: {
         Row: {
