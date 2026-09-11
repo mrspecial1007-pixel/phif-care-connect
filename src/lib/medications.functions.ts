@@ -91,6 +91,10 @@ export const createMedication = createServerFn({ method: "POST" })
       identity.strength_denominator_value === null
         ? q.is("strength_denominator_value", null)
         : q.eq("strength_denominator_value", identity.strength_denominator_value);
+    q =
+      identity.strength_denominator_unit === null
+        ? q.is("strength_denominator_unit", null)
+        : q.eq("strength_denominator_unit", identity.strength_denominator_unit);
     q = identity.route === null ? q.is("route", null) : q.eq("route", identity.route);
     const { data: existing, error: e2 } = await q.maybeSingle();
     if (e2) throw new Error(e2.message);
