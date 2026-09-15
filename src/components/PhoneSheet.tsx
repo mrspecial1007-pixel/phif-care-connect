@@ -108,7 +108,6 @@ export function PhoneSheet({
       await doLog({
         data: {
           patientId: patient.patient_id,
-          pharmacyId: pharmacy.id,
           actionType: actionMap[chan],
           phoneNumber: phone,
           channel: chan,

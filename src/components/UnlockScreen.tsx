@@ -103,9 +103,6 @@ export function UnlockScreen() {
             <Lock className="h-4 w-4 ml-2" />
             {busy ? "جاري التحقق…" : "دخول"}
           </Button>
-          <p className="text-xs text-center text-muted-foreground">
-            رمز البداية الافتراضي: <span className="font-mono">1234</span>
-          </p>
         </form>
       </Card>
     </div>

@@ -4,11 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { upsertPatient, recordDispensing } from "@/lib/dispensing.functions";
-import { usePharmacies, usePatientStatuses } from "@/lib/queries";
+import { usePatientStatuses } from "@/lib/queries";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
@@ -21,7 +20,6 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
   const qc = useQueryClient();
   const doUpsert = useServerFn(upsertPatient);
   const doRecord = useServerFn(recordDispensing);
-  const { data: pharmacies } = usePharmacies();
   const { data: existingPatients } = usePatientStatuses();
 
   const [formData, setFormData] = useState({
@@ -32,7 +30,6 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
     address: "",
     hasHistory: "no",
     lastDispenseDate: todayISOLocal(),
-    pharmacyId: "",
     isFull: "yes",
   });
 
@@ -71,7 +68,6 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
             patient_id: patientId,
             transaction_type: formData.isFull === "yes" ? "Completed" : "Partial",
             dispensing_date: formData.lastDispenseDate,
-            pharmacy_id: formData.pharmacyId || undefined,
             historical_mode: "append",
             notes: "تمت الإضافة عند إنشاء المستفيد يدويًا",
           }
@@ -159,19 +155,6 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
                       <Input type="date" value={formData.lastDispenseDate} onChange={e => setFormData({...formData, lastDispenseDate: e.target.value})} />
                     </div>
                     <div className="space-y-2">
-                      <Label>الصيدلية</Label>
-                      <Select value={formData.pharmacyId} onValueChange={v => setFormData({...formData, pharmacyId: v})}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="اختر الصيدلية" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {pharmacies?.map(p => (
-                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
                       <Label>هل كان الصرف كاملًا؟</Label>
                       <RadioGroup value={formData.isFull} onValueChange={v => setFormData({...formData, isFull: v})} className="flex gap-4">
                         <div className="flex items-center space-x-2 space-x-reverse">
@@ -201,7 +184,6 @@ export function AddBeneficiaryDialog({ open, onOpenChange }: { open: boolean, on
                   <>
                     <div className="h-px bg-border my-2" />
                     <ReviewItem label="آخر صرف" value={formData.lastDispenseDate} />
-                    <ReviewItem label="الصيدلية" value={pharmacies?.find(p => p.id === formData.pharmacyId)?.name || "—"} />
                     <ReviewItem label="حالة الصرف" value={formData.isFull === "yes" ? "كامل" : "جزئي"} />
                     {formData.isFull === "yes" && (
                        <ReviewItem 

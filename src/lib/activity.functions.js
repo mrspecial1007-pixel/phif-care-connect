@@ -34,9 +34,11 @@ export const logCommunication = createServerFn({ method: "POST" })
     .inputValidator((data) => data)
     .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+    const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
     const { error } = await supabaseAdmin.from("communication_logs").insert({
         patient_id: data.patientId,
-        pharmacy_id: data.pharmacyId,
+        pharmacy_id: sessionPharmacyId,
         action_type: data.actionType,
         phone_number: data.phoneNumber,
         channel: data.channel

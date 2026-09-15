@@ -233,7 +233,6 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
         open={remOpen}
         onOpenChange={setRemOpen}
         patientId={row.patient_id}
-        defaultPharmacyId={session?.unlocked ? session.pharmacy.id : undefined}
       />
     </>
   );

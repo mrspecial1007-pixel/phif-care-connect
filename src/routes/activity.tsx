@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { useDispensingTransactions, DispensingTransactionRow, usePharmacies } from "@/lib/queries";
+import { useDispensingTransactions, DispensingTransactionRow } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { 
   Building2, 
@@ -46,7 +46,6 @@ function DispensingActivityPage() {
     to: format(new Date(), "yyyy-MM-dd")
   });
   
-  const [pharmacyFilter, setPharmacyFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
@@ -56,7 +55,6 @@ function DispensingActivityPage() {
       return {
         startDate: dateRange.from,
         endDate: dateRange.to,
-        pharmacyId: pharmacyFilter,
         type: typeFilter,
         search
       };
@@ -65,14 +63,12 @@ function DispensingActivityPage() {
     return {
       startDate: d,
       endDate: d,
-      pharmacyId: pharmacyFilter,
       type: typeFilter,
       search
     };
-  }, [date, rangeMode, dateRange, pharmacyFilter, typeFilter, search]);
+  }, [date, rangeMode, dateRange, typeFilter, search]);
 
   const { data: transactions, isLoading } = useDispensingTransactions(queryOptions);
-  const { data: pharmacies } = usePharmacies();
 
   const sortedTransactions = useMemo(() => {
     if (!transactions) return [];
@@ -322,7 +318,7 @@ function DispensingActivityPage() {
         )}
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-2 relative">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input 
@@ -332,17 +328,6 @@ function DispensingActivityPage() {
               className="pr-9 bg-white border-slate-200 rounded-xl h-11"
             />
           </div>
-          <Select value={pharmacyFilter} onValueChange={setPharmacyFilter}>
-            <SelectTrigger className="bg-white border-slate-200 rounded-xl h-11">
-              <SelectValue placeholder="الصيدلية" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل الصيدليات</SelectItem>
-              {pharmacies?.map(p => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="bg-white border-slate-200 rounded-xl h-11">
               <SelectValue placeholder="نوع الصرف" />

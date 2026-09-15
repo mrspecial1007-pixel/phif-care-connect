@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +26,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { recordDispensing } from "@/lib/dispensing.functions";
-import { usePharmacies, useSession, usePatientDueTracks } from "@/lib/queries";
+import { useSession, usePatientDueTracks } from "@/lib/queries";
 import { todayISOLocal } from "@/lib/date";
 
 function todayISO() {
@@ -52,15 +52,12 @@ export function DispenseDialog({
   patientName?: string;
   cardNumber?: string | null;
 }) {
-  const { data: pharmacies } = usePharmacies();
   const { data: session } = useSession();
   const { data: dueTracks } = usePatientDueTracks(patientId);
-  const defaultPharmacyId = session?.unlocked ? session.pharmacy.id : undefined;
   const qc = useQueryClient();
   const dispense = useServerFn(recordDispensing);
 
   const [step, setStep] = useState<"form" | "review">("form");
-  const [pharmacyId, setPharmacyId] = useState<string>(defaultPharmacyId ?? "");
   const [date, setDate] = useState<string>(todayISO());
   const [allDispensed, setAllDispensed] = useState<boolean | null>(null);
   const [trackId, setTrackId] = useState<string>("");
@@ -74,7 +71,6 @@ export function DispenseDialog({
   useEffect(() => {
     if (open) {
       setStep("form");
-      setPharmacyId(defaultPharmacyId ?? pharmacies?.[0]?.id ?? "");
       setDate(todayISO());
       setAllDispensed(null);
       setItemsDispensed("");
@@ -86,23 +82,19 @@ export function DispenseDialog({
         typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
       );
     }
-  }, [open, defaultPharmacyId, pharmacies, dueTracks]);
+  }, [open, dueTracks]);
 
-  const pharmacyName = useMemo(
-    () => pharmacies?.find((p) => p.id === pharmacyId)?.name ?? "—",
-    [pharmacies, pharmacyId],
-  );
-  const canContinue = pharmacyId && date && allDispensed !== null && !busy;
+  const pharmacyName = session?.unlocked ? session.pharmacy.name : "—";
+  const canContinue = date && allDispensed !== null && !busy;
 
   async function submit(historicalMode?: "append" | "recalc") {
-    if (!pharmacyId || allDispensed === null) return;
+    if (allDispensed === null) return;
     setBusy(true);
     try {
       const res: any = await dispense({
         data: {
           patient_id: patientId,
           transaction_type: allDispensed ? "Completed" : "Partial",
-          pharmacy_id: pharmacyId,
           dispensing_date: date,
           notes: notes || null,
           items_dispensed: itemsDispensed ? Number(itemsDispensed) : null,
@@ -184,22 +176,9 @@ export function DispenseDialog({
 
                 <div>
                   <Label>الصيدلية</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-1">
-                    {(pharmacies ?? []).map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setPharmacyId(p.id)}
-                        className={`rounded-lg border p-3 text-sm font-medium transition ${
-                          pharmacyId === p.id
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border hover:border-primary/40"
-                        }`}
-                      >
-                        <Building2 className="h-4 w-4 inline ml-1" />
-                        {p.name}
-                      </button>
-                    ))}
+                  <div className="mt-1 rounded-lg border bg-muted/40 p-3 text-sm font-medium flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-primary" />
+                    <span>{pharmacyName}</span>
                   </div>
                 </div>
                 <div>
@@ -411,12 +390,10 @@ export function RemainingConfirmDialog({
   open,
   onOpenChange,
   patientId,
-  defaultPharmacyId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   patientId: string;
-  defaultPharmacyId?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState("");
@@ -441,7 +418,6 @@ export function RemainingConfirmDialog({
         data: {
           patient_id: patientId,
           transaction_type: "Remaining",
-          pharmacy_id: defaultPharmacyId,
           dispensing_date: todayISO(),
           idempotency_key: idempotencyKey,
           track_id: selectedTrackId || null,

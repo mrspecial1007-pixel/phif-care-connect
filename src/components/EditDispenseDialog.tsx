@@ -9,7 +9,6 @@ import { useServerFn } from "@tanstack/react-start";
 import { updateDispensing, cancelDispensing } from "@/lib/dispensing.functions";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { usePharmacies } from "@/lib/queries";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { todayISOLocal } from "@/lib/date";
 
@@ -26,13 +25,11 @@ export function EditDispenseDialog({
 }) {
   const [date, setDate] = useState("");
   const [type, setType] = useState<any>("");
-  const [pharmacyId, setPharmacyId] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   
-  const { data: pharmacies } = usePharmacies();
   const updateTx = useServerFn(updateDispensing);
   const cancelTx = useServerFn(cancelDispensing);
   const qc = useQueryClient();
@@ -41,7 +38,6 @@ export function EditDispenseDialog({
     if (open && transaction) {
       setDate(transaction.dispensing_date.slice(0, 10));
       setType(transaction.transaction_type);
-      setPharmacyId(transaction.pharmacy_id);
       setNotes(transaction.notes || "");
     }
   }, [open, transaction]);
@@ -54,7 +50,6 @@ export function EditDispenseDialog({
           id: transaction.id,
           dispensing_date: date,
           transaction_type: type,
-          pharmacy_id: pharmacyId,
           notes,
         },
       });
@@ -122,19 +117,6 @@ export function EditDispenseDialog({
                   <SelectItem value="Completed">صرف كامل</SelectItem>
                   <SelectItem value="Partial">صرف جزئي</SelectItem>
                   <SelectItem value="Remaining">صرف متبقي</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>الصيدلية</Label>
-              <Select value={pharmacyId} onValueChange={setPharmacyId}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {pharmacies?.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
                 </SelectContent>
               </Select>
             </div>

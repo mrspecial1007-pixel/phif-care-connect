@@ -95,7 +95,6 @@ const createDispensingSchema = z.object({
   items_dispensed: z.number().int().nonnegative().nullable().optional(),
   items_remaining: z.number().int().nonnegative().nullable().optional(),
   notes: z.string().max(1000).optional().nullable(),
-  pharmacy_id: z.string().uuid().optional().nullable(),
   dispensing_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   idempotency_key: z.string().min(8).max(80).optional().nullable(),
   historical_mode: z.enum(["append", "recalc"]).optional().nullable(),
@@ -114,7 +113,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
     const ip = getRequestIP({ xForwardedFor: true }) ?? null;
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Tripoli" }).format(new Date());
     const effectiveDate = data.dispensing_date ?? today;
-    const pharmacy_id = data.pharmacy_id ?? sessionPharmacyId;
+    const pharmacy_id = sessionPharmacyId;
 
     if (effectiveDate > today) {
       throw new Error("لا يمكن تسجيل عملية صرف بتاريخ مستقبلي");
@@ -126,6 +125,7 @@ export const recordDispensing = createServerFn({ method: "POST" })
         .from("dispensing_transactions")
         .select("id")
         .eq("idempotency_key", data.idempotency_key)
+        .eq("pharmacy_id", sessionPharmacyId)
         .maybeSingle();
       if (existingTx) {
         return { ok: true as const, transaction_id: existingTx.id, deduped: true };
@@ -372,7 +372,6 @@ export const updateDispensing = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({
     id: z.string().uuid(),
     dispensing_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    pharmacy_id: z.string().uuid(),
     transaction_type: z.enum(["Partial", "Remaining", "Completed"]),
     notes: z.string().max(1000).optional().nullable(),
   }).parse(d))
@@ -394,7 +393,8 @@ export const updateDispensing = createServerFn({ method: "POST" })
       .from("dispensing_transactions")
       .select("*")
       .eq("id", data.id)
-      .single();
+      .eq("pharmacy_id", sessionPharmacyId)
+      .maybeSingle();
     
     if (!before) throw new Error("Transaction not found");
 
@@ -402,11 +402,11 @@ export const updateDispensing = createServerFn({ method: "POST" })
       .from("dispensing_transactions")
       .update({
         dispensing_date: `${data.dispensing_date}T12:00:00Z`,
-        pharmacy_id: data.pharmacy_id,
         transaction_type: data.transaction_type,
         notes: data.notes,
       })
-      .eq("id", data.id);
+      .eq("id", data.id)
+      .eq("pharmacy_id", sessionPharmacyId);
 
     if (error) throw error;
 
@@ -444,7 +444,8 @@ export const cancelDispensing = createServerFn({ method: "POST" })
       .from("dispensing_transactions")
       .select("patient_id")
       .eq("id", data.id)
-      .single();
+      .eq("pharmacy_id", sessionPharmacyId)
+      .maybeSingle();
     
     if (!tx) throw new Error("Transaction not found");
 
@@ -456,7 +457,8 @@ export const cancelDispensing = createServerFn({ method: "POST" })
         cancelled_by: sessionPharmacyId,
         cancellation_reason: data.reason,
       })
-      .eq("id", data.id);
+      .eq("id", data.id)
+      .eq("pharmacy_id", sessionPharmacyId);
 
     if (error) throw error;
 
