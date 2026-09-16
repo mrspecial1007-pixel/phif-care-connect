@@ -23,7 +23,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { upsertPatient, archivePatient, setFollowUpStatus } from "@/lib/dispensing.functions";
+import { upsertPatient, archivePatient, restorePatient, setFollowUpStatus } from "@/lib/dispensing.functions";
 import { EditDispenseDialog } from "@/components/EditDispenseDialog";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
@@ -44,8 +44,8 @@ import {
   Phone,
   CreditCard,
   Star,
-  Trash2,
-  MoreVertical,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 
 export const Route = createFileRoute("/patients/$id")({
@@ -87,6 +87,7 @@ function Detail() {
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState("");
   const [suspendLoading, setSuspendLoading] = useState(false);
@@ -96,6 +97,7 @@ function Detail() {
   const qc = useQueryClient();
   const updatePatient = useServerFn(upsertPatient);
   const archive = useServerFn(archivePatient);
+  const restore = useServerFn(restorePatient);
   const setSuspension = useServerFn(setFollowUpStatus);
   const navigate = Route.useNavigate();
 
@@ -103,6 +105,7 @@ function Detail() {
   if (!patient) return <div className="text-center py-10">المستفيد غير موجود</div>;
 
   const isFavorite = (patient as any).is_favorite;
+  const isArchived = !!(patient as any).is_archived;
 
   async function toggleFavorite() {
     if (favBusy) return;
@@ -132,14 +135,33 @@ function Detail() {
     try {
       const res = await archive({ data: { id: patient!.id } });
       if (res.ok) {
-        toast.success("تم حذف المستفيد بنجاح");
+        toast.success("تمت أرشفة المستفيد بنجاح");
         qc.invalidateQueries({ queryKey: ["patient_status"] });
+        qc.invalidateQueries({ queryKey: ["patient", patient!.id] });
         navigate({ to: "/" });
       }
     } catch (err) {
       toast.error("حدث خطأ ما");
     } finally {
       setArchiveLoading(false);
+    }
+  }
+
+  async function handleRestore() {
+    setRestoreLoading(true);
+    try {
+      const res = await restore({ data: { id: patient!.id } });
+      if (res.ok) {
+        toast.success("تم إلغاء أرشفة المستفيد بنجاح");
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ["patient", patient!.id] }),
+          qc.invalidateQueries({ queryKey: ["patient_status"] }),
+        ]);
+      }
+    } catch (err) {
+      toast.error("حدث خطأ ما");
+    } finally {
+      setRestoreLoading(false);
     }
   }
 
@@ -183,9 +205,15 @@ function Detail() {
               <Clock className="h-4 w-4 ml-1" /> تعليق المتابعة
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setArchiveConfirmOpen(true)}>
-            <Trash2 className="h-4 w-4 ml-1" /> حذف المستفيد
-          </Button>
+          {isArchived ? (
+            <Button variant="outline" size="sm" className="text-success hover:text-success hover:bg-success/10" onClick={handleRestore} disabled={restoreLoading}>
+              <ArchiveRestore className="h-4 w-4 ml-1" /> {restoreLoading ? "جاري الاستعادة..." : "إلغاء الأرشفة"}
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setArchiveConfirmOpen(true)}>
+              <Archive className="h-4 w-4 ml-1" /> أرشفة المستفيد
+            </Button>
+          )}
         </div>
       </div>
 
@@ -486,21 +514,21 @@ function Detail() {
       <Dialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>حذف المستفيد</DialogTitle>
+            <DialogTitle>أرشفة المستفيد</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-3 text-destructive">
               <AlertTriangle className="h-6 w-6" />
-              <p className="font-semibold text-sm">سيتم حذف المستفيد وبياناته المرتبطة. هل أنت متأكد؟</p>
+              <p className="font-semibold text-sm">سيتم إخفاء المستفيد من القائمة العادية. هل أنت متأكد؟</p>
             </div>
             <p className="text-xs text-muted-foreground">
-              هذا الإجراء سيقوم بأرشفة بيانات المستفيد، ولن يظهر في القوائم النشطة.
+              هذا الإجراء لا يحذف بيانات المستفيد. يمكن العثور عليه لاحقًا عبر البحث أو فلتر المؤرشفين واستعادته عند الحاجة.
             </p>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="ghost" onClick={() => setArchiveConfirmOpen(false)}>إلغاء</Button>
             <Button variant="destructive" onClick={handleArchive} disabled={archiveLoading}>
-              {archiveLoading ? "جاري الحذف..." : "نعم، متأكد"}
+              {archiveLoading ? "جاري الأرشفة..." : "نعم، أرشفة المستفيد"}
             </Button>
           </DialogFooter>
         </DialogContent>

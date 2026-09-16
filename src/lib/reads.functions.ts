@@ -72,9 +72,19 @@ async function authorizePatient(admin: any, pharmacyId: string, patientId: strin
 export const listPatientStatuses = createServerFn({ method: "GET" }).handler(async () => {
   const { pharmacy_id, admin } = await ctx();
   const { served, anyTx } = await patientAccessSets(admin, pharmacy_id);
-  const { data, error } = await admin.from("v_patient_status").select("*").limit(5000);
-  if (error) throw new Error(error.message);
-  return (data ?? []).filter((r: any) => served.has(r.patient_id) || !anyTx.has(r.patient_id));
+  const rows: any[] = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from("v_patient_status")
+      .select("*")
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return rows.filter((r: any) => served.has(r.patient_id) || !anyTx.has(r.patient_id));
 });
 
 export const getPatient = createServerFn({ method: "POST" })

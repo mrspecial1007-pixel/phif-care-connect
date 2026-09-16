@@ -89,6 +89,21 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+async function authorizePatientForPharmacy(admin: any, pharmacyId: string, patientId: string) {
+  const { count: mine } = await admin
+    .from("dispensing_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("patient_id", patientId)
+    .eq("pharmacy_id", pharmacyId);
+  if ((mine ?? 0) > 0) return true;
+
+  const { count: any } = await admin
+    .from("dispensing_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("patient_id", patientId);
+  return (any ?? 0) === 0;
+}
+
 const createDispensingSchema = z.object({
   patient_id: z.string().uuid(),
   transaction_type: z.enum(["Partial", "Remaining", "Completed"]),
@@ -490,6 +505,10 @@ export const archivePatient = createServerFn({ method: "POST" })
     const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
     const ip = getRequestIP({ xForwardedFor: true }) ?? null;
 
+    if (!(await authorizePatientForPharmacy(supabaseAdmin, sessionPharmacyId, data.id))) {
+      throw new Error("Patient not found");
+    }
+
     const { error } = await supabaseAdmin
       .from("patients")
       .update({
@@ -503,6 +522,44 @@ export const archivePatient = createServerFn({ method: "POST" })
     await writeAudit({
       pharmacy_id: sessionPharmacyId,
       action: "archive_patient",
+      entity: "patient",
+      entity_id: data.id,
+      ip,
+    });
+
+    return { ok: true };
+  });
+
+export const restorePatient = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({
+    id: z.string().uuid(),
+  }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+    const { writeAudit } = await import("@/lib/audit.server");
+    const { getRequestIP } = await import("@tanstack/react-start/server");
+
+    const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
+    const ip = getRequestIP({ xForwardedFor: true }) ?? null;
+
+    if (!(await authorizePatientForPharmacy(supabaseAdmin, sessionPharmacyId, data.id))) {
+      throw new Error("Patient not found");
+    }
+
+    const { error } = await supabaseAdmin
+      .from("patients")
+      .update({
+        is_archived: false,
+        archived_at: null,
+      })
+      .eq("id", data.id);
+
+    if (error) throw error;
+
+    await writeAudit({
+      pharmacy_id: sessionPharmacyId,
+      action: "restore_patient",
       entity: "patient",
       entity_id: data.id,
       ip,

@@ -41,6 +41,7 @@ export type PatientStatusRow = {
   phone: string | null;
   review_status: "ok" | "needs_review";
   is_favorite: boolean;
+  is_archived: boolean;
   is_follow_up_suspended: boolean;
   follow_up_suspension_reason: string | null;
   current_cycle_id: string | null;

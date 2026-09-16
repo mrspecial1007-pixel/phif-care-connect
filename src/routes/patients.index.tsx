@@ -27,7 +27,8 @@ type Filter =
   | "shared"
   | "has_phone"
   | "no_phone"
-  | "review";
+  | "review"
+  | "archived";
 
 const CHIPS: { k: Filter; label: string }[] = [
   { k: "active", label: "نشط" },
@@ -40,6 +41,7 @@ const CHIPS: { k: Filter; label: string }[] = [
   { k: "has_phone", label: "لديه هاتف" },
   { k: "no_phone", label: "بدون هاتف" },
   { k: "review", label: "يحتاج مراجعة" },
+  { k: "archived", label: "المؤرشفون" },
 ];
 
 const PAGE_SIZE = 100;
@@ -67,10 +69,14 @@ function List() {
         (r.phone ?? "").includes(qd);
       if (!matchSearch) return false;
 
-      // While searching, show every match regardless of the active chip filter.
+      // While searching, include archived matches too. Server-side reads still
+      // restrict rows to the current pharmacy session.
       if (qd) return true;
 
-      // "الكل" = no status/favorite/phone/pharmacy filtering at all
+      if (filter === "archived") return !!r.is_archived;
+      if (r.is_archived) return false;
+
+      // "الكل" = no status/favorite/phone/pharmacy filtering for non-archived rows.
       switch (filter) {
         case "all":
           return true;

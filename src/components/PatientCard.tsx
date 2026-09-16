@@ -23,6 +23,9 @@ function trackRemainingDays(track: {
 }
 
 export function statusMeta(row: PatientStatusRow) {
+  if (row.is_archived)
+    return { key: "archived", label: "مؤرشف", color: "bg-slate-600 text-white dark:bg-slate-500 dark:text-white" };
+
   if (row.is_follow_up_suspended)
     return { key: "suspended", label: "متابعة معلقة", color: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400" };
 
@@ -53,6 +56,7 @@ function borderTone(key: string) {
     case "review": return "border-r-warning";
     case "waiting": return "border-r-success";
     case "suspended": return "border-r-slate-300";
+    case "archived": return "border-r-slate-500";
     case "old_follow_up": return "border-r-slate-400";
     default: return "border-r-border";
   }
@@ -142,7 +146,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
 
   return (
     <>
-      <Card className={`p-3 border-r-4 hover:shadow-md transition ${borderTone(meta.key)} w-full min-w-0 box-border`}>
+      <Card className={`p-3 border-r-4 hover:shadow-md transition ${borderTone(meta.key)} w-full min-w-0 box-border ${row.is_archived ? "opacity-70 bg-muted/40" : ""}`}>
         <Link to="/patients/$id" params={{ id: row.patient_id }} className="block w-full min-w-0">
           <div className="flex items-start gap-3 w-full min-w-0">
             <div className="flex-1 min-w-0">
