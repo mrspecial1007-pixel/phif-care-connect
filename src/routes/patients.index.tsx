@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useState } from "react";
 import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard } from "@/components/PatientCard";
-import { Plus, Star } from "lucide-react";
+import { Plus } from "lucide-react";
 import { AddBeneficiaryDialog } from "@/components/AddBeneficiaryDialog";
 
 export const Route = createFileRoute("/patients/")({
@@ -31,15 +31,10 @@ type Filter =
   | "archived";
 
 const CHIPS: { k: Filter; label: string }[] = [
-  { k: "active", label: "نشط" },
   { k: "all", label: "الكل" },
-  { k: "favorite", label: "المفضلة" },
   { k: "overdue", label: "متأخر" },
-  { k: "old_follow_up", label: "متابعة قديمة" },
   { k: "partial", label: "صرف جزئي" },
   { k: "shared", label: "مشترك" },
-  { k: "has_phone", label: "لديه هاتف" },
-  { k: "no_phone", label: "بدون هاتف" },
   { k: "review", label: "يحتاج مراجعة" },
   { k: "archived", label: "المؤرشفون" },
 ];
@@ -49,7 +44,7 @@ const PAGE_SIZE = 100;
 function List() {
   const { data: rows, isLoading } = usePatientStatuses();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<Filter>("active");
+  const [filter, setFilter] = useState<Filter>("all");
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   // Any change to search or filter resets pagination
@@ -146,7 +141,7 @@ function List() {
         </Button>
       </div>
 
-      <div className="flex gap-2 mb-1 overflow-x-auto pb-1 no-scrollbar">
+      <div className="flex flex-wrap gap-2 mb-1 pb-1">
         {CHIPS.map((c) => (
           <Button
             key={c.k}
@@ -155,9 +150,6 @@ function List() {
             onClick={() => setFilter(c.k)}
             className="rounded-full px-4 gap-1.5 shrink-0"
           >
-            {c.k === "favorite" && (
-              <Star className={`h-3.5 w-3.5 ${filter === "favorite" ? "fill-current" : ""}`} />
-            )}
             {c.label}
           </Button>
         ))}
