@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as QualityRouteImport } from './routes/quality'
+import { Route as PhifSyncRouteImport } from './routes/phif-sync'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as ActivityRouteImport } from './routes/activity'
@@ -30,6 +31,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const QualityRoute = QualityRouteImport.update({
   id: '/quality',
   path: '/quality',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PhifSyncRoute = PhifSyncRouteImport.update({
+  id: '/phif-sync',
+  path: '/phif-sync',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MessagesRoute = MessagesRouteImport.update({
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/messages': typeof MessagesRoute
+  '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/messages': typeof MessagesRoute
+  '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/messages': typeof MessagesRoute
+  '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/import'
     | '/messages'
+    | '/phif-sync'
     | '/quality'
     | '/settings'
     | '/patients/$id'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/import'
     | '/messages'
+    | '/phif-sync'
     | '/quality'
     | '/settings'
     | '/patients/$id'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/import'
     | '/messages'
+    | '/phif-sync'
     | '/quality'
     | '/settings'
     | '/patients/$id'
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   ActivityRoute: typeof ActivityRoute
   ImportRoute: typeof ImportRoute
   MessagesRoute: typeof MessagesRoute
+  PhifSyncRoute: typeof PhifSyncRoute
   QualityRoute: typeof QualityRoute
   SettingsRoute: typeof SettingsRoute
   PatientsIdRoute: typeof PatientsIdRoute
@@ -201,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/quality'
       fullPath: '/quality'
       preLoaderRoute: typeof QualityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/phif-sync': {
+      id: '/phif-sync'
+      path: '/phif-sync'
+      fullPath: '/phif-sync'
+      preLoaderRoute: typeof PhifSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/messages': {
@@ -281,6 +301,7 @@ const rootRouteChildren: RootRouteChildren = {
   ActivityRoute: ActivityRoute,
   ImportRoute: ImportRoute,
   MessagesRoute: MessagesRoute,
+  PhifSyncRoute: PhifSyncRoute,
   QualityRoute: QualityRoute,
   SettingsRoute: SettingsRoute,
   PatientsIdRoute: PatientsIdRoute,
