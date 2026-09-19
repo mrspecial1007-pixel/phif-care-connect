@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  createPhifLoginSession,
   getPhifSessionStatus,
   inspectPhifTransactions,
   saveNewPhifInvoices,
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/phif-sync")({
 
 function PhifSyncPage() {
   const sessionStatus = useServerFn(getPhifSessionStatus);
+  const createLoginSession = useServerFn(createPhifLoginSession);
   const inspect = useServerFn(inspectPhifTransactions);
   const saveInvoices = useServerFn(saveNewPhifInvoices);
   const [preview, setPreview] = useState<PhifInvoicePreview[]>([]);
@@ -36,6 +38,7 @@ function PhifSyncPage() {
     needs_review_count: 0,
   });
   const [checking, setChecking] = useState(false);
+  const [creatingLogin, setCreatingLogin] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const { data: status, refetch } = useQuery({
@@ -47,14 +50,24 @@ function PhifSyncPage() {
   const canSave = useMemo(() => preview.length > 0 && !saving, [preview.length, saving]);
 
   async function handleLogin() {
-    if (!status?.login_url) {
-      toast.error("PHIF bridge غير مفعّل في هذه البيئة");
-      return;
+    setCreatingLogin(true);
+    try {
+      const result = await createLoginSession();
+      if (!result.login_url) throw new Error("PHIF bridge did not return a login URL");
+      window.open(result.login_url, "_blank", "noopener,noreferrer");
+      await refetch();
+    } catch (error: any) {
+      toast.error(error?.message ?? "فشل إنشاء جلسة تسجيل دخول PHIF");
+    } finally {
+      setCreatingLogin(false);
     }
-    window.open(status.login_url, "_blank", "noopener,noreferrer");
   }
 
   async function handleInspect() {
+    if (!status?.authenticated) {
+      toast.error("يجب تسجيل الدخول إلى PHIF أولاً");
+      return;
+    }
     setChecking(true);
     try {
       const result = await inspect();
@@ -117,13 +130,17 @@ function PhifSyncPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleLogin} className="gap-2">
-            <ExternalLink className="h-4 w-4" />
+          <Button variant="outline" onClick={handleLogin} disabled={creatingLogin} className="gap-2">
+            {creatingLogin ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
             تسجيل الدخول إلى PHIF
           </Button>
-          <Button onClick={handleInspect} disabled={checking} className="gap-2">
+          <Button onClick={handleInspect} disabled={checking || !status?.authenticated} className="gap-2">
             {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             فحص الحركات الجديدة
+          </Button>
+          <Button variant="ghost" onClick={() => refetch()} className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            تحديث حالة الجلسة
           </Button>
           <Button onClick={handleSave} disabled={!canSave} className="gap-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}

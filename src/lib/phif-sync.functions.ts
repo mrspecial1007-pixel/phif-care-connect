@@ -36,6 +36,28 @@ export type PhifInvoicePreview = {
   patient_id: string | null;
 };
 
+type BridgeSessionRecord = {
+  bridge_session_id: string;
+  pharmacy_id: string;
+  login_url: string | null;
+  expires_at: string;
+};
+
+type PhifSessionStatusResult = {
+  configured: boolean;
+  authenticated: boolean;
+  login_url: string | null;
+  bridge_session_id: string | null;
+  expires_at: string | null;
+  message: string;
+};
+
+declare global {
+  var __phifBridgeSessions: Map<string, BridgeSessionRecord> | undefined;
+}
+
+const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:5174";
+const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com";
 const COMMON_FINANCIAL_KEYS = [
   "price",
   "amount",
@@ -214,46 +236,256 @@ export function parsePhifTransactionDetail(invoiceKey: string, payload: unknown)
 }
 
 function bridgeBaseUrl() {
-  const base = process.env.PHIF_BRIDGE_BASE_URL?.trim();
-  return base ? base.replace(/\/+$/, "") : null;
+  const base = process.env.PHIF_BRIDGE_BASE_URL?.trim() || DEFAULT_BRIDGE_BASE_URL;
+  return base.replace(/\/+$/, "");
 }
 
-async function bridgeGet(path: string) {
-  const base = bridgeBaseUrl();
-  if (!base) throw new Error("PHIF bridge is not configured");
-  const res = await fetch(`${base}${path}`, { method: "GET" });
-  if (!res.ok) throw new Error(`PHIF bridge request failed: ${res.status}`);
-  return await res.json();
+function bridgePublicBaseUrl() {
+  const base = process.env.PHIF_BRIDGE_PUBLIC_BASE_URL?.trim() || DEFAULT_BRIDGE_PUBLIC_BASE_URL;
+  return base.replace(/\/+$/, "");
+}
+
+function bridgeSecret() {
+  return process.env.PHIF_BRIDGE_SECRET?.trim() || null;
+}
+
+function bridgeSessionStore() {
+  if (!globalThis.__phifBridgeSessions) globalThis.__phifBridgeSessions = new Map();
+  return globalThis.__phifBridgeSessions;
+}
+
+function publicForwardHeaders() {
+  const publicBase = new URL(bridgePublicBaseUrl());
+  return {
+    "X-Forwarded-Proto": publicBase.protocol.replace(":", ""),
+    "X-Forwarded-Host": publicBase.host,
+  };
+}
+
+function assertBridgeConfigured() {
+  const secret = bridgeSecret();
+  if (!secret) throw new Error("PHIF bridge secret is not configured");
+  return { base: bridgeBaseUrl(), secret };
+}
+
+function isSessionFresh(session: BridgeSessionRecord | undefined) {
+  if (!session?.bridge_session_id || !session.expires_at) return false;
+  return Date.parse(session.expires_at) > Date.now() + 60_000;
+}
+
+async function bridgeJson(
+  path: string,
+  {
+    method = "GET",
+    pharmacyId,
+    body,
+  }: {
+    method?: "GET" | "POST" | "DELETE";
+    pharmacyId?: string;
+    body?: unknown;
+  } = {},
+) {
+  const { base, secret } = assertBridgeConfigured();
+  const headers = new Headers({
+    "X-PHIF-Bridge-Secret": secret,
+    ...publicForwardHeaders(),
+  });
+  if (pharmacyId) headers.set("X-Pharmacy-Id", pharmacyId);
+  if (body !== undefined) headers.set("Content-Type", "application/json");
+
+  const res = await fetch(`${base}${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let payload: any = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { ok: false, error: text || `PHIF bridge request failed: ${res.status}` };
+  }
+  if (!res.ok) throw new Error(payload?.error ?? `PHIF bridge request failed: ${res.status}`);
+  return payload;
+}
+
+async function createBridgeSession(pharmacyId: string): Promise<BridgeSessionRecord> {
+  const payload = await bridgeJson("/api/bridge-sessions", {
+    method: "POST",
+    body: { pharmacy_id: pharmacyId },
+  });
+  const record: BridgeSessionRecord = {
+    bridge_session_id: payload.session.bridge_session_id,
+    pharmacy_id: pharmacyId,
+    login_url: payload.login_url ?? null,
+    expires_at: payload.session.expires_at,
+  };
+  bridgeSessionStore().set(pharmacyId, record);
+  return record;
+}
+
+async function getOrCreateBridgeSession(pharmacyId: string): Promise<BridgeSessionRecord> {
+  const current = bridgeSessionStore().get(pharmacyId);
+  if (isSessionFresh(current)) {
+    try {
+      const verified = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(current!.bridge_session_id)}/login-url`, {
+        pharmacyId,
+      });
+      return { ...current!, login_url: verified.login_url ?? current!.login_url };
+    } catch {
+      bridgeSessionStore().delete(pharmacyId);
+    }
+  }
+  return await createBridgeSession(pharmacyId);
+}
+
+function currentBridgeSession(pharmacyId: string) {
+  const session = bridgeSessionStore().get(pharmacyId);
+  if (!isSessionFresh(session)) {
+    if (session) bridgeSessionStore().delete(pharmacyId);
+    return null;
+  }
+  return session;
+}
+
+function normalizeBridgeInvoice(
+  invoiceKey: string,
+  payload: any,
+): Omit<PhifInvoicePreview, "patient_match" | "patient_id"> {
+  const invoice = payload?.invoice ?? payload;
+  if (invoice?.items && ("card_number" in invoice || "financial_fields" in (invoice.items[0] ?? {}))) {
+    return {
+      invoice_key: invoiceKey,
+      invoice_number: invoice.invoice_number ?? null,
+      insurance_card_number: normalizePhifCard(invoice.card_number ?? invoice.insurance_card_number),
+      beneficiary_name: invoice.beneficiary_name ?? null,
+      dispensing_date: invoice.dispensing_date ?? null,
+      dispensing_time: invoice.dispensing_time ?? null,
+      status: invoice.status ?? null,
+      metadata: {},
+      items: (invoice.items ?? []).map((item: any) => ({
+        phif_item_id: item.phif_item_id ?? null,
+        active_ingredient: item.active_ingredient ?? null,
+        strength: item.strength ?? null,
+        brand: item.brand ?? null,
+        quantity: typeof item.quantity === "number" ? item.quantity : pickNumber(item, ["quantity"]),
+        supplier: item.supplier ?? null,
+        source_classification: item.source_classification ?? classifyPhifItemSource(item),
+        phif_financial_fields: item.phif_financial_fields ?? item.financial_fields ?? {},
+        metadata: item.metadata ?? {},
+      })),
+    };
+  }
+  return parsePhifTransactionDetail(invoiceKey, payload);
+}
+
+function normalizeBridgeTransactions(payload: any): PhifTransactionSummary[] {
+  if (Array.isArray(payload?.rows)) {
+    return payload.rows
+      .map((row: any) => {
+        const invoiceKey = pickString(row, ["invoice_key", "invoiceKey"]);
+        if (!invoiceKey) return null;
+        return {
+          invoice_key: invoiceKey,
+          invoice_id: pickString(row, ["invoice_number", "invoice_id", "invoiceId"]),
+          beneficiary_code: pickString(row, ["card_number", "beneficiary_code", "beneficiaryCode"]),
+          beneficiary_name: pickString(row, ["beneficiary_name", "beneficiaryName"]),
+          status: pickString(row, ["status"]),
+          action: null,
+        };
+      })
+      .filter(Boolean) as PhifTransactionSummary[];
+  }
+  return parsePhifTodayTransactions(payload);
+}
+
+async function findAccessiblePatientByCard(admin: any, pharmacyId: string, card: string | null) {
+  if (!card) return null;
+  const { data: patient, error } = await admin
+    .from("patients")
+    .select("id")
+    .eq("insurance_card_number", card)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!patient?.id) return null;
+
+  const { count: mine } = await admin
+    .from("dispensing_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("patient_id", patient.id)
+    .eq("pharmacy_id", pharmacyId);
+  if ((mine ?? 0) > 0) return patient.id as string;
+
+  const { count: any } = await admin
+    .from("dispensing_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("patient_id", patient.id);
+  return (any ?? 0) === 0 ? (patient.id as string) : null;
 }
 
 export const getPhifSessionStatus = createServerFn({ method: "GET" }).handler(async () => {
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
-  await requirePharmacySession();
-  const base = bridgeBaseUrl();
-  if (!base) {
+  const { pharmacy_id } = await requirePharmacySession();
+  if (!bridgeSecret()) {
     return {
       configured: false,
       authenticated: false,
       login_url: null,
+      bridge_session_id: null,
+      expires_at: null,
       message: "PHIF bridge is not configured",
-    };
+    } satisfies PhifSessionStatusResult;
   }
-  try {
-    const home = await fetch(`${base}/home`, { method: "GET" });
-    return {
-      configured: true,
-      authenticated: home.ok,
-      login_url: `${base}/login`,
-      message: home.ok ? "PHIF session is available" : `PHIF session check failed: ${home.status}`,
-    };
-  } catch (error: any) {
+
+  const session = currentBridgeSession(pharmacy_id);
+  if (!session) {
     return {
       configured: true,
       authenticated: false,
-      login_url: `${base}/login`,
-      message: error?.message ?? "PHIF session check failed",
-    };
+      login_url: null,
+      bridge_session_id: null,
+      expires_at: null,
+      message: "PHIF bridge session is not created yet",
+    } satisfies PhifSessionStatusResult;
   }
+
+  try {
+    const status = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/status`, {
+      pharmacyId: pharmacy_id,
+    });
+    return {
+      configured: true,
+      authenticated: Boolean(status.authenticated),
+      login_url: session.login_url,
+      bridge_session_id: session.bridge_session_id,
+      expires_at: session.expires_at,
+      message: status.authenticated ? "PHIF session is available" : "PHIF login is required",
+    } satisfies PhifSessionStatusResult;
+  } catch (error: any) {
+    const message = error?.message ?? "PHIF session check failed";
+    if (message.includes("not found") || message.includes("expired")) bridgeSessionStore().delete(pharmacy_id);
+    return {
+      configured: true,
+      authenticated: false,
+      login_url: session.login_url,
+      bridge_session_id: session.bridge_session_id,
+      expires_at: session.expires_at,
+      message,
+    } satisfies PhifSessionStatusResult;
+  }
+});
+
+export const createPhifLoginSession = createServerFn({ method: "POST" }).handler(async () => {
+  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+  const { pharmacy_id } = await requirePharmacySession();
+  if (!bridgeSecret()) throw new Error("PHIF bridge secret is not configured");
+  const session = await getOrCreateBridgeSession(pharmacy_id);
+  return {
+    ok: true as const,
+    login_url: session.login_url,
+    bridge_session_id: session.bridge_session_id,
+    expires_at: session.expires_at,
+  };
 });
 
 export const inspectPhifTransactions = createServerFn({ method: "POST" }).handler(async () => {
@@ -261,8 +493,14 @@ export const inspectPhifTransactions = createServerFn({ method: "POST" }).handle
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
   const { pharmacy_id } = await requirePharmacySession();
   const db = supabaseAdmin as any;
+  const session = currentBridgeSession(pharmacy_id);
+  if (!session) throw new Error("PHIF login is required before checking transactions");
 
-  const transactions = parsePhifTodayTransactions(await bridgeGet("/toDaysTransaction"));
+  const transactions = normalizeBridgeTransactions(
+    await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/today-transactions`, {
+      pharmacyId: pharmacy_id,
+    }),
+  );
   const preview: PhifInvoicePreview[] = [];
   let duplicate_count = 0;
   let failed_count = 0;
@@ -280,23 +518,19 @@ export const inspectPhifTransactions = createServerFn({ method: "POST" }).handle
     }
 
     try {
-      const detail = parsePhifTransactionDetail(
+      const detail = normalizeBridgeInvoice(
         tx.invoice_key,
-        await bridgeGet(`/getTransaction/${encodeURIComponent(tx.invoice_key)}`),
+        await bridgeJson(
+          `/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/invoices/${encodeURIComponent(tx.invoice_key)}`,
+          { pharmacyId: pharmacy_id },
+        ),
       );
-      let patient_id: string | null = null;
-      if (detail.insurance_card_number) {
-        const { data: patient } = await supabaseAdmin
-          .from("patients")
-          .select("id")
-          .eq("insurance_card_number", detail.insurance_card_number)
-          .maybeSingle();
-        patient_id = patient?.id ?? null;
-      }
+      const patient_id = await findAccessiblePatientByCard(db, pharmacy_id, detail.insurance_card_number);
       preview.push({
         ...detail,
         status: detail.status ?? tx.status,
         beneficiary_name: detail.beneficiary_name ?? tx.beneficiary_name,
+        insurance_card_number: detail.insurance_card_number ?? normalizePhifCard(tx.beneficiary_code),
         patient_match: patient_id ? "matched" : "not_matched",
         patient_id,
       });

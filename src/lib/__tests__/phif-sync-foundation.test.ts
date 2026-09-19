@@ -95,10 +95,25 @@ describe("PHIF sync foundation", () => {
 
   it("keeps PHIF phase 1 isolated from dispensing and patient writes", () => {
     const source = readProjectFile("src/lib/phif-sync.functions.ts");
-    expect(source).not.toContain('.from("dispensing_transactions")');
+    expect(source).not.toContain('.from("dispensing_transactions").insert');
+    expect(source).not.toContain('.from("dispensing_transactions").update');
+    expect(source).not.toContain('.from("dispensing_transactions").delete');
     expect(source).not.toContain('.from("dispensing_due_tracks")');
     expect(source).not.toContain('.from("dispensing_cycles")');
     expect(source).not.toContain('.from("patients").insert');
     expect(source).not.toContain("recalculateTracks");
+  });
+
+  it("uses server-side bridge API without exposing the bridge secret to the browser", () => {
+    const source = readProjectFile("src/lib/phif-sync.functions.ts");
+    const route = readProjectFile("src/routes/phif-sync.tsx");
+
+    expect(source).toContain("process.env.PHIF_BRIDGE_SECRET");
+    expect(source).toContain("\"X-PHIF-Bridge-Secret\"");
+    expect(source).toContain("/api/bridge-sessions");
+    expect(source).toContain("/today-transactions");
+    expect(source).toContain("/invoices/");
+    expect(route).not.toContain("PHIF_BRIDGE_SECRET");
+    expect(route).toContain("createPhifLoginSession");
   });
 });
