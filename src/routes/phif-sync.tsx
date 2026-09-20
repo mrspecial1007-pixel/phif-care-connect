@@ -73,10 +73,14 @@ function PhifSyncPage() {
       const result = await inspect();
       setSummary(result.summary);
       setPreview(result.preview);
-      toast.success("تم فحص حركات PHIF");
+      if (result.metadata?.empty_day_server_response || result.summary.total === 0) {
+        toast.info("لا توجد حركات PHIF اليوم.");
+      } else {
+        toast.success("تم فحص حركات PHIF");
+      }
       await refetch();
-    } catch (error: any) {
-      toast.error(error?.message ?? "فشل فحص حركات PHIF");
+    } catch {
+      toast.error("تعذر فحص حركات PHIF الآن. تحقق من جلسة PHIF أو حاول لاحقًا.");
     } finally {
       setChecking(false);
     }

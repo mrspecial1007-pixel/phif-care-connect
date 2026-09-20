@@ -496,11 +496,11 @@ export const inspectPhifTransactions = createServerFn({ method: "POST" }).handle
   const session = currentBridgeSession(pharmacy_id);
   if (!session) throw new Error("PHIF login is required before checking transactions");
 
-  const transactions = normalizeBridgeTransactions(
-    await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/today-transactions`, {
-      pharmacyId: pharmacy_id,
-    }),
-  );
+  const todayPayload = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/today-transactions`, {
+    pharmacyId: pharmacy_id,
+  });
+  const transactions = normalizeBridgeTransactions(todayPayload);
+  const emptyDayServerResponse = todayPayload?.metadata?.empty_day_server_response === true;
   const preview: PhifInvoicePreview[] = [];
   let duplicate_count = 0;
   let failed_count = 0;
@@ -549,6 +549,9 @@ export const inspectPhifTransactions = createServerFn({ method: "POST" }).handle
       needs_review_count: preview.filter((p) => p.patient_match === "not_matched").length,
     },
     preview,
+    metadata: {
+      empty_day_server_response: emptyDayServerResponse,
+    },
   };
 });
 

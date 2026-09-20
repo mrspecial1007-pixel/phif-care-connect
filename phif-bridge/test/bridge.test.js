@@ -156,6 +156,52 @@ test("API requires bridge secret and matching pharmacy", async () => {
   assert.equal(wrongPharmacy.status, 404);
 });
 
+test("known PHIF empty-day server response returns zero today transactions", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const server = createPhifBridgeServer({
+    secret: SECRET,
+    store,
+    fetchImpl: async () => new Response('{\n "message": "Server Error"\n}', {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    }),
+  });
+  await using app = await listen(server);
+
+  const result = await fetchJson(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/today-transactions`, {
+    headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+  });
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.rows, []);
+  assert.equal(result.body.raw_count, 0);
+  assert.equal(result.body.metadata.empty_day_server_response, true);
+});
+
+test("different PHIF 500 remains an upstream error", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const server = createPhifBridgeServer({
+    secret: SECRET,
+    store,
+    fetchImpl: async () => new Response("Database unavailable", {
+      status: 500,
+      headers: { "content-type": "text/plain" },
+    }),
+  });
+  await using app = await listen(server);
+
+  const response = await fetch(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/today-transactions`, {
+    headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.status, 500);
+  assert.equal(body.text, "Database unavailable");
+});
+
 test("today transaction parsing preserves leading-zero card numbers", () => {
   const rows = parseTodayTransactions({
     data: [{

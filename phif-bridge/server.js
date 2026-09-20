@@ -85,6 +85,14 @@ async function handleApi(req, res, url, context) {
       timeoutMs: context.timeoutMs,
     });
     const result = await client.getJson("/toDaysTransaction");
+    if (!result.ok && isKnownEmptyTodayServerResponse(result)) {
+      return json(res, 200, {
+        ok: true,
+        rows: [],
+        raw_count: 0,
+        metadata: { empty_day_server_response: true, upstream_status: result.status },
+      });
+    }
     if (!result.ok) return json(res, result.blocked ? 403 : 502, result);
     return json(res, 200, { ok: true, rows: parseTodayTransactions(result.json), raw_count: countRawRows(result.json) });
   }
@@ -125,6 +133,14 @@ function countRawRows(payload) {
   if (Array.isArray(payload)) return payload.length;
   if (Array.isArray(payload?.data)) return payload.data.length;
   return 0;
+}
+
+function isKnownEmptyTodayServerResponse(result) {
+  if (result?.status !== 500 || result?.authRequired || result?.blocked) return false;
+  const text = String(result?.text ?? "").trim();
+  const compact = text.replace(/\s+/g, " ");
+  return /^"?\{?\s*"message"\s*:\s*"Server Error"\s*\}?"?$/i.test(text)
+    || (/<title[^>]*>\s*PHIF-500\s*<\/title>/i.test(text) && /Server Error/i.test(compact));
 }
 
 function requestOrigin(req) {
