@@ -47,14 +47,9 @@ type PhifSessionStatusResult = {
   configured: boolean;
   authenticated: boolean;
   login_url: string | null;
-  bridge_session_id: string | null;
   expires_at: string | null;
   message: string;
 };
-
-declare global {
-  var __phifBridgeSessions: Map<string, BridgeSessionRecord> | undefined;
-}
 
 const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:5174";
 const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com";
@@ -249,11 +244,6 @@ function bridgeSecret() {
   return process.env.PHIF_BRIDGE_SECRET?.trim() || null;
 }
 
-function bridgeSessionStore() {
-  if (!globalThis.__phifBridgeSessions) globalThis.__phifBridgeSessions = new Map();
-  return globalThis.__phifBridgeSessions;
-}
-
 function publicForwardHeaders() {
   const publicBase = new URL(bridgePublicBaseUrl());
   return {
@@ -314,18 +304,80 @@ async function createBridgeSession(pharmacyId: string): Promise<BridgeSessionRec
     method: "POST",
     body: { pharmacy_id: pharmacyId },
   });
-  const record: BridgeSessionRecord = {
+  return {
     bridge_session_id: payload.session.bridge_session_id,
     pharmacy_id: pharmacyId,
     login_url: payload.login_url ?? null,
     expires_at: payload.session.expires_at,
   };
-  bridgeSessionStore().set(pharmacyId, record);
-  return record;
 }
 
-async function getOrCreateBridgeSession(pharmacyId: string): Promise<BridgeSessionRecord> {
-  const current = bridgeSessionStore().get(pharmacyId);
+async function storeBridgeSession(admin: any, pharmacyId: string, session: BridgeSessionRecord) {
+  const now = new Date().toISOString();
+  const { error: deactivateError } = await admin
+    .from("phif_bridge_sessions")
+    .update({ status: "inactive", updated_at: now })
+    .eq("pharmacy_id", pharmacyId)
+    .eq("status", "active");
+  if (deactivateError) throw new Error(deactivateError.message);
+
+  const { error: insertError } = await admin
+    .from("phif_bridge_sessions")
+    .insert({
+      pharmacy_id: pharmacyId,
+      bridge_session_id: session.bridge_session_id,
+      expires_at: session.expires_at,
+      status: "active",
+      last_checked_at: now,
+    });
+  if (insertError) throw new Error(insertError.message);
+  return session;
+}
+
+async function markBridgeSession(admin: any, pharmacyId: string, bridgeSessionId: string, status: "active" | "inactive" | "expired" | "failed") {
+  const update: Record<string, string> = {
+    status,
+    updated_at: new Date().toISOString(),
+    last_checked_at: new Date().toISOString(),
+  };
+  const { error } = await admin
+    .from("phif_bridge_sessions")
+    .update(update)
+    .eq("pharmacy_id", pharmacyId)
+    .eq("bridge_session_id", bridgeSessionId);
+  if (error) throw new Error(error.message);
+}
+
+async function currentBridgeSession(admin: any, pharmacyId: string): Promise<BridgeSessionRecord | null> {
+  const now = new Date().toISOString();
+  await admin
+    .from("phif_bridge_sessions")
+    .update({ status: "expired", updated_at: now, last_checked_at: now })
+    .eq("pharmacy_id", pharmacyId)
+    .eq("status", "active")
+    .lte("expires_at", now);
+
+  const { data, error } = await admin
+    .from("phif_bridge_sessions")
+    .select("bridge_session_id, pharmacy_id, expires_at")
+    .eq("pharmacy_id", pharmacyId)
+    .eq("status", "active")
+    .gt("expires_at", now)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  const row = data?.[0];
+  if (!row?.bridge_session_id || !row?.expires_at) return null;
+  return {
+    bridge_session_id: row.bridge_session_id,
+    pharmacy_id: row.pharmacy_id,
+    login_url: null,
+    expires_at: row.expires_at,
+  };
+}
+
+async function getOrCreateBridgeSession(admin: any, pharmacyId: string): Promise<BridgeSessionRecord> {
+  const current = await currentBridgeSession(admin, pharmacyId);
   if (isSessionFresh(current)) {
     try {
       const verified = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(current!.bridge_session_id)}/login-url`, {
@@ -333,19 +385,10 @@ async function getOrCreateBridgeSession(pharmacyId: string): Promise<BridgeSessi
       });
       return { ...current!, login_url: verified.login_url ?? current!.login_url };
     } catch {
-      bridgeSessionStore().delete(pharmacyId);
+      await markBridgeSession(admin, pharmacyId, current!.bridge_session_id, "expired");
     }
   }
-  return await createBridgeSession(pharmacyId);
-}
-
-function currentBridgeSession(pharmacyId: string) {
-  const session = bridgeSessionStore().get(pharmacyId);
-  if (!isSessionFresh(session)) {
-    if (session) bridgeSessionStore().delete(pharmacyId);
-    return null;
-  }
-  return session;
+  return await storeBridgeSession(admin, pharmacyId, await createBridgeSession(pharmacyId));
 }
 
 function normalizeBridgeInvoice(
@@ -424,26 +467,26 @@ async function findAccessiblePatientByCard(admin: any, pharmacyId: string, card:
 }
 
 export const getPhifSessionStatus = createServerFn({ method: "GET" }).handler(async () => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
   const { pharmacy_id } = await requirePharmacySession();
+  const db = supabaseAdmin as any;
   if (!bridgeSecret()) {
     return {
       configured: false,
       authenticated: false,
       login_url: null,
-      bridge_session_id: null,
       expires_at: null,
       message: "PHIF bridge is not configured",
     } satisfies PhifSessionStatusResult;
   }
 
-  const session = currentBridgeSession(pharmacy_id);
+  const session = await currentBridgeSession(db, pharmacy_id);
   if (!session) {
     return {
       configured: true,
       authenticated: false,
       login_url: null,
-      bridge_session_id: null,
       expires_at: null,
       message: "PHIF bridge session is not created yet",
     } satisfies PhifSessionStatusResult;
@@ -453,22 +496,23 @@ export const getPhifSessionStatus = createServerFn({ method: "GET" }).handler(as
     const status = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/status`, {
       pharmacyId: pharmacy_id,
     });
+    await markBridgeSession(db, pharmacy_id, session.bridge_session_id, "active");
     return {
       configured: true,
       authenticated: Boolean(status.authenticated),
       login_url: session.login_url,
-      bridge_session_id: session.bridge_session_id,
       expires_at: session.expires_at,
       message: status.authenticated ? "PHIF session is available" : "PHIF login is required",
     } satisfies PhifSessionStatusResult;
   } catch (error: any) {
     const message = error?.message ?? "PHIF session check failed";
-    if (message.includes("not found") || message.includes("expired")) bridgeSessionStore().delete(pharmacy_id);
+    if (message.includes("not found") || message.includes("expired")) {
+      await markBridgeSession(db, pharmacy_id, session.bridge_session_id, "expired");
+    }
     return {
       configured: true,
       authenticated: false,
       login_url: session.login_url,
-      bridge_session_id: session.bridge_session_id,
       expires_at: session.expires_at,
       message,
     } satisfies PhifSessionStatusResult;
@@ -476,14 +520,15 @@ export const getPhifSessionStatus = createServerFn({ method: "GET" }).handler(as
 });
 
 export const createPhifLoginSession = createServerFn({ method: "POST" }).handler(async () => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
   const { pharmacy_id } = await requirePharmacySession();
+  const db = supabaseAdmin as any;
   if (!bridgeSecret()) throw new Error("PHIF bridge secret is not configured");
-  const session = await getOrCreateBridgeSession(pharmacy_id);
+  const session = await getOrCreateBridgeSession(db, pharmacy_id);
   return {
     ok: true as const,
     login_url: session.login_url,
-    bridge_session_id: session.bridge_session_id,
     expires_at: session.expires_at,
   };
 });
@@ -493,12 +538,21 @@ export const inspectPhifTransactions = createServerFn({ method: "POST" }).handle
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
   const { pharmacy_id } = await requirePharmacySession();
   const db = supabaseAdmin as any;
-  const session = currentBridgeSession(pharmacy_id);
+  const session = await currentBridgeSession(db, pharmacy_id);
   if (!session) throw new Error("PHIF login is required before checking transactions");
 
-  const todayPayload = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/today-transactions`, {
-    pharmacyId: pharmacy_id,
-  });
+  let todayPayload: any;
+  try {
+    todayPayload = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/today-transactions`, {
+      pharmacyId: pharmacy_id,
+    });
+  } catch (error: any) {
+    const message = error?.message ?? "";
+    if (message.includes("not found") || message.includes("expired")) {
+      await markBridgeSession(db, pharmacy_id, session.bridge_session_id, "expired");
+    }
+    throw error;
+  }
   const transactions = normalizeBridgeTransactions(todayPayload);
   const emptyDayServerResponse = todayPayload?.metadata?.empty_day_server_response === true;
   const preview: PhifInvoicePreview[] = [];

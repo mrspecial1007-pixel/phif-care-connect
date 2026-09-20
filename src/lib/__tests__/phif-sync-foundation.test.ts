@@ -116,4 +116,40 @@ describe("PHIF sync foundation", () => {
     expect(route).not.toContain("PHIF_BRIDGE_SECRET");
     expect(route).toContain("createPhifLoginSession");
   });
+
+  it("stores PHIF bridge session references in server-only persistent storage", () => {
+    const migration = readProjectFile("supabase/migrations/20260920010000_add_phif_bridge_sessions.sql");
+    const source = readProjectFile("src/lib/phif-sync.functions.ts");
+
+    expect(migration).toContain("CREATE TABLE public.phif_bridge_sessions");
+    expect(migration).toContain("pharmacy_id uuid NOT NULL REFERENCES public.pharmacies(id)");
+    expect(migration).toContain("bridge_session_id text NOT NULL");
+    expect(migration).toContain("ALTER TABLE public.phif_bridge_sessions ENABLE ROW LEVEL SECURITY");
+    expect(migration).toContain("REVOKE ALL ON public.phif_bridge_sessions FROM anon, authenticated");
+    expect(migration).toContain("GRANT ALL ON public.phif_bridge_sessions TO service_role");
+
+    expect(source).toContain('.from("phif_bridge_sessions")');
+    expect(source).toContain('.eq("pharmacy_id", pharmacyId)');
+    expect(source).toContain('.eq("status", "active")');
+    expect(source).not.toContain("__phifBridgeSessions");
+    expect(source).not.toContain("globalThis");
+  });
+
+  it("does not expose bridge_session_id in PHIF Sync client-facing responses", () => {
+    const source = readProjectFile("src/lib/phif-sync.functions.ts");
+    const route = readProjectFile("src/routes/phif-sync.tsx");
+    const statusType = source.match(/type PhifSessionStatusResult = \{[\s\S]*?\};/)?.[0] ?? "";
+    const createLoginResponse = source.match(/export const createPhifLoginSession[\s\S]*?return \{[\s\S]*?\};\s*\}\);/)?.[0] ?? "";
+
+    expect(statusType).not.toContain("bridge_session_id");
+    expect(createLoginResponse).not.toContain("bridge_session_id");
+    expect(route).not.toContain("bridge_session_id");
+  });
+
+  it("marks missing or expired PHIF bridge sessions inactive for reuse safety", () => {
+    const source = readProjectFile("src/lib/phif-sync.functions.ts");
+
+    expect(source).toContain('message.includes("not found") || message.includes("expired")');
+    expect(source).toContain('await markBridgeSession(db, pharmacy_id, session.bridge_session_id, "expired")');
+  });
 });
