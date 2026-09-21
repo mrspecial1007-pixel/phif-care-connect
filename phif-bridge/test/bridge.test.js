@@ -233,8 +233,8 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
         return new Response(`
           <form method="POST" action="/showPharmacyFilterTransactions">
             <input type="hidden" name="_token" value="secret-token">
-            <input type="date" name="dateFrom" value="2026-09-01">
-            <input type="date" name="dateTo">
+            <input type="text" name="dateFrom" placeholder="dd/mm/yyyy">
+            <input type="text" name="dateTo" placeholder="dd/mm/yyyy">
           </form>
         `, { status: 200, headers: { "content-type": "text/html" } });
       }
@@ -266,8 +266,8 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
     "GET /showPharmacyFilterTransactions",
     "POST /showPharmacyFilterTransactions",
   ]);
-  assert.match(calls[1].body, /dateFrom=2026-09-01/);
-  assert.match(calls[1].body, /dateTo=2026-09-02/);
+  assert.match(calls[1].body, /dateFrom=01%2F09%2F2026/);
+  assert.match(calls[1].body, /dateTo=02%2F09%2F2026/);
   assert.equal(calls[1].origin, "https://his.phif.gov.ly");
   assert.equal(calls[1].referer, "https://his.phif.gov.ly/showPharmacyFilterTransactions");
   assert.doesNotMatch(JSON.stringify(result.body), /secret-token/);

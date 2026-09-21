@@ -114,8 +114,8 @@ async function handleApi(req, res, url, context) {
     const form = parseFilterTransactionForm(page.text);
     const postFields = {
       ...form.hidden_fields,
-      dateFrom,
-      dateTo,
+      dateFrom: formatPhifFilterDate(dateFrom, form, "dateFrom"),
+      dateTo: formatPhifFilterDate(dateTo, form, "dateTo"),
     };
     const result = await client.postForm("/showPharmacyFilterTransactions", postFields);
     if (!result.ok) return json(res, result.blocked ? 403 : 502, safeUpstreamFailure(result));
@@ -194,6 +194,20 @@ function normalizeDateInput(value) {
   if (!match) return null;
   const date = new Date(`${text}T00:00:00Z`);
   return Number.isNaN(date.getTime()) ? null : text;
+}
+
+function formatPhifFilterDate(isoDate, form, fieldName) {
+  const control = form?.controls?.find((item) => item.name === fieldName);
+  const hint = `${control?.value ?? ""} ${control?.placeholder ?? ""} ${control?.type ?? ""}`;
+  const [, year, month, day] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate) ?? [];
+  if (!year) return isoDate;
+  if (/\bdd[/-]mm[/-]yyyy\b|\bd\/m\/y\b|\d{2}\/\d{2}\/\d{4}/i.test(hint)) {
+    return `${day}/${month}/${year}`;
+  }
+  if (/\bmm[/-]dd[/-]yyyy\b|\d{2}-\d{2}-\d{4}/i.test(hint)) {
+    return `${month}/${day}/${year}`;
+  }
+  return `${day}/${month}/${year}`;
 }
 
 function looksJson(result) {
