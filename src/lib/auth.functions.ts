@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 const unlockSchema = z.object({
-  pharmacy_id: z.string().uuid(),
-  pin: z.string().min(3).max(20),
+  email: z.string().trim().email().max(254),
+  password: z.string().min(3).max(80),
   remember: z.boolean().optional(),
 });
 
@@ -18,7 +18,8 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
     const { getRequestIP } = await import("@tanstack/react-start/server");
 
     const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
-    const rlKey = `pin:${ip}:${data.pharmacy_id}`;
+    const email = data.email.trim().toLowerCase();
+    const rlKey = `login:${ip}:${email}`;
     const rl = rateLimit(rlKey);
     if (!rl.ok) {
       return { ok: false as const, error: "too_many_attempts" };
@@ -27,17 +28,19 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
     const { data: pharm } = await supabaseAdmin
       .from("pharmacies")
       .select("id, name, address, phone, pin_hash")
-      .eq("id", data.pharmacy_id)
+      .ilike("login_email", email)
       .maybeSingle();
 
-    if (!pharm || !verifyPin(data.pin, pharm.pin_hash)) {
-      await writeAudit({
-        pharmacy_id: data.pharmacy_id,
-        action: "unlock_failed",
-        entity: "pharmacy",
-        entity_id: data.pharmacy_id,
-        ip,
-      });
+    if (!pharm || !verifyPin(data.password, pharm.pin_hash)) {
+      if (pharm?.id) {
+        await writeAudit({
+          pharmacy_id: pharm.id,
+          action: "unlock_failed",
+          entity: "pharmacy",
+          entity_id: pharm.id,
+          ip,
+        });
+      }
       return { ok: false as const, error: "invalid_pin" };
     }
 

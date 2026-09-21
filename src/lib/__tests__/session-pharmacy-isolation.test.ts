@@ -74,12 +74,25 @@ describe("session pharmacy isolation", () => {
     expect(phoneSheet).not.toContain("pharmacyId:");
   });
 
-  it("keeps unlock screen pharmacy choice available for both pharmacies", () => {
+  it("uses server-side email/password login without exposing pharmacy choices in the UI", () => {
     const unlock = readProjectFile("src/components/UnlockScreen.tsx");
+    const auth = readProjectFile("src/lib/auth.functions.ts");
+    const unlockSection = auth.slice(auth.indexOf("export const unlockPharmacy"), auth.indexOf("export const lockPharmacy"));
 
-    expect(unlock).toContain("usePharmacies()");
-    expect(unlock).toContain("pharmacies?.map");
-    expect(unlock).toContain("setPharmacyId(p.id)");
+    expect(unlock).not.toContain("usePharmacies()");
+    expect(unlock).not.toContain("pharmacies?.map");
+    expect(unlock).not.toContain("setPharmacyId");
+    expect(unlock).not.toContain("Admin@andalus.com");
+    expect(unlock).not.toContain("Admin@tiryaq.com");
+    expect(unlock).toContain('type="email"');
+    expect(unlock).toContain('type="password"');
+    expect(auth).toContain("email: z.string().trim().email()");
+    expect(auth).toContain("password: z.string()");
+    expect(unlockSection).toContain("data.email.trim().toLowerCase()");
+    expect(unlockSection).toContain('.ilike("login_email", email)');
+    expect(unlockSection).toContain("verifyPin(data.password, pharm.pin_hash)");
+    expect(unlockSection).not.toContain("data.pharmacy_id");
+    expect(unlockSection).not.toContain("data.pin");
   });
 
   it("updates pharmacy PIN hashes through migration without plaintext PIN columns", () => {
@@ -90,5 +103,24 @@ describe("session pharmacy isolation", () => {
     expect(migration).toContain("WHERE name = 'صيدلية الأندلس'");
     expect(migration).toContain("pin_hash = 's1:");
     expect(migration).not.toContain("pin =");
+  });
+
+  it("adds login emails through migration without storing plaintext passwords", () => {
+    const migration = readProjectFile("supabase/migrations/20260921020000_add_pharmacy_login_email.sql");
+
+    expect(migration).toContain("ADD COLUMN IF NOT EXISTS login_email text");
+    expect(migration).toContain("admin@tiryaq.com");
+    expect(migration).toContain("admin@andalus.com");
+    expect(migration).toContain("lower(login_email)");
+    expect(migration).not.toContain("password");
+  });
+
+  it("keeps PHIF Sync navigation visible only for Tiryaq sessions", () => {
+    const appShell = readProjectFile("src/components/AppShell.tsx");
+
+    expect(appShell).toContain('item.to !== "/phif-sync"');
+    expect(appShell).toContain('session?.pharmacy.name === "صيدلية الترياق الشافي"');
+    expect(appShell).toContain("visibleNav.map");
+    expect(appShell).toContain("visibleNav.slice");
   });
 });

@@ -30,6 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     { to: "/import", label: "استيراد", icon: Upload },
     { to: "/settings", label: "الإعدادات", icon: Settings },
   ] as const;
+  const visibleNav = nav.filter((item) => item.to !== "/phif-sync" || session?.pharmacy.name === "صيدلية الترياق الشافي");
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
@@ -45,7 +46,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
           <nav className="hidden md:flex gap-1">
-            {nav.map((n) => {
+            {visibleNav.map((n) => {
               const active = loc.pathname === n.to || (n.to !== "/" && loc.pathname.startsWith(n.to));
               return (
                 <Link
@@ -70,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t bg-card">
         <div className="grid grid-cols-6">
-          {nav.slice(0, 6).map((n) => {
+          {visibleNav.slice(0, 6).map((n) => {
             const Icon = n.icon;
             const active = loc.pathname === n.to || (n.to !== "/" && loc.pathname.startsWith(n.to));
             return (
