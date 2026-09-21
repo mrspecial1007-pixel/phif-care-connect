@@ -44,7 +44,11 @@ export function parseTodayTransactions(payload) {
 }
 
 export function parseFilterTransactionForm(html) {
-  const form = html.match(/<form\b[\s\S]*?<\/form>/i)?.[0] ?? "";
+  const forms = [...String(html ?? "").matchAll(/<form\b[\s\S]*?<\/form>/gi)].map((match) => match[0]);
+  const form = forms.find((candidate) => /name\s*=\s*["']dateFrom["']/i.test(candidate) && /name\s*=\s*["']dateTo["']/i.test(candidate))
+    ?? forms.find((candidate) => /showPharmacyFilterTransactions/i.test(candidate))
+    ?? forms[0]
+    ?? "";
   const controls = [...form.matchAll(/<(input|select|textarea)\b[\s\S]*?>/gi)].map((match) => {
     const tag = match[1].toLowerCase();
     const raw = match[0];

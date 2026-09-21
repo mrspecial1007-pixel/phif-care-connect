@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { BridgeSessionStore, publicSession } from "../sessionStore.js";
 import { isAllowedPostFormPath, isAllowedReadPath, PhifClient } from "../phif/client.js";
 import { forwardHeaders, isAllowedProxyGet, isAllowedProxyRequest, proxyPhifLoginRequest, rewriteHtml, toLocalProxyLocation } from "../phif/sessionBridge.js";
-import { parseHistoricalTransactions, parseTodayTransactions } from "../phif/parsers.js";
+import { parseFilterTransactionForm, parseHistoricalTransactions, parseTodayTransactions } from "../phif/parsers.js";
 import { createPhifBridgeServer } from "../server.js";
 
 const SECRET = "test-secret";
@@ -272,6 +272,25 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
   assert.equal(calls[1].origin, "https://his.phif.gov.ly");
   assert.equal(calls[1].referer, "https://his.phif.gov.ly/showPharmacyFilterTransactions");
   assert.doesNotMatch(JSON.stringify(result.body), /secret-token/);
+});
+
+test("filter transaction form parser selects the date form after the logout form", () => {
+  const form = parseFilterTransactionForm(`
+    <form method="POST" action="/logout">
+      <input type="hidden" name="_token" value="logout-token">
+    </form>
+    <form method="POST" action="">
+      <input type="hidden" name="_token" value="filter-token">
+      <input type="date" name="dateFrom">
+      <input type="date" name="dateTo">
+      <button type="submit">search</button>
+    </form>
+  `);
+
+  assert.equal(form.method, "POST");
+  assert.equal(form.hidden_fields._token, "filter-token");
+  assert.ok(form.controls.some((control) => control.name === "dateFrom" && control.type === "date"));
+  assert.ok(form.controls.some((control) => control.name === "dateTo" && control.type === "date"));
 });
 
 test("historical transaction endpoint follows PHIF result redirect safely", async () => {
