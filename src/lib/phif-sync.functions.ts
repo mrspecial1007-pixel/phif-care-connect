@@ -51,6 +51,11 @@ type PhifSessionStatusResult = {
   message: string;
 };
 
+const inspectSchema = z.object({
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:5174";
 const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com";
 const COMMON_FINANCIAL_KEYS = [
@@ -534,6 +539,16 @@ export const createPhifLoginSession = createServerFn({ method: "POST" }).handler
 });
 
 export const inspectPhifTransactions = createServerFn({ method: "POST" }).handler(async () => {
+  return inspectPhifTransactionsForRange({});
+});
+
+export const inspectPhifTransactionsRange = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => inspectSchema.parse(d))
+  .handler(async ({ data }) => {
+    return inspectPhifTransactionsForRange(data);
+  });
+
+async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchema>) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
   const { pharmacy_id } = await requirePharmacySession();
@@ -541,11 +556,18 @@ export const inspectPhifTransactions = createServerFn({ method: "POST" }).handle
   const session = await currentBridgeSession(db, pharmacy_id);
   if (!session) throw new Error("PHIF login is required before checking transactions");
 
-  let todayPayload: any;
+  const useHistoricalRange = Boolean(data.dateFrom && data.dateTo);
+  let transactionsPayload: any;
   try {
-    todayPayload = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/today-transactions`, {
-      pharmacyId: pharmacy_id,
-    });
+    transactionsPayload = useHistoricalRange
+      ? await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/historical-transactions`, {
+          method: "POST",
+          pharmacyId: pharmacy_id,
+          body: { dateFrom: data.dateFrom, dateTo: data.dateTo },
+        })
+      : await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/today-transactions`, {
+          pharmacyId: pharmacy_id,
+        });
   } catch (error: any) {
     const message = error?.message ?? "";
     if (message.includes("not found") || message.includes("expired")) {
@@ -553,8 +575,8 @@ export const inspectPhifTransactions = createServerFn({ method: "POST" }).handle
     }
     throw error;
   }
-  const transactions = normalizeBridgeTransactions(todayPayload);
-  const emptyDayServerResponse = todayPayload?.metadata?.empty_day_server_response === true;
+  const transactions = normalizeBridgeTransactions(transactionsPayload);
+  const emptyDayServerResponse = transactionsPayload?.metadata?.empty_day_server_response === true;
   const preview: PhifInvoicePreview[] = [];
   let duplicate_count = 0;
   let failed_count = 0;
@@ -605,9 +627,12 @@ export const inspectPhifTransactions = createServerFn({ method: "POST" }).handle
     preview,
     metadata: {
       empty_day_server_response: emptyDayServerResponse,
+      source: transactionsPayload?.metadata?.source ?? (useHistoricalRange ? "historical" : "today"),
+      dateFrom: data.dateFrom ?? null,
+      dateTo: data.dateTo ?? null,
     },
   };
-});
+}
 
 const invoiceItemSchema = z.object({
   phif_item_id: z.string().nullable(),

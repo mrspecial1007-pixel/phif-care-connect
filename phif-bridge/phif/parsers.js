@@ -43,6 +43,70 @@ export function parseTodayTransactions(payload) {
   }).filter((row) => row.invoice_number && row.card_number && row.invoice_key);
 }
 
+export function parseFilterTransactionForm(html) {
+  const form = html.match(/<form\b[\s\S]*?<\/form>/i)?.[0] ?? "";
+  const controls = [...form.matchAll(/<(input|select|textarea)\b[\s\S]*?>/gi)].map((match) => {
+    const tag = match[1].toLowerCase();
+    const raw = match[0];
+    return {
+      tag,
+      name: attr(raw, "name"),
+      type: attr(raw, "type") || (tag === "select" ? "select" : tag),
+      value: attr(raw, "value"),
+      placeholder: attr(raw, "placeholder"),
+      min: attr(raw, "min"),
+      max: attr(raw, "max"),
+    };
+  }).filter((control) => control.name);
+
+  return {
+    action: attr(form, "action") || "/showPharmacyFilterTransactions",
+    method: (attr(form, "method") || "GET").toUpperCase(),
+    controls,
+    hidden_fields: Object.fromEntries(
+      controls
+        .filter((control) => String(control.type).toLowerCase() === "hidden" && control.name)
+        .map((control) => [control.name, control.value ?? ""]),
+    ),
+  };
+}
+
+export function parseHistoricalTransactions(payload) {
+  if (typeof payload !== "string") return parseTodayTransactions(payload);
+  const text = payload.trim();
+  if (!text) return [];
+  try {
+    return parseTodayTransactions(JSON.parse(text));
+  } catch {
+    return parseTransactionTableHtml(text);
+  }
+}
+
+export function parseTransactionTableHtml(html) {
+  const tableRows = [...html.matchAll(/<tr[\s\S]*?<\/tr>/gi)];
+  return tableRows.map((rowMatch) => {
+    const rowHtml = rowMatch[0];
+    if (!/data-inv_id|data-inv-id|\/getTransaction\//i.test(rowHtml)) return null;
+    const cells = [...rowHtml.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) => clean(cell[1]));
+    const invoiceKey = attr(rowHtml, "data-inv_id")
+      || attr(rowHtml, "data-inv-id")
+      || rowHtml.match(/\/getTransaction\/([^"'\s<>]+)/i)?.[1]
+      || null;
+    const meaningful = cells.filter(Boolean);
+    const invoiceNumber = meaningful.find((cell) => /\d/.test(cell)) ?? null;
+    const cardNumber = meaningful.find((cell) => /^\d{10,}$/.test(cell.replace(/\s+/g, ""))) ?? null;
+    const beneficiaryName = meaningful.find((cell) => /[\u0600-\u06FFA-Za-z]/.test(cell) && !/عرض|view|ط§ظ„/.test(cell)) ?? null;
+    return {
+      invoice_number: invoiceNumber,
+      card_number: cardNumber,
+      beneficiary_name: beneficiaryName,
+      status: null,
+      invoice_key: invoiceKey || invoiceNumber,
+      cells: meaningful,
+    };
+  }).filter((row) => row?.invoice_key);
+}
+
 export function parseInvoiceDetails(html, fallbackInvoiceKey = null) {
   const headerText = clean(html);
   const invoiceNumber = headerText.match(/(?:رقم الفاتورة|invoice\s*(?:number|no\.?))\s*:?\s*([^\s]+)/i)?.[1] ?? null;
@@ -112,4 +176,3 @@ function parseNumber(value) {
   const number = Number(String(value || "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(number) ? number : null;
 }
-

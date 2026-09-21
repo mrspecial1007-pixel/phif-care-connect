@@ -112,9 +112,23 @@ describe("PHIF sync foundation", () => {
     expect(source).toContain("\"X-PHIF-Bridge-Secret\"");
     expect(source).toContain("/api/bridge-sessions");
     expect(source).toContain("/today-transactions");
+    expect(source).toContain("/historical-transactions");
     expect(source).toContain("/invoices/");
     expect(route).not.toContain("PHIF_BRIDGE_SECRET");
     expect(route).toContain("createPhifLoginSession");
+  });
+
+  it("supports historical PHIF ranges without exposing bridge sessions", () => {
+    const source = readProjectFile("src/lib/phif-sync.functions.ts");
+    const route = readProjectFile("src/routes/phif-sync.tsx");
+
+    expect(source).toContain("inspectPhifTransactionsRange");
+    expect(source).toContain("dateFrom");
+    expect(source).toContain("dateTo");
+    expect(source).toContain("/historical-transactions");
+    expect(route).toContain('type="date"');
+    expect(route).toContain("inspectPhifTransactionsRange");
+    expect(route).not.toContain("bridge_session_id");
   });
 
   it("stores PHIF bridge session references in server-only persistent storage", () => {

@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import {
   createPhifLoginSession,
   getPhifSessionStatus,
-  inspectPhifTransactions,
+  inspectPhifTransactionsRange,
   saveNewPhifInvoices,
   type PhifInvoicePreview,
 } from "@/lib/phif-sync.functions";
@@ -27,8 +27,11 @@ export const Route = createFileRoute("/phif-sync")({
 function PhifSyncPage() {
   const sessionStatus = useServerFn(getPhifSessionStatus);
   const createLoginSession = useServerFn(createPhifLoginSession);
-  const inspect = useServerFn(inspectPhifTransactions);
+  const inspect = useServerFn(inspectPhifTransactionsRange);
   const saveInvoices = useServerFn(saveNewPhifInvoices);
+  const today = new Date().toISOString().slice(0, 10);
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [preview, setPreview] = useState<PhifInvoicePreview[]>([]);
   const [summary, setSummary] = useState({
     total: 0,
@@ -70,11 +73,11 @@ function PhifSyncPage() {
     }
     setChecking(true);
     try {
-      const result = await inspect();
+      const result = await inspect({ data: { dateFrom, dateTo } });
       setSummary(result.summary);
       setPreview(result.preview);
       if (result.metadata?.empty_day_server_response || result.summary.total === 0) {
-        toast.info("لا توجد حركات PHIF اليوم.");
+        toast.info("لا توجد حركات PHIF في الفترة المحددة.");
       } else {
         toast.success("تم فحص حركات PHIF");
       }
@@ -134,6 +137,24 @@ function PhifSyncPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted-foreground">من تاريخ</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted-foreground">إلى تاريخ</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </label>
           <Button variant="outline" onClick={handleLogin} disabled={creatingLogin} className="gap-2">
             {creatingLogin ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
             تسجيل الدخول إلى PHIF

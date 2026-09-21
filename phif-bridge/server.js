@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { PhifClient } from "./phif/client.js";
-import { parseInvoiceDetails, parseTodayTransactions } from "./phif/parsers.js";
+import { parseFilterTransactionForm, parseHistoricalTransactions, parseInvoiceDetails, parseTodayTransactions } from "./phif/parsers.js";
 import { getPhifSessionStatus, phifSessionFetch, proxyPhifLoginRequest } from "./phif/sessionBridge.js";
 import { BridgeSessionStore, publicSession } from "./sessionStore.js";
 
@@ -97,6 +97,59 @@ async function handleApi(req, res, url, context) {
     return json(res, 200, { ok: true, rows: parseTodayTransactions(result.json), raw_count: countRawRows(result.json) });
   }
 
+  if (req.method === "POST" && action === "historical-transactions") {
+    const body = await readJson(req);
+    const dateFrom = normalizeDateInput(body.dateFrom);
+    const dateTo = normalizeDateInput(body.dateTo);
+    if (!dateFrom || !dateTo) return json(res, 400, { ok: false, error: "dateFrom and dateTo are required as YYYY-MM-DD" });
+    if (Date.parse(dateFrom) > Date.parse(dateTo)) return json(res, 400, { ok: false, error: "dateFrom must be before or equal dateTo" });
+
+    const client = new PhifClient({
+      fetchImpl: (input, options) => phifSessionFetch(session, input, { ...options, ...context }),
+      timeoutMs: context.timeoutMs,
+    });
+    const page = await client.getHtml("/showPharmacyFilterTransactions");
+    if (!page.ok) return json(res, page.blocked ? 403 : 502, page);
+
+    const form = parseFilterTransactionForm(page.text);
+    const postFields = {
+      ...form.hidden_fields,
+      dateFrom,
+      dateTo,
+    };
+    const result = await client.postForm("/showPharmacyFilterTransactions", postFields);
+    if (!result.ok) return json(res, result.blocked ? 403 : 502, result);
+
+    const rows = parseHistoricalTransactions(result.text);
+    return json(res, 200, {
+      ok: true,
+      rows,
+      raw_count: rows.length,
+      metadata: {
+        source: "showPharmacyFilterTransactions",
+        request_method: "POST",
+        request_path: "/showPharmacyFilterTransactions",
+        request_fields: Object.keys(postFields).map((name) => ({
+          name,
+          sensitive: /token|csrf|_token/i.test(name),
+        })),
+        dateFrom,
+        dateTo,
+        upstream_status: result.status,
+        response_content_type: result.contentType ?? null,
+        response_body_type: looksJson(result) ? "json" : "html",
+        form: {
+          action: form.action,
+          method: form.method,
+          controls: form.controls.map((control) => ({
+            ...control,
+            value: /token|csrf|_token/i.test(control.name ?? "") ? "[redacted]" : control.value,
+          })),
+        },
+      },
+    });
+  }
+
   const invoiceMatch = action.match(/^invoices\/([^/]+)$/);
   if (req.method === "GET" && invoiceMatch) {
     const invoiceKey = decodeURIComponent(invoiceMatch[1]);
@@ -133,6 +186,21 @@ function countRawRows(payload) {
   if (Array.isArray(payload)) return payload.length;
   if (Array.isArray(payload?.data)) return payload.data.length;
   return 0;
+}
+
+function normalizeDateInput(value) {
+  const text = String(value ?? "").trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  const date = new Date(`${text}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? null : text;
+}
+
+function looksJson(result) {
+  const contentType = String(result?.contentType ?? "").toLowerCase();
+  if (contentType.includes("json")) return true;
+  const text = String(result?.text ?? "").trim();
+  return text.startsWith("{") || text.startsWith("[");
 }
 
 function isKnownEmptyTodayServerResponse(result) {

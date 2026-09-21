@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BridgeSessionStore, publicSession } from "../sessionStore.js";
-import { isAllowedReadPath, PhifClient } from "../phif/client.js";
+import { isAllowedPostFormPath, isAllowedReadPath, PhifClient } from "../phif/client.js";
 import { forwardHeaders, isAllowedProxyGet, isAllowedProxyRequest, proxyPhifLoginRequest, rewriteHtml, toLocalProxyLocation } from "../phif/sessionBridge.js";
-import { parseTodayTransactions } from "../phif/parsers.js";
+import { parseHistoricalTransactions, parseTodayTransactions } from "../phif/parsers.js";
 import { createPhifBridgeServer } from "../server.js";
 
 const SECRET = "test-secret";
@@ -47,13 +47,22 @@ test("session expiry and clear remove access", () => {
 
 test("read allowlist permits only phase-one read endpoints", () => {
   assert.equal(isAllowedReadPath("/toDaysTransaction"), true);
+  assert.equal(isAllowedReadPath("/showPharmacyFilterTransactions"), true);
   assert.equal(isAllowedReadPath("/getTransaction/2026-4197020-2857276"), true);
 
   assert.equal(isAllowedReadPath("/cashing"), false);
+  assert.equal(isAllowedReadPath("/showPharmacyFilterTransactions/anything"), false);
   assert.equal(isAllowedReadPath("/cancelTransaction/1"), false);
   assert.equal(isAllowedReadPath("/orders/receive/1"), false);
   assert.equal(isAllowedReadPath("/permissionDispenseMedication"), false);
   assert.equal(isAllowedReadPath("https://his.phif.gov.ly/toDaysTransaction"), false);
+});
+
+test("POST allowlist is limited to the historical filter form", () => {
+  assert.equal(isAllowedPostFormPath("/showPharmacyFilterTransactions"), true);
+  assert.equal(isAllowedPostFormPath("/showPharmacyFilterTransactions/extra"), false);
+  assert.equal(isAllowedPostFormPath("/toDaysTransaction"), false);
+  assert.equal(isAllowedPostFormPath("/cashing"), false);
 });
 
 test("client blocks unsafe paths before network access", async () => {
@@ -75,9 +84,11 @@ test("proxy allows login, captcha, assets, and read-only GET paths only", () => 
   assert.equal(isAllowedProxyGet("/login"), true);
   assert.equal(isAllowedProxyGet("/build/app.css"), true);
   assert.equal(isAllowedProxyGet("/toDaysTransaction"), true);
+  assert.equal(isAllowedProxyGet("/showPharmacyFilterTransactions"), true);
   assert.equal(isAllowedProxyRequest("POST", "/login"), true);
 
   assert.equal(isAllowedProxyRequest("POST", "/cashing"), false);
+  assert.equal(isAllowedProxyRequest("POST", "/showPharmacyFilterTransactions"), false);
   assert.equal(isAllowedProxyRequest("POST", "/cancelTransaction/1"), false);
   assert.equal(isAllowedProxyRequest("PUT", "/login"), false);
 });
@@ -200,6 +211,74 @@ test("different PHIF 500 remains an upstream error", async () => {
   assert.equal(response.status, 502);
   assert.equal(body.status, 500);
   assert.equal(body.text, "Database unavailable");
+});
+
+test("historical transaction endpoint posts only dateFrom/dateTo plus hidden form fields", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const calls = [];
+  const server = createPhifBridgeServer({
+    secret: SECRET,
+    store,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      calls.push({
+        path: url.pathname,
+        method: options.method,
+        body: options.body?.toString?.() ?? "",
+      });
+      if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "GET") {
+        return new Response(`
+          <form method="POST" action="/showPharmacyFilterTransactions">
+            <input type="hidden" name="_token" value="secret-token">
+            <input type="date" name="dateFrom" value="2026-09-01">
+            <input type="date" name="dateTo">
+          </form>
+        `, { status: 200, headers: { "content-type": "text/html" } });
+      }
+      if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "POST") {
+        return new Response(`
+          <table><tbody>
+            <tr>
+              <td>4197020</td><td>0061500147011</td><td>Patient</td><td>confirmed</td>
+              <td><button data-inv_id="2026-4197020-2857276">view</button></td>
+            </tr>
+          </tbody></table>
+        `, { status: 200, headers: { "content-type": "text/html" } });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  await using app = await listen(server);
+
+  const result = await fetchJson(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/historical-transactions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+    body: JSON.stringify({ dateFrom: "2026-09-01", dateTo: "2026-09-02" }),
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.rows[0].invoice_key, "2026-4197020-2857276");
+  assert.equal(result.body.rows[0].card_number, "0061500147011");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "GET /showPharmacyFilterTransactions",
+    "POST /showPharmacyFilterTransactions",
+  ]);
+  assert.match(calls[1].body, /dateFrom=2026-09-01/);
+  assert.match(calls[1].body, /dateTo=2026-09-02/);
+  assert.doesNotMatch(JSON.stringify(result.body), /secret-token/);
+});
+
+test("historical transaction parser extracts invoice keys from HTML", () => {
+  const rows = parseHistoricalTransactions(`
+    <table><tr>
+      <td>4197020</td><td>0061500147011</td><td>Patient</td><td>confirmed</td>
+      <td><a href="/getTransaction/2026-4197020-2857276">view</a></td>
+    </tr></table>
+  `);
+
+  assert.equal(rows[0].invoice_key, "2026-4197020-2857276");
+  assert.equal(rows[0].card_number, "0061500147011");
 });
 
 test("today transaction parsing preserves leading-zero card numbers", () => {
