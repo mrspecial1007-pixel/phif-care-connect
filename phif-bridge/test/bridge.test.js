@@ -226,6 +226,8 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
         path: url.pathname,
         method: options.method,
         body: options.body?.toString?.() ?? "",
+        origin: new Headers(options.headers).get("origin"),
+        referer: new Headers(options.headers).get("referer"),
       });
       if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "GET") {
         return new Response(`
@@ -266,6 +268,8 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
   ]);
   assert.match(calls[1].body, /dateFrom=2026-09-01/);
   assert.match(calls[1].body, /dateTo=2026-09-02/);
+  assert.equal(calls[1].origin, "https://his.phif.gov.ly");
+  assert.equal(calls[1].referer, "https://his.phif.gov.ly/showPharmacyFilterTransactions");
   assert.doesNotMatch(JSON.stringify(result.body), /secret-token/);
 });
 

@@ -55,6 +55,8 @@ export class PhifClient {
       headers: {
         Accept: "text/html,application/xhtml+xml,application/json,text/javascript,*/*;q=0.9",
         "Content-Type": "application/x-www-form-urlencoded",
+        Origin: PHIF_BASE_URL,
+        Referer: new URL(path, PHIF_BASE_URL).toString(),
       },
       body,
     }, this.timeoutMs);
