@@ -583,6 +583,26 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
     if (message.includes("not found") || message.includes("expired")) {
       await markBridgeSession(db, pharmacy_id, session.bridge_session_id, "expired");
     }
+    if (useHistoricalRange && message.includes("PHIF historical request failed")) {
+      return {
+        ok: true as const,
+        summary: {
+          total: 0,
+          new_count: 0,
+          duplicate_count: 0,
+          failed_count: 1,
+          needs_review_count: 0,
+        },
+        preview: [],
+        metadata: {
+          historical_error: true,
+          historical_error_message: message,
+          source: "historical",
+          dateFrom: data.dateFrom ?? null,
+          dateTo: data.dateTo ?? null,
+        },
+      };
+    }
     throw error;
   }
   const transactions = normalizeBridgeTransactions(transactionsPayload);

@@ -76,7 +76,9 @@ function PhifSyncPage() {
       const result = await inspect({ data: { dateFrom, dateTo } });
       setSummary(result.summary);
       setPreview(result.preview);
-      if (result.metadata?.empty_day_server_response || result.summary.total === 0) {
+      if (result.metadata?.historical_error) {
+        toast.error(result.metadata.historical_error_message ?? "تعذر فحص حركات PHIF التاريخية.");
+      } else if (result.metadata?.empty_day_server_response || result.summary.total === 0) {
         toast.info("لا توجد حركات PHIF في الفترة المحددة.");
       } else {
         toast.success("تم فحص حركات PHIF");
