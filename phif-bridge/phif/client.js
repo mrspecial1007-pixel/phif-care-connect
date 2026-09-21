@@ -4,6 +4,7 @@ const ALLOWED_GET_PATHS = [
   /^\/home$/,
   /^\/toDaysTransaction$/,
   /^\/showPharmacyFilterTransactions$/,
+  /^\/pharmacyFilteredtransactions$/,
   /^\/getTransaction\/[^/?#]+$/,
 ];
 
@@ -64,6 +65,55 @@ export class PhifClient {
     const location = response.headers.get("location") || "";
     const contentType = response.headers.get("content-type") || "";
     if (response.status >= 300 && response.status < 400) {
+      if (isLoginLocation(location)) {
+        return { ok: false, status: response.status, authRequired: true, text, location, contentType };
+      }
+      const redirectPath = allowedRedirectPath(location);
+      if (redirectPath) {
+        const redirected = await fetchWithTimeout(this.fetchImpl, new URL(redirectPath, this.baseUrl), {
+          method: "GET",
+          redirect: "manual",
+          headers: {
+            Accept: "text/html,application/xhtml+xml,application/json,text/javascript,*/*;q=0.9",
+            Referer: new URL(path, PHIF_BASE_URL).toString(),
+          },
+        }, this.timeoutMs);
+        const redirectedText = await redirected.text();
+        const redirectedContentType = redirected.headers.get("content-type") || "";
+        const redirectedLocation = redirected.headers.get("location") || "";
+        if (redirected.status >= 300 && redirected.status < 400) {
+          return {
+            ok: false,
+            status: redirected.status,
+            authRequired: isLoginLocation(redirectedLocation),
+            text: redirectedText,
+            location: redirectedLocation,
+            contentType: redirectedContentType,
+            redirectedFrom: location,
+            finalPath: redirectPath,
+          };
+        }
+        if (looksLikeLoginPage(redirectedText)) {
+          return {
+            ok: false,
+            status: redirected.status,
+            authRequired: true,
+            text: redirectedText,
+            contentType: redirectedContentType,
+            redirectedFrom: location,
+            finalPath: redirectPath,
+          };
+        }
+        return {
+          ok: redirected.ok,
+          status: redirected.status,
+          authRequired: false,
+          text: redirectedText,
+          contentType: redirectedContentType,
+          redirectedFrom: location,
+          finalPath: redirectPath,
+        };
+      }
       return { ok: false, status: response.status, authRequired: isLoginLocation(location), text, location, contentType };
     }
     if (looksLikeLoginPage(text)) {
@@ -140,6 +190,18 @@ function isLoginLocation(location) {
   } catch {
     return true;
   }
+}
+
+function allowedRedirectPath(location) {
+  if (!location) return null;
+  try {
+    const url = new URL(location, PHIF_BASE_URL);
+    const path = `${url.pathname}${url.search}`;
+    if (isAllowedReadPath(path)) return path;
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function looksLikeLoginPage(html) {

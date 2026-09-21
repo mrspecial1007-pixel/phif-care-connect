@@ -138,6 +138,7 @@ async function handleApi(req, res, url, context) {
         upstream_status: result.status,
         response_content_type: result.contentType ?? null,
         response_body_type: looksJson(result) ? "json" : "html",
+        final_path: result.finalPath ?? "/showPharmacyFilterTransactions",
         form: {
           action: form.action,
           method: form.method,
@@ -201,13 +202,16 @@ function formatPhifFilterDate(isoDate, form, fieldName) {
   const hint = `${control?.value ?? ""} ${control?.placeholder ?? ""} ${control?.type ?? ""}`;
   const [, year, month, day] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate) ?? [];
   if (!year) return isoDate;
+  if (String(control?.type ?? "").toLowerCase() === "date") {
+    return isoDate;
+  }
   if (/\bdd[/-]mm[/-]yyyy\b|\bd\/m\/y\b|\d{2}\/\d{2}\/\d{4}/i.test(hint)) {
     return `${day}/${month}/${year}`;
   }
   if (/\bmm[/-]dd[/-]yyyy\b|\d{2}-\d{2}-\d{4}/i.test(hint)) {
     return `${month}/${day}/${year}`;
   }
-  return `${day}/${month}/${year}`;
+  return isoDate;
 }
 
 function looksJson(result) {

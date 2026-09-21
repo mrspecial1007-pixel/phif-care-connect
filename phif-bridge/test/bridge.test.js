@@ -48,6 +48,7 @@ test("session expiry and clear remove access", () => {
 test("read allowlist permits only phase-one read endpoints", () => {
   assert.equal(isAllowedReadPath("/toDaysTransaction"), true);
   assert.equal(isAllowedReadPath("/showPharmacyFilterTransactions"), true);
+  assert.equal(isAllowedReadPath("/pharmacyFilteredtransactions"), true);
   assert.equal(isAllowedReadPath("/getTransaction/2026-4197020-2857276"), true);
 
   assert.equal(isAllowedReadPath("/cashing"), false);
@@ -233,8 +234,8 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
         return new Response(`
           <form method="POST" action="/showPharmacyFilterTransactions">
             <input type="hidden" name="_token" value="secret-token">
-            <input type="text" name="dateFrom" placeholder="dd/mm/yyyy">
-            <input type="text" name="dateTo" placeholder="dd/mm/yyyy">
+            <input type="date" name="dateFrom">
+            <input type="date" name="dateTo">
           </form>
         `, { status: 200, headers: { "content-type": "text/html" } });
       }
@@ -266,11 +267,67 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
     "GET /showPharmacyFilterTransactions",
     "POST /showPharmacyFilterTransactions",
   ]);
-  assert.match(calls[1].body, /dateFrom=01%2F09%2F2026/);
-  assert.match(calls[1].body, /dateTo=02%2F09%2F2026/);
+  assert.match(calls[1].body, /dateFrom=2026-09-01/);
+  assert.match(calls[1].body, /dateTo=2026-09-02/);
   assert.equal(calls[1].origin, "https://his.phif.gov.ly");
   assert.equal(calls[1].referer, "https://his.phif.gov.ly/showPharmacyFilterTransactions");
   assert.doesNotMatch(JSON.stringify(result.body), /secret-token/);
+});
+
+test("historical transaction endpoint follows PHIF result redirect safely", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const calls = [];
+  const server = createPhifBridgeServer({
+    secret: SECRET,
+    store,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      calls.push(`${options.method} ${url.pathname}`);
+      if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "GET") {
+        return new Response(`
+          <form method="POST" action="">
+            <input type="hidden" name="_token" value="secret-token">
+            <input type="date" name="dateFrom">
+            <input type="date" name="dateTo">
+          </form>
+        `, { status: 200, headers: { "content-type": "text/html" } });
+      }
+      if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "POST") {
+        return new Response("", {
+          status: 302,
+          headers: { location: "/pharmacyFilteredtransactions" },
+        });
+      }
+      if (url.pathname === "/pharmacyFilteredtransactions" && options.method === "GET") {
+        return new Response(`
+          <table><tbody>
+            <tr>
+              <td>4197020</td><td>0061500147011</td><td>Patient</td><td>confirmed</td>
+              <td><a href="/getTransaction/2026-4197020-2857276">view</a></td>
+            </tr>
+          </tbody></table>
+        `, { status: 200, headers: { "content-type": "text/html" } });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  await using app = await listen(server);
+
+  const result = await fetchJson(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/historical-transactions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+    body: JSON.stringify({ dateFrom: "2026-09-20", dateTo: "2026-09-20" }),
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.rows[0].invoice_key, "2026-4197020-2857276");
+  assert.equal(result.body.metadata.final_path, "/pharmacyFilteredtransactions");
+  assert.deepEqual(calls, [
+    "GET /showPharmacyFilterTransactions",
+    "POST /showPharmacyFilterTransactions",
+    "GET /pharmacyFilteredtransactions",
+  ]);
 });
 
 test("historical upstream errors return safe diagnostics without raw PHIF HTML", async () => {
