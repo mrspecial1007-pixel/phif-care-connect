@@ -273,6 +273,41 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
   assert.doesNotMatch(JSON.stringify(result.body), /secret-token/);
 });
 
+test("historical upstream errors return safe diagnostics without raw PHIF HTML", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const server = createPhifBridgeServer({
+    secret: SECRET,
+    store,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "GET") {
+        return new Response('<form method="POST"><input type="hidden" name="_token" value="secret-token"></form>', {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      }
+      return new Response("<html><title>PHIF-500</title><body>Server Error patient hidden</body></html>", {
+        status: 500,
+        headers: { "content-type": "text/html" },
+      });
+    },
+  });
+  await using app = await listen(server);
+
+  const response = await fetch(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/historical-transactions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+    body: JSON.stringify({ dateFrom: "2026-09-20", dateTo: "2026-09-21" }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.diagnostic.status, 500);
+  assert.equal(body.diagnostic.classification, "phif_error_page");
+  assert.doesNotMatch(JSON.stringify(body), /secret-token|patient hidden|<html/i);
+});
+
 test("historical transaction parser extracts invoice keys from HTML", () => {
   const rows = parseHistoricalTransactions(`
     <table><tr>

@@ -300,7 +300,15 @@ async function bridgeJson(
   } catch {
     payload = { ok: false, error: text || `PHIF bridge request failed: ${res.status}` };
   }
-  if (!res.ok) throw new Error(payload?.error ?? `PHIF bridge request failed: ${res.status}`);
+  if (!res.ok) {
+    const diagnostic = payload?.diagnostic;
+    if (diagnostic) {
+      throw new Error(
+        `PHIF historical request failed: status=${diagnostic.status ?? res.status}; contentType=${diagnostic.contentType ?? "unknown"}; classification=${diagnostic.classification ?? "unknown"}; authRequired=${diagnostic.authRequired === true}`,
+      );
+    }
+    throw new Error(payload?.error ?? `PHIF bridge request failed: ${res.status}`);
+  }
   return payload;
 }
 
@@ -556,7 +564,9 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
   const session = await currentBridgeSession(db, pharmacy_id);
   if (!session) throw new Error("PHIF login is required before checking transactions");
 
-  const useHistoricalRange = Boolean(data.dateFrom && data.dateTo);
+  const today = new Date().toISOString().slice(0, 10);
+  const isTodayOnly = data.dateFrom === today && data.dateTo === today;
+  const useHistoricalRange = Boolean(data.dateFrom && data.dateTo && !isTodayOnly);
   let transactionsPayload: any;
   try {
     transactionsPayload = useHistoricalRange

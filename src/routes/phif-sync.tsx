@@ -82,8 +82,8 @@ function PhifSyncPage() {
         toast.success("تم فحص حركات PHIF");
       }
       await refetch();
-    } catch {
-      toast.error("تعذر فحص حركات PHIF الآن. تحقق من جلسة PHIF أو حاول لاحقًا.");
+    } catch (error: any) {
+      toast.error(error?.message ?? "تعذر فحص حركات PHIF الآن. تحقق من جلسة PHIF أو حاول لاحقًا.");
     } finally {
       setChecking(false);
     }

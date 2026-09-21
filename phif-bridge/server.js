@@ -109,7 +109,7 @@ async function handleApi(req, res, url, context) {
       timeoutMs: context.timeoutMs,
     });
     const page = await client.getHtml("/showPharmacyFilterTransactions");
-    if (!page.ok) return json(res, page.blocked ? 403 : 502, page);
+    if (!page.ok) return json(res, page.blocked ? 403 : 502, safeUpstreamFailure(page));
 
     const form = parseFilterTransactionForm(page.text);
     const postFields = {
@@ -118,7 +118,7 @@ async function handleApi(req, res, url, context) {
       dateTo,
     };
     const result = await client.postForm("/showPharmacyFilterTransactions", postFields);
-    if (!result.ok) return json(res, result.blocked ? 403 : 502, result);
+    if (!result.ok) return json(res, result.blocked ? 403 : 502, safeUpstreamFailure(result));
 
     const rows = parseHistoricalTransactions(result.text);
     return json(res, 200, {
@@ -201,6 +201,48 @@ function looksJson(result) {
   if (contentType.includes("json")) return true;
   const text = String(result?.text ?? "").trim();
   return text.startsWith("{") || text.startsWith("[");
+}
+
+function safeUpstreamFailure(result) {
+  return {
+    ok: false,
+    error: "PHIF historical request failed",
+    diagnostic: {
+      status: result?.status ?? null,
+      contentType: result?.contentType ?? null,
+      authRequired: result?.authRequired === true,
+      classification: classifyUpstreamBody(result),
+      redirect: result?.location ? classifyRedirect(result.location) : null,
+      message: result?.message ?? null,
+    },
+  };
+}
+
+function classifyUpstreamBody(result) {
+  const text = String(result?.text ?? "");
+  const compact = text.replace(/\s+/g, " ").slice(0, 1000);
+  if (result?.authRequired || looksLikeLoginBody(text)) return "login_page";
+  if (/<title[^>]*>\s*PHIF-500\s*<\/title>/i.test(text) || /Server Error|error|exception/i.test(compact)) return "phif_error_page";
+  if (/<table\b/i.test(text) || /data-inv_id|data-inv-id|getTransaction/i.test(text)) return "html_results";
+  if (looksJson(result)) return "json";
+  if (/<html\b/i.test(text)) return "html";
+  if (!text.trim()) return "empty";
+  return "text";
+}
+
+function looksLikeLoginBody(text) {
+  return /<form[^>]+action=["'][^"']*\/login["']/i.test(text)
+    || /<input[^>]+name=["']password["']/i.test(text);
+}
+
+function classifyRedirect(location) {
+  try {
+    const path = new URL(location, "https://his.phif.gov.ly").pathname;
+    if (path === "/login") return "login";
+    return "other";
+  } catch {
+    return "invalid";
+  }
 }
 
 function isKnownEmptyTodayServerResponse(result) {

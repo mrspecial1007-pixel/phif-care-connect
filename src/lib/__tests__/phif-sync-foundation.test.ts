@@ -131,6 +131,15 @@ describe("PHIF sync foundation", () => {
     expect(route).not.toContain("bridge_session_id");
   });
 
+  it("keeps same-day PHIF checks on the proven today-transactions path", () => {
+    const source = readProjectFile("src/lib/phif-sync.functions.ts");
+
+    expect(source).toContain("isTodayOnly");
+    expect(source).toContain("!isTodayOnly");
+    expect(source).toContain("/today-transactions");
+    expect(source).toContain("/historical-transactions");
+  });
+
   it("stores PHIF bridge session references in server-only persistent storage", () => {
     const migration = readProjectFile("supabase/migrations/20260920010000_add_phif_bridge_sessions.sql");
     const source = readProjectFile("src/lib/phif-sync.functions.ts");
