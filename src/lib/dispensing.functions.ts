@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { authorizePatientForSessionPharmacy } from "@/lib/pharmacy-isolation";
 
 export const LIVE_MULTITRACK_CUTOFF = "2026-08-09T23:59:59Z";
 
@@ -90,18 +91,7 @@ function addDays(iso: string, days: number): string {
 }
 
 async function authorizePatientForPharmacy(admin: any, pharmacyId: string, patientId: string) {
-  const { count: mine } = await admin
-    .from("dispensing_transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("patient_id", patientId)
-    .eq("pharmacy_id", pharmacyId);
-  if ((mine ?? 0) > 0) return true;
-
-  const { count: any } = await admin
-    .from("dispensing_transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("patient_id", patientId);
-  return (any ?? 0) === 0;
+  return authorizePatientForSessionPharmacy(admin, pharmacyId, patientId);
 }
 
 const createDispensingSchema = z.object({
@@ -154,6 +144,9 @@ export const recordDispensing = createServerFn({ method: "POST" })
       .eq("id", data.patient_id)
       .maybeSingle();
     if (!patient) return { ok: false as const, error: "patient_not_found" };
+    if (!(await authorizePatientForPharmacy(supabaseAdmin, sessionPharmacyId, data.patient_id))) {
+      return { ok: false as const, error: "patient_not_found" };
+    }
 
     // 0. Check track count limit
     const { data: existingTracks } = await supabaseAdmin
@@ -260,7 +253,12 @@ export const upsertPatient = createServerFn({ method: "POST" })
         .select("id")
         .eq("insurance_card_number", card)
         .maybeSingle();
-      if (existing) return { ok: true as const, id: existing.id, matched: "card" as const };
+      if (existing) {
+        if (!(await authorizePatientForPharmacy(supabaseAdmin, pharmacy_id, existing.id))) {
+          return { ok: false as const, error: "patient_not_found" };
+        }
+        return { ok: true as const, id: existing.id, matched: "card" as const };
+      }
     }
 
     const payload = {
@@ -277,6 +275,9 @@ export const upsertPatient = createServerFn({ method: "POST" })
     };
 
     if (data.id) {
+      if (!(await authorizePatientForPharmacy(supabaseAdmin, pharmacy_id, data.id))) {
+        return { ok: false as const, error: "patient_not_found" };
+      }
       const { data: before } = await supabaseAdmin.from("patients").select("*").eq("id", data.id).maybeSingle();
       const { error } = await supabaseAdmin.from("patients").update(payload).eq("id", data.id);
       if (error) return { ok: false as const, error: error.message };
@@ -332,6 +333,10 @@ export const importExcelRows = createServerFn({ method: "POST" })
           .eq("insurance_card_number", card)
           .maybeSingle();
         if (existing) {
+          if (!(await authorizePatientForPharmacy(supabaseAdmin, pharmacy_id, existing.id))) {
+            needsReview++;
+            continue;
+          }
           patientId = existing.id;
           matchedByCard++;
         }
@@ -582,6 +587,10 @@ export const setFollowUpStatus = createServerFn({ method: "POST" })
 
     const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
     const ip = getRequestIP({ xForwardedFor: true }) ?? null;
+
+    if (!(await authorizePatientForPharmacy(supabaseAdmin, sessionPharmacyId, data.id))) {
+      throw new Error("Patient not found");
+    }
 
     const { data: before } = await supabaseAdmin
       .from("patients")

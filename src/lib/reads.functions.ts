@@ -19,6 +19,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { authorizePatientForSessionPharmacy, patientAccessSetsForSession } from "@/lib/pharmacy-isolation";
 
 const idSchema = z.object({ id: z.string().uuid() });
 
@@ -34,44 +35,13 @@ async function ctx() {
  * Paged: PostgREST caps a single response at 1000 rows, so an unpaged scan
  * would silently under-report and leak other pharmacies' beneficiaries.
  */
-async function patientAccessSets(admin: any, pharmacyId: string) {
-  const served = new Set<string>();
-  const anyTx = new Set<string>();
-  const PAGE = 1000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await admin
-      .from("dispensing_transactions")
-      .select("patient_id, pharmacy_id")
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    for (const r of rows) {
-      anyTx.add(r.patient_id);
-      if (r.pharmacy_id === pharmacyId) served.add(r.patient_id);
-    }
-    if (rows.length < PAGE) break;
-  }
-  return { served, anyTx };
-}
-
-
 async function authorizePatient(admin: any, pharmacyId: string, patientId: string) {
-  const { count: mine } = await admin
-    .from("dispensing_transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("patient_id", patientId)
-    .eq("pharmacy_id", pharmacyId);
-  if ((mine ?? 0) > 0) return true;
-  const { count: any } = await admin
-    .from("dispensing_transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("patient_id", patientId);
-  return (any ?? 0) === 0;
+  return authorizePatientForSessionPharmacy(admin, pharmacyId, patientId);
 }
 
 export const listPatientStatuses = createServerFn({ method: "GET" }).handler(async () => {
   const { pharmacy_id, admin } = await ctx();
-  const { served, anyTx } = await patientAccessSets(admin, pharmacy_id);
+  const { served, anyTx, excluded } = await patientAccessSetsForSession(admin, pharmacy_id);
   const rows: any[] = [];
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
@@ -84,7 +54,7 @@ export const listPatientStatuses = createServerFn({ method: "GET" }).handler(asy
     rows.push(...page);
     if (page.length < PAGE) break;
   }
-  return rows.filter((r: any) => served.has(r.patient_id) || !anyTx.has(r.patient_id));
+  return rows.filter((r: any) => !excluded.has(r.patient_id) && (served.has(r.patient_id) || !anyTx.has(r.patient_id)));
 });
 
 export const getPatient = createServerFn({ method: "POST" })

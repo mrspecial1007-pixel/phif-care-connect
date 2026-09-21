@@ -3,6 +3,8 @@ import { z } from "zod";
 
 export const getRecentActivity = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+  const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
   const since = new Date();
   since.setUTCDate(since.getUTCDate() - 30);
   const sinceIso = since.toISOString();
@@ -11,18 +13,21 @@ export const getRecentActivity = createServerFn({ method: "GET" }).handler(async
     supabaseAdmin
       .from("dispensing_transactions")
       .select("id, dispensing_date, transaction_type, items_dispensed, items_remaining, notes, created_at, patient_id, pharmacy_id, patients(patient_name, insurance_card_number), pharmacies(name)")
+      .eq("pharmacy_id", sessionPharmacyId)
       .gte("created_at", sinceIso)
       .order("created_at", { ascending: false })
       .limit(500),
     supabaseAdmin
       .from("audit_log")
       .select("id, action, entity, entity_id, before, after, created_at, pharmacy_id")
+      .eq("pharmacy_id", sessionPharmacyId)
       .gte("created_at", sinceIso)
       .order("created_at", { ascending: false })
       .limit(500),
     supabaseAdmin
       .from("communication_logs")
       .select("*, patients(patient_name), pharmacies(name)")
+      .eq("pharmacy_id", sessionPharmacyId)
       .gte("created_at", sinceIso)
       .order("created_at", { ascending: false })
       .limit(500),
@@ -65,15 +70,19 @@ export const logCommunication = createServerFn({ method: "POST" })
 
 export const exportAllData = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+  const { patientAccessSetsForSession } = await import("@/lib/pharmacy-isolation");
+  const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
+  const { served, anyTx, excluded } = await patientAccessSetsForSession(supabaseAdmin, sessionPharmacyId);
   const [patients, cycles, txs, audit, pharmacies] = await Promise.all([
     supabaseAdmin.from("patients").select("*"),
-    supabaseAdmin.from("dispensing_cycles").select("*"),
-    supabaseAdmin.from("dispensing_transactions").select("*, patients(patient_name), pharmacies(name)"),
-    supabaseAdmin.from("audit_log").select("*"),
-    supabaseAdmin.from("pharmacies").select("id, name, address, phone, created_at"),
+    supabaseAdmin.from("dispensing_cycles").select("*").eq("pharmacy_id", sessionPharmacyId),
+    supabaseAdmin.from("dispensing_transactions").select("*, patients(patient_name), pharmacies(name)").eq("pharmacy_id", sessionPharmacyId),
+    supabaseAdmin.from("audit_log").select("*").eq("pharmacy_id", sessionPharmacyId),
+    supabaseAdmin.from("pharmacies").select("id, name, address, phone, created_at").eq("id", sessionPharmacyId),
   ]);
   return {
-    patients: patients.data ?? [],
+    patients: (patients.data ?? []).filter((p: any) => !excluded.has(p.id) && (served.has(p.id) || !anyTx.has(p.id))),
     cycles: cycles.data ?? [],
     transactions: txs.data ?? [],
     audit: audit.data ?? [],

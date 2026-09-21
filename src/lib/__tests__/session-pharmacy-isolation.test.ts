@@ -27,6 +27,42 @@ describe("session pharmacy isolation", () => {
     expect(cancelSection).toContain('.eq("pharmacy_id", sessionPharmacyId)');
   });
 
+  it("guards dispensing creation and patient mutations through session patient authorization", () => {
+    const source = readProjectFile("src/lib/dispensing.functions.ts");
+
+    const recordSection = source.slice(source.indexOf("export const recordDispensing"), source.indexOf("const upsertPatientSchema"));
+    const upsertSection = source.slice(source.indexOf("export const upsertPatient"), source.indexOf("const importSchema"));
+    const followUpSection = source.slice(source.indexOf("export const setFollowUpStatus"));
+
+    expect(recordSection).toContain("authorizePatientForPharmacy(supabaseAdmin, sessionPharmacyId, data.patient_id)");
+    expect(upsertSection).toContain("authorizePatientForPharmacy(supabaseAdmin, pharmacy_id, existing.id)");
+    expect(upsertSection).toContain("authorizePatientForPharmacy(supabaseAdmin, pharmacy_id, data.id)");
+    expect(followUpSection).toContain("authorizePatientForPharmacy(supabaseAdmin, sessionPharmacyId, data.id)");
+  });
+
+  it("excludes Tiryaq-history patients from Andalus patient access server-side", () => {
+    const isolation = readProjectFile("src/lib/pharmacy-isolation.ts");
+    const reads = readProjectFile("src/lib/reads.functions.ts");
+
+    expect(isolation).toContain('ANDALUS_PHARMACY_NAME = "صيدلية الأندلس"');
+    expect(isolation).toContain('TIRYAQ_PHARMACY_NAME = "صيدلية الترياق الشافي"');
+    expect(isolation).toContain("patientHasTiryaqHistory");
+    expect(isolation).toContain("return false");
+    expect(isolation).toContain("excluded.add(r.patient_id)");
+    expect(reads).toContain("patientAccessSetsForSession");
+    expect(reads).toContain("!excluded.has(r.patient_id)");
+  });
+
+  it("keeps transaction and activity reads scoped to the session pharmacy", () => {
+    const reads = readProjectFile("src/lib/reads.functions.ts");
+    const activity = readProjectFile("src/lib/activity.functions.ts");
+
+    expect(reads).toContain("export const listDispensingTransactions");
+    expect(reads).toContain('.eq("pharmacy_id", pharmacy_id)');
+    expect(activity).toContain("requirePharmacySession");
+    expect(activity).toContain('.eq("pharmacy_id", sessionPharmacyId)');
+  });
+
   it("does not accept client-controlled pharmacy ids for communication logs", () => {
     const source = readProjectFile("src/lib/activity.functions.ts");
     const phoneSheet = readProjectFile("src/components/PhoneSheet.tsx");
@@ -36,5 +72,23 @@ describe("session pharmacy isolation", () => {
     expect(source).toContain("requirePharmacySession");
     expect(source).toContain("pharmacy_id: sessionPharmacyId");
     expect(phoneSheet).not.toContain("pharmacyId:");
+  });
+
+  it("keeps unlock screen pharmacy choice available for both pharmacies", () => {
+    const unlock = readProjectFile("src/components/UnlockScreen.tsx");
+
+    expect(unlock).toContain("usePharmacies()");
+    expect(unlock).toContain("pharmacies?.map");
+    expect(unlock).toContain("setPharmacyId(p.id)");
+  });
+
+  it("updates pharmacy PIN hashes through migration without plaintext PIN columns", () => {
+    const migration = readProjectFile("supabase/migrations/20260921010000_update_pharmacy_pin_hashes.sql");
+
+    expect(migration).toContain("UPDATE public.pharmacies");
+    expect(migration).toContain("WHERE name = 'صيدلية الترياق الشافي'");
+    expect(migration).toContain("WHERE name = 'صيدلية الأندلس'");
+    expect(migration).toContain("pin_hash = 's1:");
+    expect(migration).not.toContain("pin =");
   });
 });
