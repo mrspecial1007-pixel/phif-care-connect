@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as QualityRouteImport } from './routes/quality'
 import { Route as PhifSyncRouteImport } from './routes/phif-sync'
+import { Route as PhifReviewRouteImport } from './routes/phif-review'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as ActivityRouteImport } from './routes/activity'
@@ -38,6 +39,11 @@ const QualityRoute = QualityRouteImport.update({
 const PhifSyncRoute = PhifSyncRouteImport.update({
   id: '/phif-sync',
   path: '/phif-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PhifReviewRoute = PhifReviewRouteImport.update({
+  id: '/phif-review',
+  path: '/phif-review',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MessagesRoute = MessagesRouteImport.update({
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/messages': typeof MessagesRoute
+  '/phif-review': typeof PhifReviewRoute
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/messages': typeof MessagesRoute
+  '/phif-review': typeof PhifReviewRoute
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
   '/messages': typeof MessagesRoute
+  '/phif-review': typeof PhifReviewRoute
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/import'
     | '/messages'
+    | '/phif-review'
     | '/phif-sync'
     | '/quality'
     | '/settings'
@@ -178,6 +188,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/import'
     | '/messages'
+    | '/phif-review'
     | '/phif-sync'
     | '/quality'
     | '/settings'
@@ -195,6 +206,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/import'
     | '/messages'
+    | '/phif-review'
     | '/phif-sync'
     | '/quality'
     | '/settings'
@@ -213,6 +225,7 @@ export interface RootRouteChildren {
   ActivityRoute: typeof ActivityRoute
   ImportRoute: typeof ImportRoute
   MessagesRoute: typeof MessagesRoute
+  PhifReviewRoute: typeof PhifReviewRoute
   PhifSyncRoute: typeof PhifSyncRoute
   QualityRoute: typeof QualityRoute
   SettingsRoute: typeof SettingsRoute
@@ -247,6 +260,13 @@ declare module '@tanstack/react-router' {
       path: '/phif-sync'
       fullPath: '/phif-sync'
       preLoaderRoute: typeof PhifSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/phif-review': {
+      id: '/phif-review'
+      path: '/phif-review'
+      fullPath: '/phif-review'
+      preLoaderRoute: typeof PhifReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/messages': {
@@ -341,6 +361,7 @@ const rootRouteChildren: RootRouteChildren = {
   ActivityRoute: ActivityRoute,
   ImportRoute: ImportRoute,
   MessagesRoute: MessagesRoute,
+  PhifReviewRoute: PhifReviewRoute,
   PhifSyncRoute: PhifSyncRoute,
   QualityRoute: QualityRoute,
   SettingsRoute: SettingsRoute,

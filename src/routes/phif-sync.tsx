@@ -14,7 +14,7 @@ import {
   type PhifInvoicePreview,
 } from "@/lib/phif-sync.functions";
 import { getPhifInvoiceArchiveStats } from "@/lib/phif-invoices.functions";
-import { CheckCircle2, Database, ExternalLink, Loader2, ReceiptText, RefreshCw, ShieldAlert } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Database, ExternalLink, Loader2, ReceiptText, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/phif-sync")({
@@ -206,6 +206,12 @@ function PhifSyncPage() {
           <Link to="/phif-invoices">
             <ReceiptText className="h-4 w-4" />
             فتح الأرشيف
+          </Link>
+        </Button>
+        <Button asChild variant="outline" className="gap-2">
+          <Link to="/phif-review">
+            <ClipboardCheck className="h-4 w-4" />
+            قائمة المراجعة
           </Link>
         </Button>
       </Card>

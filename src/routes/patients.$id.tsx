@@ -22,8 +22,9 @@ import {
 } from "@/components/ui/dialog";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { upsertPatient, archivePatient, restorePatient, setFollowUpStatus } from "@/lib/dispensing.functions";
+import { getPatientPhifMedicationProfile, listPatientPhifInvoices } from "@/lib/phif-invoices.functions";
 import { EditDispenseDialog } from "@/components/EditDispenseDialog";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
@@ -76,6 +77,21 @@ function Detail() {
   const { data: dueTracks } = usePatientDueTracks(id);
   const { data: statuses } = usePatientStatuses();
   const { data: session } = useSession();
+  const getPatientPhifInvoices = useServerFn(listPatientPhifInvoices);
+  const getPhifMedicationProfile = useServerFn(getPatientPhifMedicationProfile);
+  const hasTiryaqPhifAccess = session?.pharmacy.name === "صيدلية الترياق الشافي";
+  const { data: phifInvoices } = useQuery({
+    enabled: !!id && hasTiryaqPhifAccess,
+    queryKey: ["patient_phif_invoices", id],
+    queryFn: () => getPatientPhifInvoices({ data: { patientId: id } }),
+    staleTime: 30_000,
+  });
+  const { data: phifMedicationProfile } = useQuery({
+    enabled: !!id && hasTiryaqPhifAccess,
+    queryKey: ["patient_phif_medication_profile", id],
+    queryFn: () => getPhifMedicationProfile({ data: { patientId: id } }),
+    staleTime: 30_000,
+  });
   const status = statuses?.find((s) => s.patient_id === id);
 
   const nearestTrack = dueTracks?.[0];
@@ -442,6 +458,42 @@ function Detail() {
         </div>
       </Card>
 
+      {hasTiryaqPhifAccess && (
+        <PhifMedicationProfileCard profile={phifMedicationProfile} />
+      )}
+
+      {hasTiryaqPhifAccess && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="font-semibold">فواتير PHIF</h2>
+            <Badge variant="secondary">{phifInvoices?.length ?? 0}</Badge>
+          </div>
+          <div className="space-y-2">
+            {(phifInvoices ?? []).map((invoice: any) => (
+              <Link
+                key={invoice.id}
+                to="/phif-invoices/$id"
+                params={{ id: invoice.id }}
+                className="block rounded-md border p-2 text-sm hover:bg-accent/50"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">{invoice.invoice_number || invoice.invoice_key}</span>
+                  <span className="text-muted-foreground">{fmtDate(invoice.dispensing_date)}</span>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span>{invoice.item_count} صنف</span>
+                  <span>{invoice.status || "بدون حالة"}</span>
+                  <span>{invoice.match_status === "matched" ? "مطابق" : "غير مطابق"}</span>
+                </div>
+              </Link>
+            ))}
+            {(phifInvoices ?? []).length === 0 && (
+              <div className="text-sm text-muted-foreground text-center py-4">لا توجد فواتير PHIF محفوظة لهذا المستفيد</div>
+            )}
+          </div>
+        </Card>
+      )}
+
       <EditPatientDialog
         open={editOpen}
         onOpenChange={setEditOpen}
@@ -646,6 +698,123 @@ function InfoRow({
       </Button>
     </div>
   );
+}
+
+function PhifMedicationProfileCard({ profile }: { profile: any }) {
+  const items = profile?.items ?? [];
+  const reconciliation = profile?.reconciliation ?? [];
+  return (
+    <Card className="p-4 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">الملف الدوائي PHIF</h2>
+          <p className="text-xs text-muted-foreground">دورات مستقلة لكل صنف اعتمادًا على تاريخ صرف PHIF</p>
+        </div>
+        <Badge variant="secondary">{items.length} صنف</Badge>
+      </div>
+
+      {profile?.nearest_due_date && (
+        <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+          <div className="text-xs text-muted-foreground">أقرب استحقاق PHIF</div>
+          <div className="mt-1 font-semibold">
+            {fmtDate(profile.nearest_due_date)} - {profile.nearest_due_items?.join("، ") || "أصناف مستحقة"}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {items.map((item: any) => (
+          <div key={item.identity_key} className="rounded-lg border p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="font-semibold">{item.brand || item.active_ingredient || "صنف PHIF"}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {[item.active_ingredient, item.strength, item.dosage_form].filter(Boolean).join(" · ") || "بيانات الصنف غير مكتملة"}
+                </div>
+              </div>
+              {item.needs_review && <Badge className="border-0 bg-warning text-warning-foreground">يحتاج مراجعة</Badge>}
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+              <Stat label="آخر صرف PHIF" value={fmtDate(item.latest_dispensing_date)} />
+              <Stat label="الاستحقاق القادم" value={fmtDate(item.next_due_date)} />
+              <Stat
+                label="الأيام"
+                value={formatDueDelta(item.days_until_due)}
+                tone={item.days_until_due === null ? "muted" : item.days_until_due < 0 ? "danger" : item.days_until_due <= 3 ? "warning" : "muted"}
+              />
+              <Stat label="الكمية" value={item.latest_quantity === null ? "—" : String(item.latest_quantity)} />
+            </div>
+
+            {item.review_reasons?.length > 0 && (
+              <div className="mt-2 rounded-md bg-warning/10 p-2 text-xs text-warning">
+                {item.review_reasons.join("، ")}
+              </div>
+            )}
+
+            <div className="mt-3 space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">حركات الصرف والفواتير الأصلية</div>
+              {item.movements.map((movement: any) => (
+                <Link
+                  key={`${item.identity_key}-${movement.invoice_id}-${movement.dispensing_date}`}
+                  to="/phif-invoices/$id"
+                  params={{ id: movement.invoice_id }}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background p-2 text-xs hover:bg-accent/50"
+                >
+                  <span className="font-medium">{movement.invoice_number || movement.invoice_key}</span>
+                  <span className="text-muted-foreground">{fmtDate(movement.dispensing_date)}</span>
+                  <span className="text-muted-foreground">كمية: {movement.quantity ?? "—"}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {items.length === 0 && (
+          <div className="text-sm text-muted-foreground text-center py-4">لا توجد أصناف PHIF مرتبطة بهذا المستفيد بعد</div>
+        )}
+      </div>
+
+      <div className="border-t pt-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">معاينة التسوية مع الصرف اليدوي</h3>
+          <Badge variant="outline">{reconciliation.length}</Badge>
+        </div>
+        <div className="space-y-2">
+          {reconciliation.slice(0, 8).map((row: any, index: number) => (
+            <div key={`${row.kind}-${index}`} className="rounded-md border p-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Badge variant="secondary">{reconciliationLabel(row.kind)}</Badge>
+                <span className="text-muted-foreground">يدوي: {fmtDate(row.manual_date)} / PHIF: {fmtDate(row.phif_date)}</span>
+              </div>
+              <div className="mt-1 text-muted-foreground">{row.reason}</div>
+            </div>
+          ))}
+          {reconciliation.length === 0 && (
+            <div className="text-xs text-muted-foreground text-center py-2">لا توجد بيانات كافية لمعاينة التسوية</div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function formatDueDelta(value: number | null) {
+  if (value === null) return "—";
+  if (value < 0) return `متأخر ${Math.abs(value)} يوم`;
+  if (value === 0) return "اليوم";
+  return `متبقٍ ${value} يوم`;
+}
+
+function reconciliationLabel(kind: string) {
+  const labels: Record<string, string> = {
+    manual_matches_phif: "مطابقة محتملة",
+    date_mismatch: "اختلاف تاريخ",
+    phif_without_manual: "فاتورة بلا صرف يدوي",
+    manual_without_phif: "صرف يدوي بلا PHIF",
+    ambiguous: "ملتبس",
+  };
+  return labels[kind] ?? "مراجعة";
 }
 
 function EditPatientDialog({

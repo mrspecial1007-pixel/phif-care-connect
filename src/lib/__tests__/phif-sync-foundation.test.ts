@@ -3,10 +3,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   classifyPhifItemSource,
+  filterMissingPhifInvoiceItems,
   normalizePhifCard,
   parsePhifTodayTransactions,
   parsePhifTransactionDetail,
+  phifInvoiceItemDedupeKey,
 } from "@/lib/phif-sync.functions";
+import {
+  buildPhifMedicationProfileFromRows,
+  phifMedicationIdentityKey,
+} from "@/lib/phif-invoices.functions";
 
 function readProjectFile(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -82,6 +88,155 @@ describe("PHIF sync foundation", () => {
     expect(classifyPhifItemSource({ supplier: "Actual Supplier Co" })).toBe("actual-supplier");
   });
 
+  it("backfills item rows for a saved PHIF invoice that has no items", () => {
+    const incoming = [
+      {
+        phif_item_id: "DRUG-1",
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Glucophage",
+        quantity: 2,
+        supplier: "PHIF Supplier",
+        source_classification: "phif-supplier",
+        phif_financial_fields: { phifValue: "15.5" },
+        metadata: { raw: true },
+      },
+    ];
+
+    expect(filterMissingPhifInvoiceItems(incoming, [])).toEqual(incoming);
+  });
+
+  it("does not duplicate existing PHIF invoice item rows during resync", () => {
+    const incoming = [
+      {
+        phif_item_id: "DRUG-1",
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Glucophage",
+        quantity: 2,
+        supplier: "PHIF Supplier",
+        source_classification: "phif-supplier",
+        phif_financial_fields: { phifValue: "15.5" },
+        metadata: {},
+      },
+      {
+        phif_item_id: "DRUG-2",
+        active_ingredient: "Amlodipine",
+        strength: "5 mg",
+        brand: "Norvasc",
+        quantity: 1,
+        supplier: "Actual Supplier Co",
+        source_classification: "actual-supplier",
+        phif_financial_fields: {},
+        metadata: {},
+      },
+    ];
+
+    const missing = filterMissingPhifInvoiceItems(incoming, [incoming[0]]);
+
+    expect(phifInvoiceItemDedupeKey(incoming[0])).toBe(phifInvoiceItemDedupeKey({ ...incoming[0] }));
+    expect(missing).toEqual([incoming[1]]);
+  });
+
+  it("builds independent 28-day PHIF medication cycles per item", () => {
+    const invoices = [
+      { id: "invoice-1", invoice_key: "INV-1", invoice_number: "1", dispensing_date: "2026-09-01", status: "ok" },
+      { id: "invoice-2", invoice_key: "INV-2", invoice_number: "2", dispensing_date: "2026-09-10", status: "ok" },
+    ];
+    const profile = buildPhifMedicationProfileFromRows(invoices, [
+      {
+        phif_invoice_id: "invoice-1",
+        phif_item_id: "A",
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Glucophage",
+        quantity: 2,
+        metadata: { dosage_form: "tablet" },
+      },
+      {
+        phif_invoice_id: "invoice-2",
+        phif_item_id: "B",
+        active_ingredient: "Amlodipine",
+        strength: "5 mg",
+        brand: "Norvasc",
+        quantity: 1,
+        metadata: { dosage_form: "tablet" },
+      },
+    ]);
+
+    expect(profile.items).toHaveLength(2);
+    expect(profile.items.map((item) => item.next_due_date).sort()).toEqual(["2026-09-29", "2026-10-08"]);
+    expect(profile.nearest_due_date).toBe("2026-09-29");
+    expect(profile.nearest_due_items).toEqual(["Glucophage"]);
+  });
+
+  it("keeps repeated PHIF movements under one item and flags repeats under 28 days", () => {
+    const invoices = [
+      { id: "invoice-1", invoice_key: "INV-1", invoice_number: "1", dispensing_date: "2026-09-01", status: "ok" },
+      { id: "invoice-2", invoice_key: "INV-2", invoice_number: "2", dispensing_date: "2026-09-15", status: "ok" },
+    ];
+    const profile = buildPhifMedicationProfileFromRows(invoices, [
+      {
+        phif_invoice_id: "invoice-1",
+        phif_item_id: "A",
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Glucophage",
+        quantity: 2,
+        metadata: { dosage_form: "tablet" },
+      },
+      {
+        phif_invoice_id: "invoice-2",
+        phif_item_id: "A",
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Glucophage",
+        quantity: 2,
+        metadata: { dosage_form: "tablet" },
+      },
+    ]);
+
+    expect(profile.items).toHaveLength(1);
+    expect(profile.items[0].movements).toHaveLength(2);
+    expect(profile.items[0].needs_review).toBe(true);
+    expect(profile.items[0].review_reasons.join(" ")).toContain("أقل من 28");
+  });
+
+  it("does not merge uncertain PHIF item identities by name alone", () => {
+    expect(
+      phifMedicationIdentityKey({
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Brand A",
+        metadata: { dosage_form: "tablet" },
+      }),
+    ).not.toBe(
+      phifMedicationIdentityKey({
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Brand B",
+        metadata: { dosage_form: "tablet" },
+      }),
+    );
+  });
+
+  it("builds read-only manual dispensing reconciliation preview", () => {
+    const profile = buildPhifMedicationProfileFromRows(
+      [
+        { id: "invoice-1", invoice_key: "INV-1", invoice_number: "1", dispensing_date: "2026-09-01", status: "ok" },
+        { id: "invoice-2", invoice_key: "INV-2", invoice_number: "2", dispensing_date: "2026-09-10", status: "ok" },
+      ],
+      [],
+      [
+        { id: "tx-1", dispensing_date: "2026-09-01", transaction_type: "Completed", is_cancelled: false },
+        { id: "tx-2", dispensing_date: "2026-09-13", transaction_type: "Completed", is_cancelled: false },
+      ],
+    );
+
+    expect(profile.reconciliation.map((row) => row.kind)).toContain("manual_matches_phif");
+    expect(profile.reconciliation.map((row) => row.kind)).toContain("date_mismatch");
+  });
+
   it("defines invoice deduplication within each pharmacy only", () => {
     const migration = readProjectFile("supabase/migrations/20260918010000_add_phif_sync_tables.sql");
     expect(migration).toContain("phif_invoices_pharmacy_invoice_key_uidx");
@@ -89,6 +244,8 @@ describe("PHIF sync foundation", () => {
 
     const source = readProjectFile("src/lib/phif-sync.functions.ts");
     expect(source).toContain('.from("phif_invoices")');
+    expect(source).toContain("insertMissingPhifInvoiceItems");
+    expect(source).toContain("existingPhifInvoiceItemCount");
     expect(source).toContain('.eq("pharmacy_id", pharmacy_id)');
     expect(source).toContain('.eq("invoice_key", invoice.invoice_key)');
   });
@@ -200,5 +357,47 @@ describe("PHIF sync foundation", () => {
     expect(detailRoute).toContain("getPhifInvoiceDetail");
     expect(syncRoute).toContain("getPhifInvoiceArchiveStats");
     expect(syncRoute).toContain("فتح الأرشيف");
+  });
+
+  it("adds persistent PHIF invoice review and patient-link state without touching dispensing", () => {
+    const migration = readProjectFile("supabase/migrations/20260924010000_add_phif_invoice_patient_review.sql");
+    const source = readProjectFile("src/lib/phif-invoices.functions.ts");
+    const reviewRoute = readProjectFile("src/routes/phif-review.tsx");
+    const patientRoute = readProjectFile("src/routes/patients.$id.tsx");
+
+    expect(migration).toContain("ADD COLUMN IF NOT EXISTS patient_id");
+    expect(migration).toContain("REFERENCES public.patients(id) ON DELETE SET NULL");
+    expect(migration).toContain("ADD COLUMN IF NOT EXISTS review_status");
+    expect(migration).toContain("review_status IN ('pending','linked','rejected')");
+    expect(migration).not.toContain("dispensing_transactions");
+    expect(migration).not.toContain("dispensing_due_tracks");
+    expect(migration).not.toContain("dispensing_cycles");
+
+    expect(source).toContain("listPhifReviewCases");
+    expect(source).toContain("createPatientFromPhifInvoice");
+    expect(source).toContain("linkPhifInvoicesToPatient");
+    expect(source).toContain("rejectPhifReviewCase");
+    expect(source).toContain("reopenPhifReviewCase");
+    expect(source).toContain("listPatientPhifInvoices");
+    expect(source).toContain("getPatientPhifMedicationProfile");
+    expect(source).toContain("buildPhifMedicationProfileFromRows");
+    expect(source).toContain("requireTiryaqPhifArchiveAccess");
+    expect(source).toContain("confirm_card_mismatch");
+    expect(source).toContain("يوجد مستفيد بنفس رقم البطاقة بالفعل");
+    expect(source).toContain('review_status: "linked"');
+    expect(source).toContain('review_status: "rejected"');
+    expect(source).not.toContain('.from("dispensing_transactions").insert');
+    expect(source).not.toContain('.from("dispensing_due_tracks")');
+    expect(source).not.toContain('.from("dispensing_cycles")');
+
+    expect(reviewRoute).toContain("مراجعة فواتير PHIF");
+    expect(reviewRoute).toContain("إضافة مستفيد");
+    expect(reviewRoute).toContain("ربط بمستفيد موجود");
+    expect(reviewRoute).toContain("رفض");
+    expect(reviewRoute).toContain("إعادة فتح");
+    expect(patientRoute).toContain("listPatientPhifInvoices");
+    expect(patientRoute).toContain("getPatientPhifMedicationProfile");
+    expect(patientRoute).toContain("الملف الدوائي PHIF");
+    expect(patientRoute).toContain("فواتير PHIF");
   });
 });

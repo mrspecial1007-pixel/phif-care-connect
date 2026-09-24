@@ -120,6 +120,7 @@ describe("session pharmacy isolation", () => {
 
     expect(appShell).toContain('"/phif-sync"');
     expect(appShell).toContain('"/phif-invoices"');
+    expect(appShell).toContain('"/phif-review"');
     expect(appShell).toContain('session?.pharmacy.name === "صيدلية الترياق الشافي"');
     expect(appShell).toContain("visibleNav.map");
     expect(appShell).toContain("visibleNav.slice");

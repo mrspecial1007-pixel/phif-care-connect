@@ -101,6 +101,38 @@ export function normalizePhifCard(raw: unknown): string | null {
   return value || null;
 }
 
+function normalizeItemKeyPart(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  return String(value).trim().toLowerCase();
+}
+
+export function phifInvoiceItemDedupeKey(item: Partial<PhifInvoiceItemPreview>): string {
+  return [
+    item.phif_item_id,
+    item.active_ingredient,
+    item.strength,
+    item.brand,
+    item.quantity,
+    item.supplier,
+    item.source_classification,
+  ]
+    .map(normalizeItemKeyPart)
+    .join("|");
+}
+
+export function filterMissingPhifInvoiceItems(
+  incoming: PhifInvoiceItemPreview[],
+  existing: Partial<PhifInvoiceItemPreview>[],
+): PhifInvoiceItemPreview[] {
+  const seen = new Set(existing.map(phifInvoiceItemDedupeKey));
+  return incoming.filter((item) => {
+    const key = phifInvoiceItemDedupeKey(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function normalizeDate(raw: string | null): string | null {
   if (!raw) return null;
   const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(raw);
@@ -620,7 +652,8 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
       .maybeSingle();
     if (existing) {
       duplicate_count++;
-      continue;
+      const itemCount = await existingPhifInvoiceItemCount(db, existing.id);
+      if (itemCount > 0) continue;
     }
 
     try {
@@ -676,6 +709,49 @@ const invoiceItemSchema = z.object({
   metadata: z.record(z.unknown()),
 });
 
+async function existingPhifInvoiceItemCount(db: any, invoiceId: string): Promise<number> {
+  const { count, error } = await db
+    .from("phif_invoice_items")
+    .select("id", { count: "exact", head: true })
+    .eq("phif_invoice_id", invoiceId);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+async function insertMissingPhifInvoiceItems(
+  db: any,
+  invoiceId: string,
+  items: PhifInvoiceItemPreview[],
+): Promise<number> {
+  if (items.length === 0) return 0;
+
+  const { data: existing, error: existingError } = await db
+    .from("phif_invoice_items")
+    .select("phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification")
+    .eq("phif_invoice_id", invoiceId);
+  if (existingError) throw new Error(existingError.message);
+
+  const missing = filterMissingPhifInvoiceItems(items, existing ?? []);
+  if (missing.length === 0) return 0;
+
+  const { error } = await db.from("phif_invoice_items").insert(
+    missing.map((item) => ({
+      phif_invoice_id: invoiceId,
+      phif_item_id: item.phif_item_id,
+      active_ingredient: item.active_ingredient,
+      strength: item.strength,
+      brand: item.brand,
+      quantity: item.quantity,
+      supplier: item.supplier,
+      source_classification: item.source_classification,
+      phif_financial_fields: item.phif_financial_fields,
+      metadata: item.metadata,
+    })),
+  );
+  if (error) throw new Error(error.message);
+  return missing.length;
+}
+
 const saveSchema = z.object({
   invoices: z.array(
     z.object({
@@ -723,6 +799,11 @@ export const saveNewPhifInvoices = createServerFn({ method: "POST" })
         .maybeSingle();
       if (existing) {
         duplicate_count++;
+        try {
+          await insertMissingPhifInvoiceItems(db, existing.id, invoice.items);
+        } catch {
+          failed_count++;
+        }
         continue;
       }
 
@@ -748,22 +829,10 @@ export const saveNewPhifInvoices = createServerFn({ method: "POST" })
         continue;
       }
 
-      if (invoice.items.length > 0) {
-        const { error: itemError } = await db.from("phif_invoice_items").insert(
-          invoice.items.map((item) => ({
-            phif_invoice_id: inserted.id,
-            phif_item_id: item.phif_item_id,
-            active_ingredient: item.active_ingredient,
-            strength: item.strength,
-            brand: item.brand,
-            quantity: item.quantity,
-            supplier: item.supplier,
-            source_classification: item.source_classification,
-            phif_financial_fields: item.phif_financial_fields,
-            metadata: item.metadata,
-          })),
-        );
-        if (itemError) failed_count++;
+      try {
+        await insertMissingPhifInvoiceItems(db, inserted.id, invoice.items);
+      } catch {
+        failed_count++;
       }
       new_count++;
     }
