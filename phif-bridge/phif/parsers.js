@@ -21,6 +21,44 @@ function rowsFromFirstTable(html) {
   )).filter((row) => row.length);
 }
 
+function itemRowsFromInvoiceTables(html) {
+  const tables = [...String(html ?? "").matchAll(/<table[\s\S]*?<\/table>/gi)];
+  const rows = [];
+  for (const tableMatch of tables) {
+    const tableHtml = tableMatch[0];
+    const beforeTable = String(html).slice(Math.max(0, tableMatch.index - 180), tableMatch.index);
+    const tableSource = classifySource(`${clean(beforeTable)} ${clean(tableHtml.match(/<caption[\s\S]*?<\/caption>/i)?.[0] ?? "")}`);
+    for (const rowMatch of tableHtml.matchAll(/<tr[\s\S]*?<\/tr>/gi)) {
+      const cells = [...rowMatch[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) => clean(cell[1]));
+      if (cells.length < 6 || looksLikeHeader(cells) || cells.join(" ").includes("ط§ظ„ظ…ط¬ظ…ظˆط¹")) continue;
+      const row = cells.length >= 8
+        ? {
+            supplier: cells[0],
+            active: cells[1],
+            strength: cells[2],
+            brand: cells[3],
+            quantity: cells[4],
+            insurance: cells[5],
+            outside: cells[6],
+            total: cells[7],
+          }
+        : {
+            supplier: tableSource === "phif-supplier" ? "PHIF Supplier" : "Actual Supplier",
+            active: cells[0],
+            strength: cells[1],
+            brand: cells[2],
+            quantity: cells[3],
+            insurance: cells[4],
+            outside: cells.length >= 7 ? cells[5] : null,
+            total: cells.length >= 7 ? cells[6] : cells[5],
+          };
+      if (!row.active && !row.brand) continue;
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
 export function parseTodayTransactions(payload) {
   const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
   return rows.map((row) => {
@@ -118,25 +156,20 @@ export function parseInvoiceDetails(html, fallbackInvoiceKey = null) {
   const date = headerText.match(/(?:التاريخ|date)\s*:?\s*(\d{4}-\d{2}-\d{2})/i)?.[1] ?? null;
   const time = headerText.match(/(?:الوقت|time)\s*:?\s*(\d{2}:\d{2}(?::\d{2})?)/i)?.[1] ?? null;
 
-  const tableRows = rowsFromFirstTable(html);
-  const itemRows = tableRows.filter((row) => row.length >= 8 && !looksLikeHeader(row) && !row.join(" ").includes("المجموع"));
-  const items = itemRows.map((row) => {
-    const [supplier, active, strength, brand, quantity, insurance, outside, total] = row;
-    return {
-      invoice_key: fallbackInvoiceKey,
-      supplier,
-      source_classification: classifySource(supplier),
-      active_ingredient: active,
-      strength,
-      brand,
-      quantity: parseNumber(quantity),
-      financial_fields: {
-        insurance_amount: parseMoney(insurance),
-        outside_insurance_amount: parseMoney(outside),
-        total_amount: parseMoney(total),
-      },
-    };
-  });
+  const items = itemRowsFromInvoiceTables(html).map((row) => ({
+    invoice_key: fallbackInvoiceKey,
+    supplier: row.supplier,
+    source_classification: classifySource(row.supplier),
+    active_ingredient: row.active,
+    strength: row.strength,
+    brand: row.brand,
+    quantity: parseNumber(row.quantity),
+    financial_fields: {
+      insurance_amount: parseMoney(row.insurance),
+      outside_insurance_amount: parseMoney(row.outside),
+      total_amount: parseMoney(row.total),
+    },
+  }));
 
   return {
     invoice_number: invoiceNumber,
@@ -168,8 +201,10 @@ function parseMoney(value) {
 
 function looksLikeHeader(row) {
   const joined = row.join(" ").toLowerCase();
-  return row.some((cell) => /اسم|الدواء|المورد|الفات|التأمين|المشترك|الحالة|عرض|medicine|supplier|invoice|status|name/i.test(cell))
-    || joined.includes("جار");
+  const headerHits = row.filter((cell) => (
+    /اسم|الدواء|المورد|الفات|التأمين|المشترك|الحالة|عرض|medicine|supplier|invoice|status|name|active|ingredient|strength|brand|qty|quantity|insurance|outside|total/i.test(cell)
+  )).length;
+  return headerHits >= 2 || joined.includes("جار");
 }
 
 function textValue(value) {

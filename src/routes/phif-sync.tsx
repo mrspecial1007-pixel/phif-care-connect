@@ -41,6 +41,8 @@ function PhifSyncPage() {
     duplicate_count: 0,
     failed_count: 0,
     needs_review_count: 0,
+    completed_item_invoice_count: 0,
+    completion_failed_count: 0,
   });
   const [checking, setChecking] = useState(false);
   const [creatingLogin, setCreatingLogin] = useState(false);
@@ -109,6 +111,8 @@ function PhifSyncPage() {
         new_count: result.new_count,
         duplicate_count: s.duplicate_count + result.duplicate_count,
         failed_count: result.failed_count,
+        completed_item_invoice_count: result.completed_item_invoice_count,
+        completion_failed_count: result.completion_failed_count,
       }));
       setPreview([]);
     } catch (error: any) {
@@ -188,6 +192,8 @@ function PhifSyncPage() {
         <SummaryCard label="الجديدة" value={summary.new_count} tone="success" />
         <SummaryCard label="الموجودة مسبقًا" value={summary.duplicate_count} />
         <SummaryCard label="تحتاج مراجعة" value={summary.needs_review_count + summary.failed_count} tone="warning" />
+        <SummaryCard label="استُكملت أصنافها" value={summary.completed_item_invoice_count} tone="success" />
+        <SummaryCard label="تعذر استكمالها" value={summary.completion_failed_count} tone="warning" />
       </div>
 
       <Card className="p-4 flex flex-wrap items-center justify-between gap-3">

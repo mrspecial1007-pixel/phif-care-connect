@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { BridgeSessionStore, publicSession } from "../sessionStore.js";
 import { isAllowedPostFormPath, isAllowedReadPath, PhifClient } from "../phif/client.js";
 import { forwardHeaders, isAllowedProxyGet, isAllowedProxyRequest, proxyPhifLoginRequest, rewriteHtml, toLocalProxyLocation } from "../phif/sessionBridge.js";
-import { parseFilterTransactionForm, parseHistoricalTransactions, parseTodayTransactions } from "../phif/parsers.js";
+import { parseFilterTransactionForm, parseHistoricalTransactions, parseInvoiceDetails, parseTodayTransactions } from "../phif/parsers.js";
 import { createPhifBridgeServer } from "../server.js";
 
 const SECRET = "test-secret";
@@ -506,6 +506,41 @@ test("today transaction parsing preserves leading-zero card numbers", () => {
 
   assert.equal(rows[0].card_number, "0012345");
   assert.equal(rows[0].invoice_key, "KEY-1");
+});
+
+test("invoice details parser includes mixed PHIF and actual supplier item tables", () => {
+  const invoice = parseInvoiceDetails(`
+    <h3>PHIF Supplier</h3>
+    <table>
+      <tr><th>Active</th><th>Strength</th><th>Brand</th><th>Qty</th><th>Insurance</th><th>Outside</th><th>Total</th></tr>
+      <tr><td>Metformin</td><td>500 mg</td><td>Glucophage</td><td>2</td><td>10</td><td>0</td><td>10</td></tr>
+      <tr><td>Aspirin</td><td>100 mg</td><td>Aspocid</td><td>1</td><td>5</td><td>0</td><td>5</td></tr>
+    </table>
+    <h3>Actual Supplier</h3>
+    <table>
+      <tr><th>Supplier</th><th>Active</th><th>Strength</th><th>Brand</th><th>Qty</th><th>Insurance</th><th>Outside</th><th>Total</th></tr>
+      <tr><td>Actual Supplier Co</td><td>Amlodipine</td><td>5 mg</td><td>Norvasc</td><td>1</td><td>0</td><td>20</td><td>20</td></tr>
+      <tr><td>Actual Supplier Co</td><td>Atorvastatin</td><td>20 mg</td><td>Lipitor</td><td>1</td><td>0</td><td>30</td><td>30</td></tr>
+    </table>
+  `, "4336548");
+
+  assert.equal(invoice.items.length, 4);
+  assert.equal(invoice.items.filter((item) => item.source_classification === "phif-supplier").length, 2);
+  assert.equal(invoice.items.filter((item) => item.source_classification === "actual-supplier").length, 2);
+});
+
+test("invoice details parser includes PHIF supplier only invoices", () => {
+  const invoice = parseInvoiceDetails(`
+    <h3>PHIF Supplier</h3>
+    <table>
+      <tr><th>Active</th><th>Strength</th><th>Brand</th><th>Qty</th><th>Insurance</th><th>Total</th></tr>
+      <tr><td>Insulin</td><td>100 IU</td><td>Mixtard</td><td>3</td><td>45</td><td>45</td></tr>
+    </table>
+  `, "PHIF-ONLY");
+
+  assert.equal(invoice.items.length, 1);
+  assert.equal(invoice.items[0].source_classification, "phif-supplier");
+  assert.equal(invoice.items[0].brand, "Mixtard");
 });
 
 async function listen(server) {

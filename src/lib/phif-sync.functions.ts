@@ -624,6 +624,8 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
           duplicate_count: 0,
           failed_count: 1,
           needs_review_count: 0,
+          completed_item_invoice_count: 0,
+          completion_failed_count: 0,
         },
         preview: [],
         metadata: {
@@ -642,6 +644,8 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
   const preview: PhifInvoicePreview[] = [];
   let duplicate_count = 0;
   let failed_count = 0;
+  let completed_item_invoice_count = 0;
+  let completion_failed_count = 0;
 
   for (const tx of transactions) {
     const { data: existing } = await db
@@ -652,8 +656,6 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
       .maybeSingle();
     if (existing) {
       duplicate_count++;
-      const itemCount = await existingPhifInvoiceItemCount(db, existing.id);
-      if (itemCount > 0) continue;
     }
 
     try {
@@ -664,6 +666,12 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
           { pharmacyId: pharmacy_id },
         ),
       );
+      if (existing) {
+        const missing = filterMissingPhifInvoiceItems(detail.items, await existingPhifInvoiceItems(db, existing.id));
+        if (missing.length === 0) continue;
+        completed_item_invoice_count++;
+        detail.items = missing;
+      }
       const patient_id = await findAccessiblePatientByCard(db, pharmacy_id, detail.insurance_card_number);
       preview.push({
         ...detail,
@@ -674,6 +682,7 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
         patient_id,
       });
     } catch {
+      if (existing) completion_failed_count++;
       failed_count++;
     }
   }
@@ -686,6 +695,8 @@ async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchem
       duplicate_count,
       failed_count,
       needs_review_count: preview.filter((p) => p.patient_match === "not_matched").length,
+      completed_item_invoice_count,
+      completion_failed_count,
     },
     preview,
     metadata: {
@@ -709,13 +720,13 @@ const invoiceItemSchema = z.object({
   metadata: z.record(z.unknown()),
 });
 
-async function existingPhifInvoiceItemCount(db: any, invoiceId: string): Promise<number> {
-  const { count, error } = await db
+async function existingPhifInvoiceItems(db: any, invoiceId: string): Promise<Partial<PhifInvoiceItemPreview>[]> {
+  const { data, error } = await db
     .from("phif_invoice_items")
-    .select("id", { count: "exact", head: true })
+    .select("phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification")
     .eq("phif_invoice_id", invoiceId);
   if (error) throw new Error(error.message);
-  return count ?? 0;
+  return data ?? [];
 }
 
 async function insertMissingPhifInvoiceItems(
@@ -725,13 +736,7 @@ async function insertMissingPhifInvoiceItems(
 ): Promise<number> {
   if (items.length === 0) return 0;
 
-  const { data: existing, error: existingError } = await db
-    .from("phif_invoice_items")
-    .select("phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification")
-    .eq("phif_invoice_id", invoiceId);
-  if (existingError) throw new Error(existingError.message);
-
-  const missing = filterMissingPhifInvoiceItems(items, existing ?? []);
+  const missing = filterMissingPhifInvoiceItems(items, await existingPhifInvoiceItems(db, invoiceId));
   if (missing.length === 0) return 0;
 
   const { error } = await db.from("phif_invoice_items").insert(
@@ -789,6 +794,8 @@ export const saveNewPhifInvoices = createServerFn({ method: "POST" })
     let new_count = 0;
     let duplicate_count = 0;
     let failed_count = 0;
+    let completed_item_invoice_count = 0;
+    let completion_failed_count = 0;
 
     for (const invoice of data.invoices) {
       const { data: existing } = await db
@@ -800,9 +807,11 @@ export const saveNewPhifInvoices = createServerFn({ method: "POST" })
       if (existing) {
         duplicate_count++;
         try {
-          await insertMissingPhifInvoiceItems(db, existing.id, invoice.items);
+          const insertedItems = await insertMissingPhifInvoiceItems(db, existing.id, invoice.items);
+          if (insertedItems > 0) completed_item_invoice_count++;
         } catch {
           failed_count++;
+          completion_failed_count++;
         }
         continue;
       }
@@ -848,5 +857,13 @@ export const saveNewPhifInvoices = createServerFn({ method: "POST" })
       })
       .eq("id", run.id);
 
-    return { ok: true as const, run_id: run.id as string, new_count, duplicate_count, failed_count };
+    return {
+      ok: true as const,
+      run_id: run.id as string,
+      new_count,
+      duplicate_count,
+      failed_count,
+      completed_item_invoice_count,
+      completion_failed_count,
+    };
   });

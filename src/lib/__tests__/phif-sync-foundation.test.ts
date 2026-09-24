@@ -138,6 +138,17 @@ describe("PHIF sync foundation", () => {
     expect(missing).toEqual([incoming[1]]);
   });
 
+  it("reports PHIF invoice item completion counts during inspect and save", () => {
+    const source = readProjectFile("src/lib/phif-sync.functions.ts");
+    const route = readProjectFile("src/routes/phif-sync.tsx");
+
+    expect(source).toContain("completed_item_invoice_count");
+    expect(source).toContain("completion_failed_count");
+    expect(source).toContain("if (missing.length === 0) continue");
+    expect(route).toContain("completed_item_invoice_count");
+    expect(route).toContain("completion_failed_count");
+  });
+
   it("builds independent 28-day PHIF medication cycles per item", () => {
     const invoices = [
       { id: "invoice-1", invoice_key: "INV-1", invoice_number: "1", dispensing_date: "2026-09-01", status: "ok" },
@@ -245,7 +256,8 @@ describe("PHIF sync foundation", () => {
     const source = readProjectFile("src/lib/phif-sync.functions.ts");
     expect(source).toContain('.from("phif_invoices")');
     expect(source).toContain("insertMissingPhifInvoiceItems");
-    expect(source).toContain("existingPhifInvoiceItemCount");
+    expect(source).toContain("existingPhifInvoiceItems");
+    expect(source).toContain("filterMissingPhifInvoiceItems(detail.items");
     expect(source).toContain('.eq("pharmacy_id", pharmacy_id)');
     expect(source).toContain('.eq("invoice_key", invoice.invoice_key)');
   });
