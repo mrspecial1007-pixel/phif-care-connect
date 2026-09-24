@@ -87,6 +87,10 @@ export type PhifMedicationProfileMovement = {
   dispensing_date: string | null;
   status: string | null;
   quantity: number | null;
+  active_ingredient: string | null;
+  strength: string | null;
+  brand: string | null;
+  source_classification: string | null;
 };
 
 export type PhifMedicationProfileItem = {
@@ -270,6 +274,10 @@ export function buildPhifMedicationProfileFromRows(
       dispensing_date: invoice.dispensing_date ?? null,
       status: invoice.status ?? null,
       quantity: item.quantity ?? null,
+      active_ingredient: item.active_ingredient ?? null,
+      strength: item.strength ?? null,
+      brand: item.brand ?? null,
+      source_classification: item.source_classification ?? null,
     });
     grouped.set(key, group);
   }
@@ -310,7 +318,7 @@ export function buildPhifMedicationProfileFromRows(
   const nearestDueItems = nearestDueDate
     ? profileItems
         .filter((item) => item.next_due_date === nearestDueDate)
-        .map((item) => item.brand || item.active_ingredient || "صنف PHIF")
+        .map((item) => medicationDisplayName(item) || "صنف PHIF")
     : [];
 
   return {
@@ -319,6 +327,10 @@ export function buildPhifMedicationProfileFromRows(
     nearest_due_items: nearestDueItems,
     reconciliation: buildPhifManualReconciliation(invoices, manualTransactions),
   };
+}
+
+function medicationDisplayName(item: { active_ingredient?: string | null; strength?: string | null }) {
+  return [item.active_ingredient, item.strength].filter(Boolean).join(" ").trim();
 }
 
 function dateOnly(value: string | null | undefined) {

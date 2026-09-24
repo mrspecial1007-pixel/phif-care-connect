@@ -727,7 +727,7 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
           <div key={item.identity_key} className="rounded-lg border p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="font-semibold">{item.brand || item.active_ingredient || "صنف PHIF"}</div>
+                <div className="font-semibold" dir="ltr">{phifMedicationName(item)}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {[item.active_ingredient, item.strength, item.dosage_form].filter(Boolean).join(" · ") || "بيانات الصنف غير مكتملة"}
                 </div>
@@ -763,6 +763,7 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
                 >
                   <span className="font-medium">{movement.invoice_number || movement.invoice_key}</span>
                   <span className="text-muted-foreground">{fmtDate(movement.dispensing_date)}</span>
+                  <span className="text-muted-foreground" dir="ltr">{phifMovementName(movement)}</span>
                   <span className="text-muted-foreground">كمية: {movement.quantity ?? "—"}</span>
                 </Link>
               ))}
@@ -797,6 +798,16 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
       </div>
     </Card>
   );
+}
+
+function phifMedicationName(item: any) {
+  return [item.active_ingredient, item.strength].filter(Boolean).join(" ") || "صنف PHIF";
+}
+
+function phifMovementName(movement: any) {
+  const scientific = [movement.active_ingredient, movement.strength].filter(Boolean).join(" ") || "صنف PHIF";
+  if (movement.source_classification === "phif-supplier") return `${scientific} — PHIF Supplier`;
+  return [scientific, movement.brand].filter(Boolean).join(" — ");
 }
 
 function formatDueDelta(value: number | null) {

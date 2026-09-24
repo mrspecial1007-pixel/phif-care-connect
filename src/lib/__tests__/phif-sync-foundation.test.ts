@@ -178,7 +178,7 @@ describe("PHIF sync foundation", () => {
     expect(profile.items).toHaveLength(2);
     expect(profile.items.map((item) => item.next_due_date).sort()).toEqual(["2026-09-29", "2026-10-08"]);
     expect(profile.nearest_due_date).toBe("2026-09-29");
-    expect(profile.nearest_due_items).toEqual(["Glucophage"]);
+    expect(profile.nearest_due_items).toEqual(["Metformin 500 mg"]);
   });
 
   it("keeps repeated PHIF movements under one item and flags repeats under 28 days", () => {
@@ -411,5 +411,24 @@ describe("PHIF sync foundation", () => {
     expect(patientRoute).toContain("getPatientPhifMedicationProfile");
     expect(patientRoute).toContain("الملف الدوائي PHIF");
     expect(patientRoute).toContain("فواتير PHIF");
+  });
+
+  it("renders PHIF invoice and medication profile with mobile-first review UI", () => {
+    const detailRoute = readProjectFile("src/routes/phif-invoices.$id.tsx");
+    const patientRoute = readProjectFile("src/routes/patients.$id.tsx");
+
+    expect(detailRoute).toContain("InvoiceItemCard");
+    expect(detailRoute).toContain("SourceBadge");
+    expect(detailRoute).toContain("PHIF Supplier");
+    expect(detailRoute).toContain("Actual Supplier");
+    expect(detailRoute).toContain("طباعة الفاتورة");
+    expect(detailRoute).toContain("تفاصيل إضافية");
+    expect(detailRoute).toContain("print:hidden");
+    expect(detailRoute).toContain("formatMoney");
+
+    expect(patientRoute).toContain("phifMedicationName");
+    expect(patientRoute).toContain("phifMovementName");
+    expect(patientRoute).toContain("PHIF Supplier");
+    expect(patientRoute).not.toContain("item.brand || item.active_ingredient");
   });
 });
