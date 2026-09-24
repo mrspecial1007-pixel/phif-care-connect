@@ -2,7 +2,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Pill, LayoutDashboard, Upload, LogOut, Users, Activity, ShieldCheck, Settings, MessageSquare, RefreshCw } from "lucide-react";
+import { Pill, LayoutDashboard, Upload, LogOut, Users, Activity, ShieldCheck, Settings, MessageSquare, RefreshCw, ReceiptText } from "lucide-react";
 import { lockPharmacy } from "@/lib/auth.functions";
 import { useSession } from "@/lib/queries";
 import type { ReactNode } from "react";
@@ -27,10 +27,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     { to: "/quality", label: "جودة البيانات", icon: ShieldCheck },
     { to: "/messages", label: "الرسائل", icon: MessageSquare },
     { to: "/phif-sync", label: "مزامنة PHIF", icon: RefreshCw },
+    { to: "/phif-invoices", label: "فواتير PHIF", icon: ReceiptText },
     { to: "/import", label: "استيراد", icon: Upload },
     { to: "/settings", label: "الإعدادات", icon: Settings },
   ] as const;
-  const visibleNav = nav.filter((item) => item.to !== "/phif-sync" || session?.pharmacy.name === "صيدلية الترياق الشافي");
+  const visibleNav = nav.filter(
+    (item) =>
+      !["/phif-sync", "/phif-invoices"].includes(item.to) ||
+      session?.pharmacy.name === "صيدلية الترياق الشافي",
+  );
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">

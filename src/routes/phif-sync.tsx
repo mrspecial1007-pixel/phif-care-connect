@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -13,7 +13,8 @@ import {
   saveNewPhifInvoices,
   type PhifInvoicePreview,
 } from "@/lib/phif-sync.functions";
-import { CheckCircle2, Database, ExternalLink, Loader2, RefreshCw, ShieldAlert } from "lucide-react";
+import { getPhifInvoiceArchiveStats } from "@/lib/phif-invoices.functions";
+import { CheckCircle2, Database, ExternalLink, Loader2, ReceiptText, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/phif-sync")({
@@ -29,6 +30,7 @@ function PhifSyncPage() {
   const createLoginSession = useServerFn(createPhifLoginSession);
   const inspect = useServerFn(inspectPhifTransactionsRange);
   const saveInvoices = useServerFn(saveNewPhifInvoices);
+  const archiveStats = useServerFn(getPhifInvoiceArchiveStats);
   const today = new Date().toISOString().slice(0, 10);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -48,6 +50,11 @@ function PhifSyncPage() {
     queryKey: ["phif_session_status"],
     queryFn: () => sessionStatus(),
     staleTime: 15_000,
+  });
+  const { data: archive } = useQuery({
+    queryKey: ["phif_invoice_archive_stats"],
+    queryFn: () => archiveStats(),
+    staleTime: 30_000,
   });
 
   const canSave = useMemo(() => preview.length > 0 && !saving, [preview.length, saving]);
@@ -182,6 +189,26 @@ function PhifSyncPage() {
         <SummaryCard label="الموجودة مسبقًا" value={summary.duplicate_count} />
         <SummaryCard label="تحتاج مراجعة" value={summary.needs_review_count + summary.failed_count} tone="warning" />
       </div>
+
+      <Card className="p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <ReceiptText className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="font-semibold">أرشيف فواتير PHIF</div>
+            <div className="text-sm text-muted-foreground">
+              إجمالي الفواتير المحفوظة: <span className="font-medium text-foreground">{archive?.total ?? 0}</span>
+            </div>
+          </div>
+        </div>
+        <Button asChild variant="outline" className="gap-2">
+          <Link to="/phif-invoices">
+            <ReceiptText className="h-4 w-4" />
+            فتح الأرشيف
+          </Link>
+        </Button>
+      </Card>
 
       <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">

@@ -16,7 +16,9 @@ import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PhifInvoicesIndexRouteImport } from './routes/phif-invoices.index'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
+import { Route as PhifInvoicesIdRouteImport } from './routes/phif-invoices.$id'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as ApiPublicSchedulerRouteImport } from './routes/api/public/scheduler'
 import { Route as ApiPublicGatewayStatusRouteImport } from './routes/api/public/gateway/status'
@@ -58,9 +60,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PhifInvoicesIndexRoute = PhifInvoicesIndexRouteImport.update({
+  id: '/phif-invoices/',
+  path: '/phif-invoices/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PatientsIndexRoute = PatientsIndexRouteImport.update({
   id: '/patients/',
   path: '/patients/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PhifInvoicesIdRoute = PhifInvoicesIdRouteImport.update({
+  id: '/phif-invoices/$id',
+  path: '/phif-invoices/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PatientsIdRoute = PatientsIdRouteImport.update({
@@ -99,7 +111,9 @@ export interface FileRoutesByFullPath {
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
+  '/phif-invoices/$id': typeof PhifInvoicesIdRoute
   '/patients/': typeof PatientsIndexRoute
+  '/phif-invoices/': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
@@ -114,7 +128,9 @@ export interface FileRoutesByTo {
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
+  '/phif-invoices/$id': typeof PhifInvoicesIdRoute
   '/patients': typeof PatientsIndexRoute
+  '/phif-invoices': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
@@ -130,7 +146,9 @@ export interface FileRoutesById {
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRoute
   '/patients/$id': typeof PatientsIdRoute
+  '/phif-invoices/$id': typeof PhifInvoicesIdRoute
   '/patients/': typeof PatientsIndexRoute
+  '/phif-invoices/': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
@@ -147,7 +165,9 @@ export interface FileRouteTypes {
     | '/quality'
     | '/settings'
     | '/patients/$id'
+    | '/phif-invoices/$id'
     | '/patients/'
+    | '/phif-invoices/'
     | '/api/public/scheduler'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
@@ -162,7 +182,9 @@ export interface FileRouteTypes {
     | '/quality'
     | '/settings'
     | '/patients/$id'
+    | '/phif-invoices/$id'
     | '/patients'
+    | '/phif-invoices'
     | '/api/public/scheduler'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
@@ -177,7 +199,9 @@ export interface FileRouteTypes {
     | '/quality'
     | '/settings'
     | '/patients/$id'
+    | '/phif-invoices/$id'
     | '/patients/'
+    | '/phif-invoices/'
     | '/api/public/scheduler'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
@@ -193,7 +217,9 @@ export interface RootRouteChildren {
   QualityRoute: typeof QualityRoute
   SettingsRoute: typeof SettingsRoute
   PatientsIdRoute: typeof PatientsIdRoute
+  PhifInvoicesIdRoute: typeof PhifInvoicesIdRoute
   PatientsIndexRoute: typeof PatientsIndexRoute
+  PhifInvoicesIndexRoute: typeof PhifInvoicesIndexRoute
   ApiPublicSchedulerRoute: typeof ApiPublicSchedulerRoute
   ApiPublicGatewayJobsRoute: typeof ApiPublicGatewayJobsRoute
   ApiPublicGatewayRegisterRoute: typeof ApiPublicGatewayRegisterRoute
@@ -251,11 +277,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/phif-invoices/': {
+      id: '/phif-invoices/'
+      path: '/phif-invoices'
+      fullPath: '/phif-invoices/'
+      preLoaderRoute: typeof PhifInvoicesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/patients/': {
       id: '/patients/'
       path: '/patients'
       fullPath: '/patients/'
       preLoaderRoute: typeof PatientsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/phif-invoices/$id': {
+      id: '/phif-invoices/$id'
+      path: '/phif-invoices/$id'
+      fullPath: '/phif-invoices/$id'
+      preLoaderRoute: typeof PhifInvoicesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/patients/$id': {
@@ -305,7 +345,9 @@ const rootRouteChildren: RootRouteChildren = {
   QualityRoute: QualityRoute,
   SettingsRoute: SettingsRoute,
   PatientsIdRoute: PatientsIdRoute,
+  PhifInvoicesIdRoute: PhifInvoicesIdRoute,
   PatientsIndexRoute: PatientsIndexRoute,
+  PhifInvoicesIndexRoute: PhifInvoicesIndexRoute,
   ApiPublicSchedulerRoute: ApiPublicSchedulerRoute,
   ApiPublicGatewayJobsRoute: ApiPublicGatewayJobsRoute,
   ApiPublicGatewayRegisterRoute: ApiPublicGatewayRegisterRoute,

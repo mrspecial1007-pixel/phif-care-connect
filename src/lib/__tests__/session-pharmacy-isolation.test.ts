@@ -115,10 +115,11 @@ describe("session pharmacy isolation", () => {
     expect(migration).not.toContain("password");
   });
 
-  it("keeps PHIF Sync navigation visible only for Tiryaq sessions", () => {
+  it("keeps PHIF navigation visible only for Tiryaq sessions", () => {
     const appShell = readProjectFile("src/components/AppShell.tsx");
 
-    expect(appShell).toContain('item.to !== "/phif-sync"');
+    expect(appShell).toContain('"/phif-sync"');
+    expect(appShell).toContain('"/phif-invoices"');
     expect(appShell).toContain('session?.pharmacy.name === "صيدلية الترياق الشافي"');
     expect(appShell).toContain("visibleNav.map");
     expect(appShell).toContain("visibleNav.slice");

@@ -175,4 +175,30 @@ describe("PHIF sync foundation", () => {
     expect(source).toContain('message.includes("not found") || message.includes("expired")');
     expect(source).toContain('await markBridgeSession(db, pharmacy_id, session.bridge_session_id, "expired")');
   });
+
+  it("adds a read-only PHIF invoice archive scoped to Tiryaq server-side", () => {
+    const source = readProjectFile("src/lib/phif-invoices.functions.ts");
+    const listRoute = readProjectFile("src/routes/phif-invoices.index.tsx");
+    const detailRoute = readProjectFile("src/routes/phif-invoices.$id.tsx");
+    const syncRoute = readProjectFile("src/routes/phif-sync.tsx");
+
+    expect(source).toContain("requireTiryaqPhifArchiveAccess");
+    expect(source).toContain('session.pharmacy_name !== TIRYAQ_PHARMACY_NAME');
+    expect(source).toContain('.from("phif_invoices")');
+    expect(source).toContain('.from("phif_invoice_items")');
+    expect(source).toContain('.eq("pharmacy_id", pharmacy_id)');
+    expect(source).toContain("insurance_card_number");
+    expect(source).toContain("beneficiary_name");
+    expect(source).toContain("invoice_number");
+    expect(source).not.toContain('.from("dispensing_transactions").insert');
+    expect(source).not.toContain('.from("patients").insert');
+    expect(source).not.toContain("PHIF_BRIDGE_SECRET");
+    expect(source).not.toContain("bridge_session_id");
+
+    expect(listRoute).toContain("فواتير PHIF");
+    expect(listRoute).toContain("listPhifInvoices");
+    expect(detailRoute).toContain("getPhifInvoiceDetail");
+    expect(syncRoute).toContain("getPhifInvoiceArchiveStats");
+    expect(syncRoute).toContain("فتح الأرشيف");
+  });
 });
