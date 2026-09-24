@@ -120,13 +120,15 @@ async function handleApi(req, res, url, context) {
     const result = await client.postForm("/showPharmacyFilterTransactions", postFields);
     if (!result.ok) return json(res, result.blocked ? 403 : 502, safeUpstreamFailure(result));
 
-    const rows = parseHistoricalTransactions(result.text);
+    const posResult = await client.getJson("/PosTransaction");
+    if (!posResult.ok) return json(res, posResult.blocked ? 403 : 502, safeUpstreamFailure(posResult));
+    const rows = parseTodayTransactions(posResult.json);
     return json(res, 200, {
       ok: true,
       rows,
       raw_count: rows.length,
       metadata: {
-        source: "showPharmacyFilterTransactions",
+        source: "PosTransaction",
         request_method: "POST",
         request_path: "/showPharmacyFilterTransactions",
         request_fields: Object.keys(postFields).map((name) => ({
@@ -135,9 +137,9 @@ async function handleApi(req, res, url, context) {
         })),
         dateFrom,
         dateTo,
-        upstream_status: result.status,
-        response_content_type: result.contentType ?? null,
-        response_body_type: looksJson(result) ? "json" : "html",
+        upstream_status: posResult.status,
+        response_content_type: posResult.contentType ?? null,
+        response_body_type: "json",
         final_path: result.finalPath ?? "/showPharmacyFilterTransactions",
         form: {
           action: form.action,

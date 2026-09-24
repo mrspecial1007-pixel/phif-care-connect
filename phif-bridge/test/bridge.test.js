@@ -49,9 +49,11 @@ test("read allowlist permits only phase-one read endpoints", () => {
   assert.equal(isAllowedReadPath("/toDaysTransaction"), true);
   assert.equal(isAllowedReadPath("/showPharmacyFilterTransactions"), true);
   assert.equal(isAllowedReadPath("/pharmacyFilteredtransactions"), true);
+  assert.equal(isAllowedReadPath("/PosTransaction"), true);
   assert.equal(isAllowedReadPath("/getTransaction/2026-4197020-2857276"), true);
 
   assert.equal(isAllowedReadPath("/cashing"), false);
+  assert.equal(isAllowedReadPath("/PosTransaction/anything"), false);
   assert.equal(isAllowedReadPath("/showPharmacyFilterTransactions/anything"), false);
   assert.equal(isAllowedReadPath("/cancelTransaction/1"), false);
   assert.equal(isAllowedReadPath("/orders/receive/1"), false);
@@ -240,14 +242,21 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
         `, { status: 200, headers: { "content-type": "text/html" } });
       }
       if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "POST") {
-        return new Response(`
-          <table><tbody>
-            <tr>
-              <td>4197020</td><td>0061500147011</td><td>Patient</td><td>confirmed</td>
-              <td><button data-inv_id="2026-4197020-2857276">view</button></td>
-            </tr>
-          </tbody></table>
-        `, { status: 200, headers: { "content-type": "text/html" } });
+        return new Response("<html><table id=\"datatable1\"><tbody></tbody></table></html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      }
+      if (url.pathname === "/PosTransaction" && options.method === "GET") {
+        return Response.json({
+          data: [{
+            invoiceId: "4197020",
+            beneficiaryCode: "0061500147011",
+            beneficiaryName: "Patient",
+            status: "confirmed",
+            action: '<button data-inv_id="2026-4197020-2857276">view</button>',
+          }],
+        });
       }
       return new Response("not found", { status: 404 });
     },
@@ -266,6 +275,7 @@ test("historical transaction endpoint posts only dateFrom/dateTo plus hidden for
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "GET /showPharmacyFilterTransactions",
     "POST /showPharmacyFilterTransactions",
+    "GET /PosTransaction",
   ]);
   assert.match(calls[1].body, /dateFrom=2026-09-01/);
   assert.match(calls[1].body, /dateTo=2026-09-02/);
@@ -320,13 +330,19 @@ test("historical transaction endpoint follows PHIF result redirect safely", asyn
       }
       if (url.pathname === "/pharmacyFilteredtransactions" && options.method === "GET") {
         return new Response(`
-          <table><tbody>
-            <tr>
-              <td>4197020</td><td>0061500147011</td><td>Patient</td><td>confirmed</td>
-              <td><a href="/getTransaction/2026-4197020-2857276">view</a></td>
-            </tr>
-          </tbody></table>
+          <table id="datatable1"><tbody></tbody></table>
         `, { status: 200, headers: { "content-type": "text/html" } });
+      }
+      if (url.pathname === "/PosTransaction" && options.method === "GET") {
+        return Response.json({
+          data: [{
+            invoiceId: "4197020",
+            beneficiaryCode: "0061500147011",
+            beneficiaryName: "Patient",
+            status: "confirmed",
+            action: '<a href="/getTransaction/2026-4197020-2857276">view</a>',
+          }],
+        });
       }
       return new Response("not found", { status: 404 });
     },
@@ -346,6 +362,87 @@ test("historical transaction endpoint follows PHIF result redirect safely", asyn
     "GET /showPharmacyFilterTransactions",
     "POST /showPharmacyFilterTransactions",
     "GET /pharmacyFilteredtransactions",
+    "GET /PosTransaction",
+  ]);
+});
+
+test("historical transaction endpoint follows PHIF http-to-https result redirect chain", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const redirectedUrls = [];
+  const server = createPhifBridgeServer({
+    secret: SECRET,
+    store,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "GET") {
+        return new Response(`
+          <form method="POST" action="">
+            <input type="hidden" name="_token" value="secret-token">
+            <input type="date" name="dateFrom">
+            <input type="date" name="dateTo">
+          </form>
+        `, { status: 200, headers: { "content-type": "text/html" } });
+      }
+      if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "POST") {
+        return new Response("", {
+          status: 302,
+          headers: { location: "http://his.phif.gov.ly/pharmacyFilteredtransactions" },
+        });
+      }
+      if (url.pathname === "/pharmacyFilteredtransactions" && options.method === "GET") {
+        redirectedUrls.push(url.href);
+        if (url.protocol === "http:") {
+          return new Response("", {
+            status: 301,
+            headers: { location: "https://his.phif.gov.ly:443/pharmacyFilteredtransactions" },
+          });
+        }
+        return new Response('<table id="datatable1"><tbody></tbody></table>', {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      }
+      if (url.pathname === "/PosTransaction" && options.method === "GET") {
+        return Response.json({
+          data: [
+            {
+              invoiceId: "4257542",
+              beneficiaryCode: "0061500147011",
+              beneficiaryName: "Patient",
+              status: "صرف",
+              action: '<button data-inv_id="2026-4257542-2915466">view</button>',
+            },
+            {
+              invoiceId: "4261754",
+              beneficiaryCode: "0061640124427",
+              beneficiaryName: "Patient Two",
+              status: "صرف",
+              action: '<button data-inv_id="2026-4261754-2919972">view</button>',
+            },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  await using app = await listen(server);
+
+  const result = await fetchJson(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/historical-transactions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+    body: JSON.stringify({ dateFrom: "2026-09-20", dateTo: "2026-09-20" }),
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.raw_count, 2);
+  assert.deepEqual(result.body.rows.map((row) => row.invoice_key), [
+    "2026-4257542-2915466",
+    "2026-4261754-2919972",
+  ]);
+  assert.deepEqual(redirectedUrls, [
+    "http://his.phif.gov.ly/pharmacyFilteredtransactions",
+    "https://his.phif.gov.ly/pharmacyFilteredtransactions",
   ]);
 });
 

@@ -5,6 +5,7 @@ const ALLOWED_GET_PATHS = [
   /^\/toDaysTransaction$/,
   /^\/showPharmacyFilterTransactions$/,
   /^\/pharmacyFilteredtransactions$/,
+  /^\/PosTransaction$/,
   /^\/getTransaction\/[^/?#]+$/,
 ];
 
@@ -68,52 +69,12 @@ export class PhifClient {
       if (isLoginLocation(location)) {
         return { ok: false, status: response.status, authRequired: true, text, location, contentType };
       }
-      const redirectPath = allowedRedirectPath(location);
-      if (redirectPath) {
-        const redirected = await fetchWithTimeout(this.fetchImpl, new URL(redirectPath, this.baseUrl), {
-          method: "GET",
-          redirect: "manual",
-          headers: {
-            Accept: "text/html,application/xhtml+xml,application/json,text/javascript,*/*;q=0.9",
-            Referer: new URL(path, PHIF_BASE_URL).toString(),
-          },
-        }, this.timeoutMs);
-        const redirectedText = await redirected.text();
-        const redirectedContentType = redirected.headers.get("content-type") || "";
-        const redirectedLocation = redirected.headers.get("location") || "";
-        if (redirected.status >= 300 && redirected.status < 400) {
-          return {
-            ok: false,
-            status: redirected.status,
-            authRequired: isLoginLocation(redirectedLocation),
-            text: redirectedText,
-            location: redirectedLocation,
-            contentType: redirectedContentType,
-            redirectedFrom: location,
-            finalPath: redirectPath,
-          };
-        }
-        if (looksLikeLoginPage(redirectedText)) {
-          return {
-            ok: false,
-            status: redirected.status,
-            authRequired: true,
-            text: redirectedText,
-            contentType: redirectedContentType,
-            redirectedFrom: location,
-            finalPath: redirectPath,
-          };
-        }
-        return {
-          ok: redirected.ok,
-          status: redirected.status,
-          authRequired: false,
-          text: redirectedText,
-          contentType: redirectedContentType,
-          redirectedFrom: location,
-          finalPath: redirectPath,
-        };
-      }
+      const redirected = await followAllowedResultRedirects(location, {
+        fetchImpl: this.fetchImpl,
+        refererPath: path,
+        timeoutMs: this.timeoutMs,
+      });
+      if (redirected) return redirected;
       return { ok: false, status: response.status, authRequired: isLoginLocation(location), text, location, contentType };
     }
     if (looksLikeLoginPage(text)) {
@@ -192,12 +153,98 @@ function isLoginLocation(location) {
   }
 }
 
-function allowedRedirectPath(location) {
+async function followAllowedResultRedirects(location, { fetchImpl, refererPath, timeoutMs }) {
+  let nextUrl = allowedRedirectUrl(location);
+  if (!nextUrl) return null;
+  const firstLocation = location;
+
+  for (let redirectCount = 0; redirectCount < 3; redirectCount++) {
+    const response = await fetchWithTimeout(fetchImpl, nextUrl, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        Accept: "text/html,application/xhtml+xml,application/json,text/javascript,*/*;q=0.9",
+        Referer: new URL(refererPath, PHIF_BASE_URL).toString(),
+      },
+    }, timeoutMs);
+    const text = await response.text();
+    const contentType = response.headers.get("content-type") || "";
+    const location = response.headers.get("location") || "";
+    const finalPath = `${nextUrl.pathname}${nextUrl.search}`;
+
+    if (response.status >= 300 && response.status < 400) {
+      if (isLoginLocation(location)) {
+        return {
+          ok: false,
+          status: response.status,
+          authRequired: true,
+          text,
+          location,
+          contentType,
+          redirectedFrom: firstLocation,
+          finalPath,
+        };
+      }
+      const allowedNext = allowedRedirectUrl(location);
+      if (!allowedNext) {
+        return {
+          ok: false,
+          status: response.status,
+          authRequired: false,
+          text,
+          location,
+          contentType,
+          redirectedFrom: firstLocation,
+          finalPath,
+          message: "PHIF redirect target is not allowed by the read-only bridge.",
+        };
+      }
+      nextUrl = allowedNext;
+      continue;
+    }
+
+    if (looksLikeLoginPage(text)) {
+      return {
+        ok: false,
+        status: response.status,
+        authRequired: true,
+        text,
+        contentType,
+        redirectedFrom: firstLocation,
+        finalPath,
+      };
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      authRequired: false,
+      text,
+      contentType,
+      redirectedFrom: firstLocation,
+      finalPath,
+    };
+  }
+
+  return {
+    ok: false,
+    status: 0,
+    authRequired: false,
+    text: "",
+    location: String(nextUrl),
+    contentType: "",
+    redirectedFrom: firstLocation,
+    finalPath: `${nextUrl.pathname}${nextUrl.search}`,
+    message: "PHIF redirect limit exceeded.",
+  };
+}
+
+function allowedRedirectUrl(location) {
   if (!location) return null;
   try {
     const url = new URL(location, PHIF_BASE_URL);
-    const path = `${url.pathname}${url.search}`;
-    if (isAllowedReadPath(path)) return path;
+    if (url.hostname !== "his.phif.gov.ly") return null;
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (isAllowedReadPath(`${url.pathname}${url.search}`)) return url;
   } catch {
     return null;
   }
