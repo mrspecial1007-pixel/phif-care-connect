@@ -79,6 +79,20 @@ export function mergeDueTracks(manualTracks: any[] = [], phifDueSummaries: any[]
   return [...byDate.values()].sort((a, b) => String(a.next_due_date).localeCompare(String(b.next_due_date)));
 }
 
+export function phifDueSummariesToTracks(phifDueSummaries: any[] = []) {
+  return (phifDueSummaries ?? [])
+    .filter((summary) => summary?.next_due_date)
+    .map((summary) => ({
+      id: `phif:${summary.next_due_date}`,
+      next_due_date: summary.next_due_date,
+      remaining_days: summary.days_until_due,
+      status: "PHIF",
+      source: "phif",
+      phif_item_count: summary.item_count,
+    }))
+    .sort((a, b) => String(a.next_due_date).localeCompare(String(b.next_due_date)));
+}
+
 export function buildPhifHistoryRows(profile: any, pharmacyId: string, pharmacyName: string) {
   const phifRowsByInvoice = new Map<string, any>();
   for (const item of profile?.items ?? []) {
@@ -117,22 +131,51 @@ export function buildPhifHistoryRows(profile: any, pharmacyId: string, pharmacyN
   return [...phifRowsByInvoice.values()];
 }
 
+function resetManualOperationalStatus(row: any) {
+  return {
+    ...row,
+    current_cycle_id: null,
+    current_cycle_status: null,
+    current_cycle_started_at: null,
+    next_due_date: null,
+    remaining_days: null,
+    active_tracks_count: 0,
+    active_tracks: [],
+    tracks: [],
+    last_dispensing_date: null,
+    last_pharmacy_id: null,
+    last_pharmacy_name: null,
+    phif_due_summaries: [],
+    phif_nearest_due_item_count: 0,
+  };
+}
+
 async function loadPatientPhifProfile(admin: any, pharmacyId: string, patientId: string, insuranceCardNumber?: string | null, manualTransactions: any[] = []) {
-  let invoiceQuery = admin
+  const cards = await loadPatientInsuranceCards(admin, patientId, insuranceCardNumber);
+  const invoicesById = new Map<string, any>();
+  const byPatient = await admin
     .from("phif_invoices")
     .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, patient_id, review_status")
     .eq("pharmacy_id", pharmacyId)
+    .eq("patient_id", patientId)
     .order("dispensing_date", { ascending: false, nullsFirst: false })
     .limit(500);
+  if (byPatient.error) throw new Error(byPatient.error.message);
+  for (const invoice of byPatient.data ?? []) invoicesById.set(invoice.id, invoice);
 
-  if (insuranceCardNumber) {
-    invoiceQuery = invoiceQuery.or(`patient_id.eq.${patientId},insurance_card_number.eq.${insuranceCardNumber}`);
-  } else {
-    invoiceQuery = invoiceQuery.eq("patient_id", patientId);
+  if (cards.length > 0) {
+    const byCard = await admin
+      .from("phif_invoices")
+      .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, patient_id, review_status")
+      .eq("pharmacy_id", pharmacyId)
+      .in("insurance_card_number", cards)
+      .order("dispensing_date", { ascending: false, nullsFirst: false })
+      .limit(500);
+    if (byCard.error) throw new Error(byCard.error.message);
+    for (const invoice of byCard.data ?? []) invoicesById.set(invoice.id, invoice);
   }
 
-  const { data: invoices, error: invoiceError } = await invoiceQuery;
-  if (invoiceError) throw new Error(invoiceError.message);
+  const invoices = [...invoicesById.values()];
   const invoiceIds = (invoices ?? []).map((invoice: any) => invoice.id);
   if (invoiceIds.length === 0) return buildPhifMedicationProfileFromRows([], [], manualTransactions);
 
@@ -145,13 +188,52 @@ async function loadPatientPhifProfile(admin: any, pharmacyId: string, patientId:
   return buildPhifMedicationProfileFromRows(invoices ?? [], items ?? [], manualTransactions);
 }
 
+async function loadPatientInsuranceCards(admin: any, patientId: string, currentCard?: string | null) {
+  const cards = new Set<string>();
+  if (currentCard) cards.add(currentCard);
+  const { data, error } = await admin
+    .from("patient_insurance_cards")
+    .select("card_number")
+    .eq("patient_id", patientId);
+  if (!error) {
+    for (const row of data ?? []) {
+      if (row.card_number) cards.add(row.card_number);
+    }
+  }
+  return [...cards];
+}
+
+async function loadPatientInsuranceCardsByIds(admin: any, patients: { id: string; card: string | null }[]) {
+  const byPatient = new Map<string, Set<string>>();
+  for (const patient of patients) {
+    byPatient.set(patient.id, new Set(patient.card ? [patient.card] : []));
+  }
+  const ids = patients.map((patient) => patient.id);
+  if (ids.length === 0) return byPatient;
+  const { data, error } = await admin
+    .from("patient_insurance_cards")
+    .select("patient_id, card_number")
+    .in("patient_id", ids);
+  if (!error) {
+    for (const row of data ?? []) {
+      if (row.patient_id && row.card_number) byPatient.get(row.patient_id)?.add(row.card_number);
+    }
+  }
+  return byPatient;
+}
+
 async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[]) {
   const patients = rows.map((row) => ({
     id: row.patient_id,
     card: row.insurance_card_number ?? null,
   }));
   const patientIds = new Set(patients.map((patient) => patient.id));
-  const cards = new Set(patients.map((patient) => patient.card).filter(Boolean));
+  const cardsByPatient = await loadPatientInsuranceCardsByIds(admin, patients);
+  const cardOwner = new Map<string, string>();
+  for (const [patientId, cards] of cardsByPatient) {
+    for (const card of cards) cardOwner.set(card, patientId);
+  }
+  const cards = new Set(cardOwner.keys());
   if (patientIds.size === 0 && cards.size === 0) return new Map<string, ReturnType<typeof buildPhifMedicationProfileFromRows>>();
 
   const invoices: any[] = [];
@@ -185,10 +267,14 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
   for (const patient of patients) byPatient.set(patient.id, { invoices: [], items: [] });
   const ownerByInvoice = new Map<string, string>();
   for (const invoice of invoices) {
-    const owner = patients.find((patient) => invoice.patient_id === patient.id || (!!patient.card && invoice.insurance_card_number === patient.card));
-    if (!owner) continue;
-    byPatient.get(owner.id)?.invoices.push(invoice);
-    ownerByInvoice.set(invoice.id, owner.id);
+    const ownerId = invoice.patient_id && patientIds.has(invoice.patient_id)
+      ? invoice.patient_id
+      : invoice.insurance_card_number
+      ? cardOwner.get(invoice.insurance_card_number)
+      : null;
+    if (!ownerId) continue;
+    byPatient.get(ownerId)?.invoices.push(invoice);
+    ownerByInvoice.set(invoice.id, ownerId);
   }
   for (const item of items) {
     const ownerId = ownerByInvoice.get(item.phif_invoice_id);
@@ -220,28 +306,40 @@ export const listPatientStatuses = createServerFn({ method: "GET" }).handler(asy
   const filtered = rows.filter((r: any) => !excluded.has(r.patient_id) && (served.has(r.patient_id) || !anyTx.has(r.patient_id)));
   if (pharmacy_name !== TIRYAQ_PHARMACY_NAME) return filtered;
 
-  const phifProfiles = await loadPhifStatusProfiles(admin, pharmacy_id, filtered);
+  const [phifProfiles, cardsByPatient] = await Promise.all([
+    loadPhifStatusProfiles(admin, pharmacy_id, filtered),
+    loadPatientInsuranceCardsByIds(
+      admin,
+      filtered.map((row: any) => ({ id: row.patient_id, card: row.insurance_card_number ?? null })),
+    ),
+  ]);
   return filtered.map((row: any) => {
+    const insurance_cards = [...(cardsByPatient.get(row.patient_id) ?? new Set<string>())].map((card) => ({
+      card_number: card,
+      status: card === row.insurance_card_number ? "current" : "previous",
+    }));
     const profile = phifProfiles.get(row.patient_id);
-    if (!profile || profile.items.length === 0) return row;
+    if (!profile || profile.items.length === 0) return { ...resetManualOperationalStatus(row), insurance_cards };
 
-    const mergedTracks = mergeDueTracks(row.active_tracks ?? row.tracks ?? [], profile.due_summaries);
-    const nearestTrack = mergedTracks[0] ?? null;
+    const phifTracks = phifDueSummariesToTracks(profile.due_summaries);
+    const nearestTrack = phifTracks[0] ?? null;
     const latestPhifDate = profile.items
       .map((item) => item.latest_dispensing_date)
       .filter(Boolean)
       .sort()
       .at(-1) ?? null;
-    const lastDispensingDate = compareDates(latestPhifDate, row.last_dispensing_date) > 0 ? latestPhifDate : row.last_dispensing_date;
 
     return {
       ...row,
-      next_due_date: nearestTrack?.next_due_date ?? row.next_due_date,
-      remaining_days: nearestTrack?.remaining_days ?? row.remaining_days,
-      active_tracks_count: mergedTracks.length,
-      active_tracks: mergedTracks,
-      tracks: mergedTracks,
-      last_dispensing_date: lastDispensingDate,
+      insurance_cards,
+      next_due_date: nearestTrack?.next_due_date ?? null,
+      remaining_days: nearestTrack?.remaining_days ?? null,
+      active_tracks_count: phifTracks.length,
+      active_tracks: phifTracks,
+      tracks: phifTracks,
+      last_dispensing_date: latestPhifDate,
+      last_pharmacy_id: latestPhifDate ? pharmacy_id : null,
+      last_pharmacy_name: latestPhifDate ? TIRYAQ_PHARMACY_NAME : null,
       phif_due_summaries: profile.due_summaries,
       phif_nearest_due_item_count: profile.nearest_due_item_count,
     };
@@ -278,11 +376,27 @@ export const getPatientHistory = createServerFn({ method: "POST" })
     if (pharmacy_name !== TIRYAQ_PHARMACY_NAME) return manualRows;
 
     const profile = await loadPatientPhifProfile(admin, pharmacy_id, data.id, patient?.insurance_card_number ?? null, manualRows);
-    const phifRows = buildPhifHistoryRows(profile, pharmacy_id, TIRYAQ_PHARMACY_NAME);
-
-    return [...manualRows.map((row: any) => ({ ...row, source: "manual" })), ...phifRows].sort((a: any, b: any) =>
+    return buildPhifHistoryRows(profile, pharmacy_id, TIRYAQ_PHARMACY_NAME).sort((a: any, b: any) =>
       String(b.dispensing_date ?? "").localeCompare(String(a.dispensing_date ?? "")),
     );
+  });
+
+export const getPatientManualArchive = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => idSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { pharmacy_id, pharmacy_name, admin } = await ctx();
+    if (pharmacy_name !== TIRYAQ_PHARMACY_NAME) return [];
+    if (!(await authorizePatient(admin, pharmacy_id, data.id))) return [];
+    const { data: rows } = await admin
+      .from("dispensing_transactions")
+      .select(
+        "id, dispensing_date, transaction_type, items_dispensed, items_remaining, notes, pharmacy_id, cycle_id, is_cancelled, cancellation_reason, pharmacies!dispensing_transactions_pharmacy_id_fkey(name)",
+      )
+      .eq("patient_id", data.id)
+      .eq("pharmacy_id", pharmacy_id)
+      .order("dispensing_date", { ascending: false })
+      .limit(200);
+    return (rows ?? []).map((row: any) => ({ ...row, source: "manual_archive" }));
   });
 
 /** Minimal eligibility projection only: no source_transaction_id, no stream_id, no notes. */
@@ -307,7 +421,7 @@ export const getPatientDueTracks = createServerFn({ method: "POST" })
     }));
     if (pharmacy_name !== TIRYAQ_PHARMACY_NAME) return manualTracks;
     const profile = await loadPatientPhifProfile(admin, pharmacy_id, data.id, patient?.insurance_card_number ?? null);
-    return mergeDueTracks(manualTracks, profile.due_summaries);
+    return phifDueSummariesToTracks(profile.due_summaries);
   });
 
 export const getPatientTimeline = createServerFn({ method: "POST" })
@@ -360,7 +474,59 @@ const txFilterSchema = z.object({
 export const listDispensingTransactions = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => txFilterSchema.parse(d ?? {}))
   .handler(async ({ data }) => {
-    const { pharmacy_id, admin } = await ctx();
+    const { pharmacy_id, pharmacy_name, admin } = await ctx();
+    if (pharmacy_name === TIRYAQ_PHARMACY_NAME) {
+      if (data.type && data.type !== "all" && data.type !== "PHIF") return [];
+      let q = admin
+        .from("phif_invoices")
+        .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, pharmacy_id, patient_id, review_status, patients(patient_name, insurance_card_number)")
+        .eq("pharmacy_id", pharmacy_id)
+        .not("patient_id", "is", null)
+        .order("dispensing_date", { ascending: false, nullsFirst: false })
+        .order("synced_at", { ascending: false });
+
+      if (data.startDate) q = q.gte("dispensing_date", data.startDate);
+      if (data.endDate) q = q.lte("dispensing_date", data.endDate);
+
+      const { data: invoices, error } = await q.limit(1000);
+      if (error) throw new Error(error.message);
+      const ids = (invoices ?? []).map((invoice: any) => invoice.id);
+      const counts = new Map<string, number>();
+      if (ids.length > 0) {
+        const { data: items, error: itemError } = await admin
+          .from("phif_invoice_items")
+          .select("phif_invoice_id")
+          .in("phif_invoice_id", ids);
+        if (itemError) throw new Error(itemError.message);
+        for (const item of items ?? []) {
+          counts.set(item.phif_invoice_id, (counts.get(item.phif_invoice_id) ?? 0) + 1);
+        }
+      }
+
+      return (invoices ?? []).map((invoice: any) => ({
+        id: `phif:${invoice.id}`,
+        patient_id: invoice.patient_id,
+        patient_name: invoice.patients?.patient_name || invoice.beneficiary_name || "مستفيد غير معروف",
+        insurance_card_number: invoice.insurance_card_number ?? invoice.patients?.insurance_card_number ?? null,
+        pharmacy_id: invoice.pharmacy_id,
+        pharmacy_name: TIRYAQ_PHARMACY_NAME,
+        transaction_type: "PHIF",
+        items_dispensed: counts.get(invoice.id) ?? 0,
+        items_remaining: null,
+        notes: invoice.invoice_number || invoice.invoice_key,
+        dispensing_date: invoice.dispensing_date
+          ? `${invoice.dispensing_date}T${invoice.dispensing_time || "12:00:00"}Z`
+          : invoice.synced_at,
+        created_at: invoice.synced_at,
+        is_cancelled: false,
+        cancellation_reason: null,
+        source: "phif",
+        invoice_id: invoice.id,
+        invoice_key: invoice.invoice_key,
+        invoice_number: invoice.invoice_number,
+        review_status: invoice.review_status ?? "pending",
+      }));
+    }
     let q = admin
       .from("dispensing_transactions")
       .select(

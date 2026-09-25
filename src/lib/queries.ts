@@ -5,6 +5,7 @@ import {
   listPatientStatuses,
   getPatient,
   getPatientHistory,
+  getPatientManualArchive,
   getPatientDueTracks,
   getPatientTimeline,
   listDispensingTransactions,
@@ -37,6 +38,7 @@ export type PatientStatusRow = {
   patient_id: string;
   patient_name: string;
   insurance_card_number: string | null;
+  insurance_cards?: { card_number: string; status: "current" | "previous" }[];
   national_id: string | null;
   phone: string | null;
   review_status: "ok" | "needs_review";
@@ -119,7 +121,7 @@ export type DispensingTransactionRow = {
   insurance_card_number: string | null;
   pharmacy_id: string;
   pharmacy_name: string;
-  transaction_type: "Partial" | "Remaining" | "Completed";
+  transaction_type: "Partial" | "Remaining" | "Completed" | "PHIF";
   items_dispensed: number | null;
   items_remaining: number | null;
   notes: string | null;
@@ -127,6 +129,11 @@ export type DispensingTransactionRow = {
   created_at: string;
   is_cancelled?: boolean;
   cancellation_reason?: string | null;
+  source?: "manual" | "phif" | "manual_archive";
+  invoice_id?: string;
+  invoice_key?: string;
+  invoice_number?: string | null;
+  review_status?: string | null;
 };
 
 export function useDispensingTransactions(options: {
@@ -155,11 +162,22 @@ export function useDispensingTransactions(options: {
         results = results.filter(
           (r) =>
             r.patient_name.toLowerCase().includes(q) ||
-            (r.insurance_card_number && r.insurance_card_number.includes(q)),
+            (r.insurance_card_number && r.insurance_card_number.includes(q)) ||
+            (r.insurance_cards ?? []).some((card) => card.card_number.includes(q)) ||
+            (r.invoice_number && r.invoice_number.toLowerCase().includes(q)) ||
+            (r.invoice_key && r.invoice_key.toLowerCase().includes(q)),
         );
       }
       return results;
     },
+  });
+}
+
+export function usePatientManualArchive(id: string | undefined) {
+  return useQuery({
+    enabled: !!id,
+    queryKey: ["patient_manual_archive", id],
+    queryFn: async () => await getPatientManualArchive({ data: { id: id! } }),
   });
 }
 

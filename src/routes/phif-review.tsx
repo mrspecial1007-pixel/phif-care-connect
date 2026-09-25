@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Gate } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -241,6 +241,12 @@ function LinkPatientDialog({
   const searchPatients = useServerFn(searchPhifLinkPatients);
   const linkPatient = useServerFn(linkPhifInvoicesToPatient);
   const qc = useQueryClient();
+  useEffect(() => {
+    if (!open) return;
+    setSearch(reviewCase.beneficiary_name ?? "");
+    setSelected(null);
+    setConfirmMismatch(false);
+  }, [open, reviewCase.beneficiary_name]);
   const { data: patients, isFetching } = useQuery({
     enabled: open && search.trim().length > 0,
     queryKey: ["phif_link_patients", search],
@@ -281,6 +287,11 @@ function LinkPatientDialog({
           <DialogTitle>ربط بمستفيد موجود</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {reviewCase.beneficiary_name && (
+            <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+              تظهر النتائج بالاسم المقترح من الفاتورة فقط. اختر المستفيد يدويًا ولا يتم الربط اعتمادًا على تشابه الاسم وحده.
+            </div>
+          )}
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث باسم المستفيد أو رقم البطاقة" />
           {isFetching && <div className="text-sm text-muted-foreground">جاري البحث...</div>}
           <div className="grid gap-2 max-h-64 overflow-auto">

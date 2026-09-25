@@ -60,6 +60,7 @@ function List() {
         !qd ||
         nameMatchesQuery(r.patient_name, q) ||
         (r.insurance_card_number ?? "").includes(qd) ||
+        (r.insurance_cards ?? []).some((card) => card.card_number.includes(qd)) ||
         (r.national_id ?? "").includes(qd) ||
         (r.phone ?? "").includes(qd);
       if (!matchSearch) return false;

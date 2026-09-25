@@ -3,6 +3,7 @@ import { Gate } from "@/components/AppShell";
 import {
   usePatient,
   usePatientHistory,
+  usePatientManualArchive,
   usePatientDueTracks,
   usePatientStatuses,
   useSession,
@@ -24,7 +25,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { upsertPatient, archivePatient, restorePatient, setFollowUpStatus } from "@/lib/dispensing.functions";
-import { getPatientPhifMedicationProfile, listPatientPhifInvoices } from "@/lib/phif-invoices.functions";
+import {
+  addPatientInsuranceCard,
+  getPatientPhifMedicationProfile,
+  listPatientInsuranceCards,
+  listPatientPhifInvoices,
+} from "@/lib/phif-invoices.functions";
 import { EditDispenseDialog } from "@/components/EditDispenseDialog";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
@@ -74,12 +80,20 @@ function Detail() {
   const { id } = Route.useParams();
   const { data: patient, isLoading } = usePatient(id);
   const { data: history } = usePatientHistory(id);
+  const { data: manualArchive } = usePatientManualArchive(id);
   const { data: dueTracks } = usePatientDueTracks(id);
   const { data: statuses } = usePatientStatuses();
   const { data: session } = useSession();
   const getPatientPhifInvoices = useServerFn(listPatientPhifInvoices);
   const getPhifMedicationProfile = useServerFn(getPatientPhifMedicationProfile);
+  const getPatientCards = useServerFn(listPatientInsuranceCards);
   const hasTiryaqPhifAccess = session?.pharmacy.name === "صيدلية الترياق الشافي";
+  const { data: patientCards } = useQuery({
+    enabled: !!id && hasTiryaqPhifAccess,
+    queryKey: ["patient_insurance_cards", id],
+    queryFn: () => getPatientCards({ data: { patientId: id } }),
+    staleTime: 30_000,
+  });
   const { data: phifInvoices } = useQuery({
     enabled: !!id && hasTiryaqPhifAccess,
     queryKey: ["patient_phif_invoices", id],
@@ -303,6 +317,14 @@ function Detail() {
             emptyLabel="لا يوجد رقم بطاقة"
             addLabel="إضافة رقم البطاقة"
           />
+          {hasTiryaqPhifAccess && (
+            <InsuranceCardsPanel
+              patientId={patient.id}
+              currentCard={patient.insurance_card_number}
+              cards={patientCards?.cards ?? []}
+              tableMissing={patientCards?.table_missing === true}
+            />
+          )}
           <InfoRow
             icon={<CreditCard className="h-4 w-4" />}
             label="الرقم الوطني"
@@ -454,11 +476,14 @@ function Detail() {
                   </Button>
                 )}
               </div>
-              {h.notes && (
+              {h.source !== "phif" && h.notes && (
                 <div className="text-xs text-muted-foreground mt-1 pr-20">{h.notes}</div>
               )}
               {h.source === "phif" && h.invoice_id && (
-                <div className="mt-1 pr-20 text-xs">
+                <div className="mt-1 pr-20 text-xs space-y-1">
+                  <div className="text-muted-foreground">
+                    {h.invoice_number || h.invoice_key ? `فاتورة ${h.invoice_number || h.invoice_key}` : "فاتورة PHIF"} · {h.items_dispensed ?? 0} صنف
+                  </div>
                   <Link to="/phif-invoices/$id" params={{ id: h.invoice_id }} className="font-semibold text-cyan-700 hover:underline">
                     فتح فاتورة PHIF {h.invoice_number || h.invoice_key || ""}
                   </Link>
@@ -479,6 +504,32 @@ function Detail() {
           )}
         </div>
       </Card>
+
+      {hasTiryaqPhifAccess && (manualArchive?.length ?? 0) > 0 && (
+        <Card className="p-4">
+          <details>
+            <summary className="cursor-pointer list-none font-semibold">
+              أرشيف الصرف اليدوي القديم
+              <Badge variant="secondary" className="mr-2">{manualArchive?.length ?? 0}</Badge>
+            </summary>
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+              هذه السجلات محفوظة للمراجعة فقط ولا تدخل في آخر صرف أو الاستحقاقات التشغيلية للترياق.
+            </div>
+            <div className="mt-3 space-y-2">
+              {(manualArchive ?? []).map((h: any) => (
+                <div key={h.id} className="rounded-md border p-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-muted-foreground">{new Date(h.dispensing_date).toLocaleDateString("en-GB")}</span>
+                    <Badge variant="outline">{h.transaction_type}</Badge>
+                    {h.is_cancelled && <Badge variant="destructive">ملغاة</Badge>}
+                  </div>
+                  {h.notes && <div className="mt-1 text-xs text-muted-foreground">{h.notes}</div>}
+                </div>
+              ))}
+            </div>
+          </details>
+        </Card>
+      )}
 
       {hasTiryaqPhifAccess && (
         <PhifMedicationProfileCard profile={phifMedicationProfile} />
@@ -718,6 +769,115 @@ function InfoRow({
       <Button size="sm" variant="outline" onClick={onAdd}>
         <Plus className="h-3.5 w-3.5 ml-1" /> {addLabel}
       </Button>
+    </div>
+  );
+}
+
+function InsuranceCardsPanel({
+  patientId,
+  currentCard,
+  cards,
+  tableMissing,
+}: {
+  patientId: string;
+  currentCard: string | null | undefined;
+  cards: { card_number: string; status: "current" | "previous"; source?: string | null; linked_at?: string | null; retired_at?: string | null }[];
+  tableMissing: boolean;
+}) {
+  const [newCard, setNewCard] = useState("");
+  const [busy, setBusy] = useState(false);
+  const addCard = useServerFn(addPatientInsuranceCard);
+  const qc = useQueryClient();
+  const uniqueCards = cards.length > 0
+    ? cards
+    : currentCard
+    ? [{ card_number: currentCard, status: "current" as const }]
+    : [];
+
+  async function confirmCard() {
+    const card = newCard.trim();
+    if (!card) {
+      toast.error("رقم البطاقة مطلوب");
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await addCard({
+        data: {
+          patient_id: patientId,
+          insurance_card_number: card,
+          make_current: true,
+        },
+      });
+      if (!result.ok) {
+        toast.error("تعذر ربط رقم البطاقة");
+        return;
+      }
+      toast.success("تم ربط رقم البطاقة بالمستفيد");
+      setNewCard("");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["patient", patientId] }),
+        qc.invalidateQueries({ queryKey: ["patient_status"] }),
+        qc.invalidateQueries({ queryKey: ["patient_insurance_cards", patientId] }),
+        qc.invalidateQueries({ queryKey: ["patient_phif_invoices", patientId] }),
+        qc.invalidateQueries({ queryKey: ["patient_phif_medication_profile", patientId] }),
+      ]);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium">بطاقات التأمين المرتبطة</div>
+        {tableMissing && (
+          <Badge variant="outline" className="border-warning/40 text-warning">
+            migration مطلوب
+          </Badge>
+        )}
+      </div>
+      {tableMissing && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
+          جدول بطاقات المستفيد غير مطبق بعد. ستظهر البطاقة الحالية فقط، ولن يتم حفظ ربط بطاقة جديدة قبل تطبيق migration.
+        </div>
+      )}
+      <div className="grid gap-2">
+        {uniqueCards.map((card) => {
+          const previous = card.status === "previous";
+          return (
+            <div
+              key={card.card_number}
+              className={`flex items-center gap-2 rounded-md border p-2 ${previous ? "bg-muted/40 text-muted-foreground" : "bg-background"}`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] text-muted-foreground">{previous ? "بطاقة سابقة" : "البطاقة الحالية"}</div>
+                <div className="font-medium tracking-wide" dir="ltr">{card.card_number}</div>
+              </div>
+              {previous && <Badge variant="secondary">بطاقة سابقة</Badge>}
+              <Button size="icon" variant="ghost" onClick={() => copy(card.card_number, "رقم البطاقة")} aria-label="نسخ رقم البطاقة">
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          );
+        })}
+        {uniqueCards.length === 0 && <div className="text-xs text-muted-foreground">لا توجد بطاقات مرتبطة بعد.</div>}
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          value={newCard}
+          onChange={(event) => setNewCard(event.target.value)}
+          placeholder="رقم بطاقة جديد"
+          dir="ltr"
+          inputMode="numeric"
+          maxLength={60}
+        />
+        <Button onClick={confirmCard} disabled={busy || tableMissing} className="shrink-0">
+          {busy ? "جار الحفظ..." : "تأكيد ربط بطاقة جديدة"}
+        </Button>
+      </div>
     </div>
   );
 }

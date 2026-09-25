@@ -14,7 +14,7 @@ import {
   buildPhifMedicationProfileFromRows,
   phifMedicationIdentityKey,
 } from "@/lib/phif-invoices.functions";
-import { buildPhifHistoryRows, mergeDueTracks } from "@/lib/reads.functions";
+import { buildPhifHistoryRows, phifDueSummariesToTracks } from "@/lib/reads.functions";
 
 function readProjectFile(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -199,17 +199,17 @@ describe("PHIF sync foundation", () => {
     ]);
   });
 
-  it("keeps manual and PHIF movements separate even when their due date is grouped for display", () => {
-    const mergedDue = mergeDueTracks(
-      [{ id: "manual-track", next_due_date: "2026-10-22", status: "Waiting" }],
-      [{ next_due_date: "2026-10-22", item_count: 3, days_until_due: 27 }],
-    );
+  it("uses PHIF due summaries as Tiryaq operational due tracks without manual merging", () => {
+    const phifDue = phifDueSummariesToTracks([
+      { next_due_date: "2026-10-22", item_count: 3, days_until_due: 27 },
+      { next_due_date: "2026-10-30", item_count: 1, days_until_due: 35 },
+    ]);
 
-    expect(mergedDue).toHaveLength(1);
-    expect(mergedDue[0]).toMatchObject({
-      id: "manual-track",
+    expect(phifDue).toHaveLength(2);
+    expect(phifDue[0]).toMatchObject({
+      id: "phif:2026-10-22",
       next_due_date: "2026-10-22",
-      source: "manual+phif",
+      source: "phif",
       phif_item_count: 3,
     });
 
@@ -494,14 +494,58 @@ describe("PHIF sync foundation", () => {
     expect(patientRoute).toContain("فواتير PHIF");
   });
 
-  it("unifies PHIF invoice reads with dispensing displays without creating manual dispensing rows", () => {
+  it("supports confirmed multi-card PHIF patient linking without automatic name merges", () => {
+    const migration = readProjectFile("supabase/migrations/20260925010000_add_patient_insurance_cards.sql");
+    const source = readProjectFile("src/lib/phif-invoices.functions.ts");
+    const readsSource = readProjectFile("src/lib/reads.functions.ts");
+    const queriesSource = readProjectFile("src/lib/queries.ts");
+    const listRoute = readProjectFile("src/routes/patients.index.tsx");
+    const patientRoute = readProjectFile("src/routes/patients.$id.tsx");
+    const reviewRoute = readProjectFile("src/routes/phif-review.tsx");
+
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS public.patient_insurance_cards");
+    expect(migration).toContain("card_number text NOT NULL");
+    expect(migration).toContain("patient_insurance_cards_card_number_uidx");
+    expect(migration).toContain("patient_insurance_cards_one_current_uidx");
+    expect(migration).toContain("REVOKE ALL ON public.patient_insurance_cards FROM anon, authenticated");
+    expect(migration).not.toContain("dispensing_transactions");
+    expect(migration).not.toContain("phif_invoices SET insurance_card_number");
+
+    expect(source).toContain("listPatientInsuranceCards");
+    expect(source).toContain("addPatientInsuranceCard");
+    expect(source).toContain("setCurrentPatientInsuranceCard");
+    expect(source).toContain("assertCardIsNotOwnedByAnotherPatient");
+    expect(source).toContain("patientInsuranceCards");
+    expect(source).toContain("patientInsuranceCardRows");
+    expect(source).toContain("patient_insurance_cards");
+    expect(source).toContain("جدول بطاقات المستفيد غير مطبق بعد");
+    expect(source).toContain("await setCurrentPatientInsuranceCard(db, data.patient_id, card, \"phif_review\")");
+    expect(source).toContain("await setCurrentPatientInsuranceCard(db, inserted.id, card, \"phif_review\")");
+    expect(reviewRoute).toContain("لا يتم الربط اعتمادًا على تشابه الاسم وحده");
+
+    expect(readsSource).toContain("loadPatientInsuranceCardsByIds");
+    expect(readsSource).toContain("insurance_cards");
+    expect(queriesSource).toContain("insurance_cards?");
+    expect(queriesSource).toContain("card.card_number.includes(q)");
+    expect(listRoute).toContain("card.card_number.includes(qd)");
+
+    expect(patientRoute).toContain("InsuranceCardsPanel");
+    expect(patientRoute).toContain("بطاقة سابقة");
+    expect(patientRoute).toContain("تأكيد ربط بطاقة جديدة");
+    expect(patientRoute).toContain("migration مطلوب");
+    expect(patientRoute).toContain("patient_insurance_cards");
+  });
+
+  it("uses PHIF invoices as Tiryaq operational dispensing source while archiving old manual rows", () => {
     const readsSource = readProjectFile("src/lib/reads.functions.ts");
     const patientCard = readProjectFile("src/components/PatientCard.tsx");
     const patientRoute = readProjectFile("src/routes/patients.$id.tsx");
 
     expect(readsSource).toContain("TIRYAQ_PHARMACY_NAME");
     expect(readsSource).toContain("loadPhifStatusProfiles");
-    expect(readsSource).toContain("mergeDueTracks");
+    expect(readsSource).toContain("phifDueSummariesToTracks");
+    expect(readsSource).toContain("resetManualOperationalStatus");
+    expect(readsSource).toContain("getPatientManualArchive");
     expect(readsSource).toContain("source: \"phif\"");
     expect(readsSource).toContain("phifRowsByInvoice");
     expect(readsSource).toContain('.from("phif_invoices")');
@@ -513,7 +557,7 @@ describe("PHIF sync foundation", () => {
     expect(patientCard).toContain("phif_item_count");
     expect(patientCard).toContain("slice(0, 3)");
     expect(patientRoute).toContain('h.source === "phif"');
-    expect(patientRoute).toContain("فتح فاتورة PHIF");
+    expect(patientRoute).toContain("أرشيف الصرف اليدوي القديم");
     expect(patientRoute).toContain("يحتاج مراجعة ازدواج");
     expect(patientRoute).toContain("صرف يدوي جديد غير مسجل في PHIF");
     expect(patientRoute).toContain("nearest_due_item_count");

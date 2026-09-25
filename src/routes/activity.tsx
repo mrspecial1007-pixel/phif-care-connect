@@ -86,6 +86,7 @@ function DispensingActivityPage() {
       completed: transactions.filter(t => t.transaction_type === "Completed").length,
       partial: transactions.filter(t => t.transaction_type === "Partial").length,
       remaining: transactions.filter(t => t.transaction_type === "Remaining").length,
+      phif: transactions.filter(t => t.source === "phif" || t.transaction_type === "PHIF").length,
       pharmacies: {} as Record<string, number>
     };
     transactions.forEach(t => {
@@ -156,6 +157,7 @@ function DispensingActivityPage() {
 
   const getTypeBadge = (tx: any) => {
     if (tx.is_cancelled) return <Badge className="bg-slate-500 text-[10px] px-2 py-0 h-5 rounded-full hover:bg-slate-600">ملغاة</Badge>;
+    if (tx.source === "phif" || tx.transaction_type === "PHIF") return <Badge className="bg-cyan-700 text-white text-[10px] px-2 py-0 h-5 rounded-full hover:bg-cyan-800">PHIF</Badge>;
     switch (tx.transaction_type) {
       case "Completed": return <Badge className="bg-success text-[10px] px-2 py-0 h-5 rounded-full hover:bg-success/90">صرف كامل</Badge>;
       case "Partial": return <Badge className="bg-info text-[10px] px-2 py-0 h-5 rounded-full hover:bg-info/90">صرف جزئي</Badge>;
@@ -308,6 +310,12 @@ function DispensingActivityPage() {
               <span className="text-[10px] font-bold text-slate-500 block mb-1">صرف جزئي</span>
               <span className="text-xl font-black text-info">{stats.partial}</span>
             </Card>
+            {stats.phif > 0 && (
+              <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
+                <span className="text-[10px] font-bold text-slate-500 block mb-1">PHIF</span>
+                <span className="text-xl font-black text-cyan-700">{stats.phif}</span>
+              </Card>
+            )}
             {Object.entries(stats.pharmacies).map(([name, count]) => (
               <Card key={name} className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
                 <span className="text-[10px] font-bold text-slate-500 block mb-1">{name}</span>
@@ -334,6 +342,7 @@ function DispensingActivityPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">كل الأنواع</SelectItem>
+              <SelectItem value="PHIF">PHIF</SelectItem>
               <SelectItem value="Completed">صرف كامل</SelectItem>
               <SelectItem value="Partial">صرف جزئي</SelectItem>
               <SelectItem value="Remaining">صرف متبقي</SelectItem>
@@ -365,11 +374,13 @@ function DispensingActivityPage() {
               <p>لا توجد عمليات صرف مسجلة لهذا التاريخ</p>
             </div>
           ) : (
-            sortedTransactions.map((tx) => (
+            sortedTransactions.map((tx) => {
+              const isPhif = tx.source === "phif" || tx.transaction_type === "PHIF";
+              return (
               <Link 
                 key={tx.id} 
-                to="/patients/$id" 
-                params={{ id: tx.patient_id }}
+                to={isPhif && tx.invoice_id ? "/phif-invoices/$id" : "/patients/$id"}
+                params={isPhif && tx.invoice_id ? { id: tx.invoice_id } : { id: tx.patient_id }}
                 className="block active:scale-[0.98] transition-transform"
               >
                 <Card className={`p-3 bg-white shadow-sm hover:shadow-md transition-shadow border-none ring-1 ring-slate-200 group relative overflow-hidden ${tx.is_cancelled ? 'opacity-60 grayscale' : ''}`}>
@@ -396,7 +407,13 @@ function DispensingActivityPage() {
                       <span>{tx.pharmacy_name}</span>
                     </div>
 
-                    {tx.notes && (
+                    {isPhif && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md mt-1 w-fit max-w-full">
+                        <FileText className="h-3 w-3 shrink-0" />
+                        <span className="truncate">فاتورة {tx.invoice_number || tx.invoice_key || tx.notes} · {tx.items_dispensed ?? 0} صنف</span>
+                      </div>
+                    )}
+                    {!isPhif && tx.notes && (
                       <div className="flex items-center gap-1.5 text-[10px] text-amber-600 bg-amber-50/50 px-2 py-0.5 rounded-md mt-1 w-fit max-w-full">
                         <FileText className="h-3 w-3 shrink-0" />
                         <span className="truncate">{tx.notes}</span>
@@ -410,7 +427,7 @@ function DispensingActivityPage() {
                   </div>
                 </Card>
               </Link>
-            ))
+            )})
           )}
         </div>
       </div>

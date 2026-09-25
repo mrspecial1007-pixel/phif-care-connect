@@ -37,6 +37,11 @@ const linkExistingPatientSchema = cardSchema.extend({
   confirm_card_mismatch: z.boolean().optional(),
 });
 
+const addPatientCardSchema = cardSchema.extend({
+  patient_id: z.string().uuid(),
+  make_current: z.boolean().optional(),
+});
+
 export type PhifInvoiceArchiveRow = {
   id: string;
   invoice_key: string;
@@ -158,18 +163,225 @@ async function accessiblePatientsByCard(admin: any, pharmacyId: string, cards: (
   const matches = new Map<string, string>();
   if (uniqueCards.length === 0) return matches;
 
+  const { served, anyTx, excluded } = await patientAccessSets(admin, pharmacyId);
+
+  const { data: cardRows, error: cardError } = await admin
+    .from("patient_insurance_cards")
+    .select("patient_id, card_number")
+    .in("card_number", uniqueCards);
+  if (!cardError) {
+    for (const row of cardRows ?? []) {
+      if (!row.patient_id || !row.card_number || excluded.has(row.patient_id)) continue;
+      if (served.has(row.patient_id) || !anyTx.has(row.patient_id)) matches.set(row.card_number, row.patient_id);
+    }
+  }
+
   const { data: patients, error } = await admin
     .from("patients")
     .select("id, insurance_card_number")
     .in("insurance_card_number", uniqueCards);
   if (error) throw new Error(error.message);
 
-  const { served, anyTx, excluded } = await patientAccessSets(admin, pharmacyId);
   for (const patient of patients ?? []) {
     if (!patient?.id || !patient.insurance_card_number || excluded.has(patient.id)) continue;
     if (served.has(patient.id) || !anyTx.has(patient.id)) matches.set(patient.insurance_card_number, patient.id);
   }
   return matches;
+}
+
+async function patientInsuranceCards(admin: any, patientId: string, currentCard?: string | null) {
+  const cards = new Set<string>();
+  if (currentCard) cards.add(currentCard);
+  const { data, error } = await admin
+    .from("patient_insurance_cards")
+    .select("card_number")
+    .eq("patient_id", patientId);
+  if (!error) {
+    for (const row of data ?? []) {
+      if (row.card_number) cards.add(row.card_number);
+    }
+  }
+  return [...cards];
+}
+
+async function patientInsuranceCardRows(admin: any, patientId: string, currentCard?: string | null) {
+  const rows: { card_number: string; status: "current" | "previous"; source: string | null; linked_at: string | null; retired_at: string | null }[] = [];
+  const seen = new Set<string>();
+  const { data, error } = await admin
+    .from("patient_insurance_cards")
+    .select("card_number, status, source, linked_at, retired_at")
+    .eq("patient_id", patientId)
+    .order("status", { ascending: true })
+    .order("linked_at", { ascending: false });
+  if (error) {
+    if (isMissingPatientCardsTable(error)) {
+      return {
+        cards: currentCard
+          ? [{ card_number: currentCard, status: "current" as const, source: "patients", linked_at: null, retired_at: null }]
+          : [],
+        table_missing: true,
+      };
+    }
+    throw new Error(error.message);
+  }
+  for (const row of data ?? []) {
+    const card = row.card_number?.trim();
+    if (!card || seen.has(card)) continue;
+    seen.add(card);
+    rows.push({
+      card_number: card,
+      status: row.status === "previous" ? "previous" : "current",
+      source: row.source ?? null,
+      linked_at: row.linked_at ?? null,
+      retired_at: row.retired_at ?? null,
+    });
+  }
+  if (currentCard && !seen.has(currentCard)) {
+    rows.unshift({ card_number: currentCard, status: "current", source: "patients", linked_at: null, retired_at: null });
+  }
+  return { cards: rows, table_missing: false };
+}
+
+async function phifInvoicesForPatientCards(admin: any, pharmacyId: string, patientId: string, cards: string[], limit = 500) {
+  const invoicesById = new Map<string, any>();
+  const byPatient = await admin
+    .from("phif_invoices")
+    .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, patient_id, review_status")
+    .eq("pharmacy_id", pharmacyId)
+    .eq("patient_id", patientId)
+    .order("dispensing_date", { ascending: false, nullsFirst: false })
+    .order("synced_at", { ascending: false })
+    .limit(limit);
+  if (byPatient.error) throw new Error(byPatient.error.message);
+  for (const invoice of byPatient.data ?? []) invoicesById.set(invoice.id, invoice);
+
+  if (cards.length > 0) {
+    const byCards = await admin
+      .from("phif_invoices")
+      .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, patient_id, review_status")
+      .eq("pharmacy_id", pharmacyId)
+      .in("insurance_card_number", cards)
+      .order("dispensing_date", { ascending: false, nullsFirst: false })
+      .order("synced_at", { ascending: false })
+      .limit(limit);
+    if (byCards.error) throw new Error(byCards.error.message);
+    for (const invoice of byCards.data ?? []) invoicesById.set(invoice.id, invoice);
+  }
+
+  return [...invoicesById.values()].sort((a, b) =>
+    String(b.dispensing_date ?? b.synced_at ?? "").localeCompare(String(a.dispensing_date ?? a.synced_at ?? "")),
+  );
+}
+
+function isMissingPatientCardsTable(error: any) {
+  const message = String(error?.message ?? "");
+  return message.includes("patient_insurance_cards") || error?.code === "42P01";
+}
+
+async function requirePatientCardsTable(error: any): Promise<never> {
+  if (isMissingPatientCardsTable(error)) {
+    throw new Error("جدول بطاقات المستفيد غير مطبق بعد. طبّق migration الخاص بـ patient_insurance_cards أولًا.");
+  }
+  throw new Error(error?.message ?? "تعذر حفظ رقم البطاقة");
+}
+
+async function assertCardIsNotOwnedByAnotherPatient(admin: any, card: string, patientId: string) {
+  const { data: cardOwner, error: cardError } = await admin
+    .from("patient_insurance_cards")
+    .select("patient_id")
+    .eq("card_number", card)
+    .maybeSingle();
+  if (cardError) await requirePatientCardsTable(cardError);
+  if (cardOwner?.patient_id && cardOwner.patient_id !== patientId) {
+    throw new Error("رقم البطاقة مرتبط بمستفيد آخر ولا يمكن ربطه تلقائيًا.");
+  }
+
+  const { data: patientOwner, error: patientError } = await admin
+    .from("patients")
+    .select("id")
+    .eq("insurance_card_number", card)
+    .maybeSingle();
+  if (patientError) throw new Error(patientError.message);
+  if (patientOwner?.id && patientOwner.id !== patientId) {
+    throw new Error("رقم البطاقة مستخدم كمفتاح حالي لمستفيد آخر.");
+  }
+}
+
+async function setCurrentPatientInsuranceCard(admin: any, patientId: string, card: string, source: "manual" | "phif_review" = "manual") {
+  const clean = card.trim();
+  if (!clean) throw new Error("رقم البطاقة مطلوب");
+  await assertCardIsNotOwnedByAnotherPatient(admin, clean, patientId);
+
+  const { data: patient, error: patientError } = await admin
+    .from("patients")
+    .select("id, insurance_card_number")
+    .eq("id", patientId)
+    .maybeSingle();
+  if (patientError) throw new Error(patientError.message);
+  if (!patient) throw new Error("Patient not found");
+
+  const now = new Date().toISOString();
+  const previousCard = patient.insurance_card_number?.trim() || null;
+
+  const { error: retireError } = await admin
+    .from("patient_insurance_cards")
+    .update({ status: "previous", retired_at: now })
+    .eq("patient_id", patientId)
+    .eq("status", "current");
+  if (retireError) await requirePatientCardsTable(retireError);
+
+  if (previousCard && previousCard !== clean) {
+    const { data: existingPrevious, error: previousLookupError } = await admin
+      .from("patient_insurance_cards")
+      .select("id")
+      .eq("card_number", previousCard)
+      .maybeSingle();
+    if (previousLookupError) await requirePatientCardsTable(previousLookupError);
+    if (!existingPrevious) {
+      const { error: previousInsertError } = await admin.from("patient_insurance_cards").insert({
+        patient_id: patientId,
+        card_number: previousCard,
+        status: "previous",
+        source,
+        retired_at: now,
+      });
+      if (previousInsertError) await requirePatientCardsTable(previousInsertError);
+    }
+  }
+
+  const { data: existingCard, error: lookupError } = await admin
+    .from("patient_insurance_cards")
+    .select("id, patient_id")
+    .eq("card_number", clean)
+    .maybeSingle();
+  if (lookupError) await requirePatientCardsTable(lookupError);
+  if (existingCard?.patient_id && existingCard.patient_id !== patientId) {
+    throw new Error("رقم البطاقة مرتبط بمستفيد آخر ولا يمكن ربطه تلقائيًا.");
+  }
+
+  if (existingCard?.id) {
+    const { error } = await admin
+      .from("patient_insurance_cards")
+      .update({ patient_id: patientId, status: "current", source, retired_at: null, linked_at: now })
+      .eq("id", existingCard.id);
+    if (error) await requirePatientCardsTable(error);
+  } else {
+    const { error } = await admin.from("patient_insurance_cards").insert({
+      patient_id: patientId,
+      card_number: clean,
+      status: "current",
+      source,
+      retired_at: null,
+      linked_at: now,
+    });
+    if (error) await requirePatientCardsTable(error);
+  }
+
+  const { error: updatePatientError } = await admin
+    .from("patients")
+    .update({ insurance_card_number: clean })
+    .eq("id", patientId);
+  if (updatePatientError) throw new Error(updatePatientError.message);
 }
 
 async function itemCounts(admin: any, invoiceIds: string[]) {
@@ -644,7 +856,63 @@ export const searchPhifLinkPatients = createServerFn({ method: "POST" })
       .limit(30);
     if (error) throw new Error(error.message);
     const { served, anyTx, excluded } = await patientAccessSets(db, pharmacy_id);
-    return (rows ?? []).filter((patient: any) => !excluded.has(patient.id) && (served.has(patient.id) || !anyTx.has(patient.id)));
+    const byId = new Map<string, any>();
+    for (const patient of rows ?? []) byId.set(patient.id, patient);
+
+    const { data: cardRows, error: cardError } = await db
+      .from("patient_insurance_cards")
+      .select("patient_id, card_number")
+      .ilike("card_number", `%${term}%`)
+      .limit(30);
+    if (cardError) {
+      if (!isMissingPatientCardsTable(cardError)) throw new Error(cardError.message);
+    } else {
+      const ids = [...new Set((cardRows ?? []).map((row: any) => row.patient_id).filter(Boolean))];
+      if (ids.length > 0) {
+        const { data: cardPatients, error: patientError } = await db
+          .from("patients")
+          .select("id, patient_name, insurance_card_number, phone")
+          .in("id", ids);
+        if (patientError) throw new Error(patientError.message);
+        for (const patient of cardPatients ?? []) byId.set(patient.id, patient);
+      }
+    }
+
+    return [...byId.values()].filter((patient: any) => !excluded.has(patient.id) && (served.has(patient.id) || !anyTx.has(patient.id)));
+  });
+
+export const listPatientInsuranceCards = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => patientInvoicesSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { authorizePatientForSessionPharmacy } = await import("@/lib/pharmacy-isolation");
+    const { pharmacy_id } = await requireTiryaqPhifArchiveAccess();
+    const db = supabaseAdmin as any;
+    if (!(await authorizePatientForSessionPharmacy(db, pharmacy_id, data.patientId))) {
+      throw new Error("Patient not found");
+    }
+    const { data: patient, error } = await db
+      .from("patients")
+      .select("id, insurance_card_number")
+      .eq("id", data.patientId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!patient) throw new Error("Patient not found");
+    return patientInsuranceCardRows(db, data.patientId, patient.insurance_card_number ?? null);
+  });
+
+export const addPatientInsuranceCard = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => addPatientCardSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { authorizePatientForSessionPharmacy } = await import("@/lib/pharmacy-isolation");
+    const { pharmacy_id } = await requireTiryaqPhifArchiveAccess();
+    const db = supabaseAdmin as any;
+    if (!(await authorizePatientForSessionPharmacy(db, pharmacy_id, data.patient_id))) {
+      throw new Error("Patient not found");
+    }
+    await setCurrentPatientInsuranceCard(db, data.patient_id, data.insurance_card_number, "manual");
+    return { ok: true as const };
   });
 
 async function linkInvoicesForCard(admin: any, pharmacyId: string, card: string, patientId: string) {
@@ -671,6 +939,7 @@ export const createPatientFromPhifInvoice = createServerFn({ method: "POST" })
     const card = data.insurance_card_number.trim();
     const invoices = await rowsForReviewCard(db, pharmacy_id, card);
     if (invoices.length === 0) throw new Error("PHIF review case was not found");
+    await assertCardIsNotOwnedByAnotherPatient(db, card, "00000000-0000-0000-0000-000000000000");
 
     const { data: existing } = await db
       .from("patients")
@@ -693,6 +962,7 @@ export const createPatientFromPhifInvoice = createServerFn({ method: "POST" })
       .single();
     if (error || !inserted) throw new Error(error?.message ?? "Failed to create patient");
 
+    await setCurrentPatientInsuranceCard(db, inserted.id, card, "phif_review");
     await linkInvoicesForCard(db, pharmacy_id, card, inserted.id);
     return { ok: true as const, patient_id: inserted.id as string, linked_invoices: invoices.length };
   });
@@ -726,6 +996,7 @@ export const linkPhifInvoicesToPatient = createServerFn({ method: "POST" })
       };
     }
 
+    await setCurrentPatientInsuranceCard(db, data.patient_id, card, "phif_review");
     await linkInvoicesForCard(db, pharmacy_id, card, data.patient_id);
     return { ok: true as const, patient_id: data.patient_id, linked_invoices: invoices.length };
   });
@@ -786,26 +1057,10 @@ export const listPatientPhifInvoices = createServerFn({ method: "POST" })
     if (patientError) throw new Error(patientError.message);
     if (!patient) return [];
 
-    let query = db
-      .from("phif_invoices")
-      .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, patient_id, review_status")
-      .eq("pharmacy_id", pharmacy_id)
-      .order("dispensing_date", { ascending: false, nullsFirst: false })
-      .order("synced_at", { ascending: false })
-      .limit(200);
-
-    if (patient.insurance_card_number) {
-      query = query.or(`patient_id.eq.${data.patientId},insurance_card_number.eq.${patient.insurance_card_number}`);
-    } else {
-      query = query.eq("patient_id", data.patientId);
-    }
-
-    const { data: rows, error } = await query;
-    if (error) throw new Error(error.message);
+    const cards = await patientInsuranceCards(db, data.patientId, patient.insurance_card_number);
+    const rows = await phifInvoicesForPatientCards(db, pharmacy_id, data.patientId, cards, 200);
     const counts = await itemCounts(db, (rows ?? []).map((row: any) => row.id));
-    const cardMatches = patient.insurance_card_number
-      ? new Map([[patient.insurance_card_number, data.patientId]])
-      : new Map<string, string>();
+    const cardMatches = new Map(cards.map((card) => [card, data.patientId]));
     return (rows ?? []).map((row: any) => toArchiveRow(row, counts.get(row.id) ?? 0, cardMatches));
   });
 
@@ -828,21 +1083,10 @@ export const getPatientPhifMedicationProfile = createServerFn({ method: "POST" }
     if (patientError) throw new Error(patientError.message);
     if (!patient) return { items: [], nearest_due_date: null, nearest_due_items: [], nearest_due_item_count: 0, due_summaries: [], reconciliation: [] } satisfies PhifMedicationProfile;
 
-    let invoiceQuery = db
-      .from("phif_invoices")
-      .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, patient_id, review_status")
-      .eq("pharmacy_id", pharmacy_id)
-      .order("dispensing_date", { ascending: false, nullsFirst: false })
-      .limit(500);
+    const cards = await patientInsuranceCards(db, data.patientId, patient.insurance_card_number);
 
-    if (patient.insurance_card_number) {
-      invoiceQuery = invoiceQuery.or(`patient_id.eq.${data.patientId},insurance_card_number.eq.${patient.insurance_card_number}`);
-    } else {
-      invoiceQuery = invoiceQuery.eq("patient_id", data.patientId);
-    }
-
-    const [{ data: invoices, error: invoiceError }, { data: manualTransactions, error: txError }] = await Promise.all([
-      invoiceQuery,
+    const [invoices, { data: manualTransactions, error: txError }] = await Promise.all([
+      phifInvoicesForPatientCards(db, pharmacy_id, data.patientId, cards, 500),
       db
         .from("dispensing_transactions")
         .select("id, dispensing_date, transaction_type, items_dispensed, items_remaining, notes, is_cancelled")
@@ -851,7 +1095,6 @@ export const getPatientPhifMedicationProfile = createServerFn({ method: "POST" }
         .order("dispensing_date", { ascending: false })
         .limit(500),
     ]);
-    if (invoiceError) throw new Error(invoiceError.message);
     if (txError) throw new Error(txError.message);
 
     const invoiceIds = (invoices ?? []).map((invoice: any) => invoice.id);
