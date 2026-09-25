@@ -50,14 +50,28 @@ export type PatientStatusRow = {
   next_due_date: string | null;
   remaining_days: number | null;
   active_tracks_count: number;
+  active_tracks?:
+    | {
+        id?: string;
+        next_due_date: string | null;
+        remaining_days?: number | null;
+        status: string;
+        source?: "manual" | "phif" | "manual+phif";
+        phif_item_count?: number;
+      }[]
+    | null;
   tracks:
     | { 
         id?: string; 
         next_due_date: string | null; 
         remaining_days?: number | null; 
         status: string;
+        source?: "manual" | "phif" | "manual+phif";
+        phif_item_count?: number;
       }[]
     | null;
+  phif_due_summaries?: { next_due_date: string; item_count: number; days_until_due: number | null }[];
+  phif_nearest_due_item_count?: number;
   last_pharmacy_id: string | null;
   last_pharmacy_name: string | null;
   last_dispensing_date: string | null;

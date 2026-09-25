@@ -104,11 +104,11 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
 
   const visibleTracks = (row.tracks ?? [])
     .map((track) => ({ track, days: trackRemainingDays(track) }))
-    .filter((t) => t.days !== null) as { track: unknown; days: number }[];
+    .filter((t) => t.days !== null) as { track: { source?: string; phif_item_count?: number }; days: number }[];
 
   const daysNode = row.is_follow_up_suspended ? null : visibleTracks.length > 0 ? (
     <div className="mt-2 space-y-1">
-      {visibleTracks.slice(0, 2).map(({ days }, i) => {
+      {visibleTracks.slice(0, 3).map(({ track, days }, i) => {
         let colorClass = "text-emerald-700 dark:text-emerald-400"; // Default green/turquoise
         let fontClass = "font-extrabold text-sm";
         
@@ -127,11 +127,12 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
               {days === 0 ? "مستحق اليوم" : 
                days < 0 ? `متأخر ${Math.abs(days)} ${Math.abs(days) === 1 ? "يوم" : "أيام"}` :
                `متبقي ${days} ${days === 1 ? "يوم" : "يومًا"}`}
+              {track.source?.includes("phif") && track.phif_item_count ? ` · PHIF (${track.phif_item_count})` : ""}
             </span>
           </div>
         );
       })}
-      {visibleTracks.length > 2 && (
+      {visibleTracks.length > 3 && (
         <div className="text-[11px] text-muted-foreground font-medium pr-6">
           + مواعيد إضافية
         </div>

@@ -124,7 +124,15 @@ export type PhifMedicationProfile = {
   items: PhifMedicationProfileItem[];
   nearest_due_date: string | null;
   nearest_due_items: string[];
+  nearest_due_item_count: number;
+  due_summaries: PhifDueSummary[];
   reconciliation: PhifDispensingReconciliationRow[];
+};
+
+export type PhifDueSummary = {
+  next_due_date: string;
+  item_count: number;
+  days_until_due: number | null;
 };
 
 async function requireTiryaqPhifArchiveAccess() {
@@ -321,12 +329,31 @@ export function buildPhifMedicationProfileFromRows(
         .map((item) => medicationDisplayName(item) || "صنف PHIF")
     : [];
 
+  const dueSummaries = buildPhifDueSummaries(profileItems);
+
   return {
     items: profileItems,
     nearest_due_date: nearestDueDate,
     nearest_due_items: nearestDueItems,
+    nearest_due_item_count: nearestDueItems.length,
+    due_summaries: dueSummaries,
     reconciliation: buildPhifManualReconciliation(invoices, manualTransactions),
   };
+}
+
+export function buildPhifDueSummaries(items: { next_due_date?: string | null }[]): PhifDueSummary[] {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    if (!item.next_due_date) continue;
+    counts.set(item.next_due_date, (counts.get(item.next_due_date) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([next_due_date, item_count]) => ({
+      next_due_date,
+      item_count,
+      days_until_due: daysUntil(next_due_date),
+    }));
 }
 
 function medicationDisplayName(item: { active_ingredient?: string | null; strength?: string | null }) {
@@ -790,7 +817,7 @@ export const getPatientPhifMedicationProfile = createServerFn({ method: "POST" }
     const { pharmacy_id } = await requireTiryaqPhifArchiveAccess();
     const db = supabaseAdmin as any;
     if (!(await authorizePatientForSessionPharmacy(db, pharmacy_id, data.patientId))) {
-      return { items: [], nearest_due_date: null, nearest_due_items: [], reconciliation: [] } satisfies PhifMedicationProfile;
+      return { items: [], nearest_due_date: null, nearest_due_items: [], nearest_due_item_count: 0, due_summaries: [], reconciliation: [] } satisfies PhifMedicationProfile;
     }
 
     const { data: patient, error: patientError } = await db
@@ -799,7 +826,7 @@ export const getPatientPhifMedicationProfile = createServerFn({ method: "POST" }
       .eq("id", data.patientId)
       .maybeSingle();
     if (patientError) throw new Error(patientError.message);
-    if (!patient) return { items: [], nearest_due_date: null, nearest_due_items: [], reconciliation: [] } satisfies PhifMedicationProfile;
+    if (!patient) return { items: [], nearest_due_date: null, nearest_due_items: [], nearest_due_item_count: 0, due_summaries: [], reconciliation: [] } satisfies PhifMedicationProfile;
 
     let invoiceQuery = db
       .from("phif_invoices")

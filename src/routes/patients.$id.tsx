@@ -357,7 +357,8 @@ function Detail() {
               <strong>سبب التعليق:</strong> {patient.follow_up_suspension_reason}
             </div>
           )}
-          {(dueTracks ?? []).slice(0, 2).map((track, idx) => (
+          <Stat label="آخر تاريخ صرف" value={fmtDate(status?.last_dispensing_date)} />
+          {(dueTracks ?? []).slice(0, 3).map((track, idx) => (
             <div key={track.id} className="grid grid-cols-2 gap-3 text-sm border-b pb-3 last:border-0 last:pb-0">
               <Stat label={idx === 0 ? "أقرب استحقاق" : "موعد إضافي"} value={track.next_due_date} />
               <Stat
@@ -378,9 +379,9 @@ function Detail() {
             </div>
           ))}
           
-          {dueTracks && dueTracks.length > 2 && (
+          {dueTracks && dueTracks.length > 3 && (
             <div className="text-xs text-center text-muted-foreground bg-muted/50 py-1 rounded">
-              +{dueTracks.length - 2} مواعيد استحقاق أخرى نشطة
+              +{dueTracks.length - 3} مواعيد استحقاق أخرى نشطة
             </div>
           )}
 
@@ -393,6 +394,11 @@ function Detail() {
         </div>
 
         <div className="space-y-2 pt-2">
+          {hasTiryaqPhifAccess && (phifMedicationProfile?.items?.length ?? 0) > 0 && (
+            <div className="rounded-md border border-cyan-200 bg-cyan-50 p-2 text-xs text-cyan-900">
+              توجد فواتير PHIF محفوظة لهذا المستفيد. استخدم "تم الصرف" فقط عند وجود صرف يدوي جديد غير مسجل في PHIF.
+            </div>
+          )}
           <Button
             className="w-full h-14 text-base"
             onClick={() => setDispenseOpen(true)}
@@ -414,7 +420,9 @@ function Detail() {
                 </div>
                 <Badge
                   className={`border-0 ${
-                    h.is_cancelled
+                    h.source === "phif"
+                      ? "bg-cyan-700 text-white"
+                      : h.is_cancelled
                       ? "bg-slate-500 text-white"
                       : h.transaction_type === "Partial"
                       ? "bg-info text-info-foreground"
@@ -423,7 +431,9 @@ function Detail() {
                       : "bg-success text-success-foreground"
                   }`}
                 >
-                  {h.is_cancelled
+                  {h.source === "phif"
+                    ? "PHIF"
+                    : h.is_cancelled
                     ? "ملغاة"
                     : h.transaction_type === "Partial"
                     ? "صرف جزئي"
@@ -435,7 +445,7 @@ function Detail() {
                   <Building2 className="h-3.5 w-3.5 inline ml-1 text-muted-foreground" />
                   {h.pharmacies?.name ?? "—"}
                 </div>
-                {!h.is_cancelled && (
+                {h.source !== "phif" && !h.is_cancelled && (
                   <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => {
                     setSelectedTx(h);
                     setEditDispenseOpen(true);
@@ -446,6 +456,18 @@ function Detail() {
               </div>
               {h.notes && (
                 <div className="text-xs text-muted-foreground mt-1 pr-20">{h.notes}</div>
+              )}
+              {h.source === "phif" && h.invoice_id && (
+                <div className="mt-1 pr-20 text-xs">
+                  <Link to="/phif-invoices/$id" params={{ id: h.invoice_id }} className="font-semibold text-cyan-700 hover:underline">
+                    فتح فاتورة PHIF {h.invoice_number || h.invoice_key || ""}
+                  </Link>
+                  {h.reconciliation_status === "needs_review" && (
+                    <Badge variant="outline" className="mr-2 text-[10px] border-warning text-warning">
+                      يحتاج مراجعة ازدواج
+                    </Badge>
+                  )}
+                </div>
               )}
               {h.is_cancelled && h.cancellation_reason && (
                 <div className="text-[10px] text-destructive italic mt-0.5 pr-20">سبب الإلغاء: {h.cancellation_reason}</div>
@@ -717,7 +739,7 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
         <div className="rounded-lg border bg-muted/30 p-3 text-sm">
           <div className="text-xs text-muted-foreground">أقرب استحقاق PHIF</div>
           <div className="mt-1 font-semibold">
-            {fmtDate(profile.nearest_due_date)} - {profile.nearest_due_items?.join("، ") || "أصناف مستحقة"}
+            {fmtDate(profile.nearest_due_date)} - {profile.nearest_due_item_count ?? profile.nearest_due_items?.length ?? 0} صنف
           </div>
         </div>
       )}

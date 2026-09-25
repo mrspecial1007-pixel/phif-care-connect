@@ -10,9 +10,11 @@ import {
   phifInvoiceItemDedupeKey,
 } from "@/lib/phif-sync.functions";
 import {
+  buildPhifDueSummaries,
   buildPhifMedicationProfileFromRows,
   phifMedicationIdentityKey,
 } from "@/lib/phif-invoices.functions";
+import { buildPhifHistoryRows, mergeDueTracks } from "@/lib/reads.functions";
 
 function readProjectFile(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -179,6 +181,85 @@ describe("PHIF sync foundation", () => {
     expect(profile.items.map((item) => item.next_due_date).sort()).toEqual(["2026-09-29", "2026-10-08"]);
     expect(profile.nearest_due_date).toBe("2026-09-29");
     expect(profile.nearest_due_items).toEqual(["Metformin 500 mg"]);
+    expect(profile.nearest_due_item_count).toBe(1);
+    expect(profile.due_summaries.map((due) => due.next_due_date)).toEqual(["2026-09-29", "2026-10-08"]);
+  });
+
+  it("groups PHIF due summaries by unique due date instead of listing every item", () => {
+    const summaries = buildPhifDueSummaries([
+      { next_due_date: "2026-10-22" },
+      { next_due_date: "2026-10-22" },
+      { next_due_date: "2026-10-30" },
+      { next_due_date: null },
+    ]);
+
+    expect(summaries.map((due) => [due.next_due_date, due.item_count])).toEqual([
+      ["2026-10-22", 2],
+      ["2026-10-30", 1],
+    ]);
+  });
+
+  it("keeps manual and PHIF movements separate even when their due date is grouped for display", () => {
+    const mergedDue = mergeDueTracks(
+      [{ id: "manual-track", next_due_date: "2026-10-22", status: "Waiting" }],
+      [{ next_due_date: "2026-10-22", item_count: 3, days_until_due: 27 }],
+    );
+
+    expect(mergedDue).toHaveLength(1);
+    expect(mergedDue[0]).toMatchObject({
+      id: "manual-track",
+      next_due_date: "2026-10-22",
+      source: "manual+phif",
+      phif_item_count: 3,
+    });
+
+    const phifRows = buildPhifHistoryRows(
+      {
+        reconciliation: [],
+        items: [
+          {
+            identity_key: "a",
+            movements: [
+              {
+                invoice_id: "invoice-1",
+                invoice_key: "INV-1",
+                invoice_number: "4336548",
+                dispensing_date: "2026-09-24",
+                active_ingredient: "Amlodipine",
+                strength: "5MG",
+                brand: null,
+                quantity: 30,
+                source_classification: "phif-supplier",
+              },
+            ],
+          },
+          {
+            identity_key: "b",
+            movements: [
+              {
+                invoice_id: "invoice-1",
+                invoice_key: "INV-1",
+                invoice_number: "4336548",
+                dispensing_date: "2026-09-24",
+                active_ingredient: "Atorvastatin",
+                strength: "20MG",
+                brand: "Lipover",
+                quantity: 28,
+                source_classification: "actual-supplier",
+              },
+            ],
+          },
+        ],
+      },
+      "tiryaq",
+      "صيدلية الترياق الشافي",
+    );
+
+    expect(phifRows).toHaveLength(1);
+    expect(phifRows[0].source).toBe("phif");
+    expect(phifRows[0].items_dispensed).toBe(2);
+    expect(phifRows[0].phif_items).toHaveLength(2);
+    expect(phifRows[0].invoice_number).toBe("4336548");
   });
 
   it("keeps repeated PHIF movements under one item and flags repeats under 28 days", () => {
@@ -411,6 +492,32 @@ describe("PHIF sync foundation", () => {
     expect(patientRoute).toContain("getPatientPhifMedicationProfile");
     expect(patientRoute).toContain("الملف الدوائي PHIF");
     expect(patientRoute).toContain("فواتير PHIF");
+  });
+
+  it("unifies PHIF invoice reads with dispensing displays without creating manual dispensing rows", () => {
+    const readsSource = readProjectFile("src/lib/reads.functions.ts");
+    const patientCard = readProjectFile("src/components/PatientCard.tsx");
+    const patientRoute = readProjectFile("src/routes/patients.$id.tsx");
+
+    expect(readsSource).toContain("TIRYAQ_PHARMACY_NAME");
+    expect(readsSource).toContain("loadPhifStatusProfiles");
+    expect(readsSource).toContain("mergeDueTracks");
+    expect(readsSource).toContain("source: \"phif\"");
+    expect(readsSource).toContain("phifRowsByInvoice");
+    expect(readsSource).toContain('.from("phif_invoices")');
+    expect(readsSource).toContain('.from("phif_invoice_items")');
+    expect(readsSource).not.toContain('.from("dispensing_transactions").insert');
+    expect(readsSource).not.toContain('.from("dispensing_due_tracks").insert');
+    expect(readsSource).not.toContain('.from("dispensing_cycles").insert');
+
+    expect(patientCard).toContain("phif_item_count");
+    expect(patientCard).toContain("slice(0, 3)");
+    expect(patientRoute).toContain('h.source === "phif"');
+    expect(patientRoute).toContain("فتح فاتورة PHIF");
+    expect(patientRoute).toContain("يحتاج مراجعة ازدواج");
+    expect(patientRoute).toContain("صرف يدوي جديد غير مسجل في PHIF");
+    expect(patientRoute).toContain("nearest_due_item_count");
+    expect(patientRoute).not.toContain("profile.nearest_due_items?.join");
   });
 
   it("renders PHIF invoice and medication profile with mobile-first review UI", () => {
