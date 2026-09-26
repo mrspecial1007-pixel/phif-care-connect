@@ -532,7 +532,7 @@ function Detail() {
       )}
 
       {hasTiryaqPhifAccess && (
-        <PhifMedicationProfileCard profile={phifMedicationProfile} />
+        <CompactPhifMedicationProfileCard profile={phifMedicationProfile} />
       )}
 
       {hasTiryaqPhifAccess && (
@@ -879,6 +879,115 @@ function InsuranceCardsPanel({
         </Button>
       </div>
     </div>
+  );
+}
+
+function CompactPhifMedicationProfileCard({ profile }: { profile: any }) {
+  const items = profile?.items ?? [];
+  const reconciliation = profile?.reconciliation ?? [];
+  return (
+    <Card className="p-3">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+          <h2 className="min-w-0 text-sm font-semibold">
+            الملف الدوائي - PHIF · {items.length} أصناف
+            {profile?.nearest_due_date ? ` · أقرب استحقاق ${fmtDate(profile.nearest_due_date)}` : ""}
+          </h2>
+          <Badge variant="secondary" className="group-open:hidden">عرض التفاصيل</Badge>
+          <Badge variant="outline" className="hidden group-open:inline-flex">إخفاء التفاصيل</Badge>
+        </summary>
+
+        <div className="mt-3 space-y-3">
+          <div className="space-y-2">
+            {items.map((item: any) => (
+              <details
+                key={item.identity_key}
+                className={`group/item rounded-lg border p-2.5 ${item.needs_review ? "border-warning/30 bg-warning/10" : "bg-background"}`}
+              >
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="whitespace-normal break-words text-sm font-semibold leading-snug text-slate-950 [overflow-wrap:anywhere]" dir="ltr">
+                      {phifMedicationName(item)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      آخر صرف: {fmtDate(item.latest_dispensing_date)} · الكمية: {item.latest_quantity === null ? "—" : String(item.latest_quantity)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      الاستحقاق: {fmtDate(item.next_due_date)} · {formatDueDelta(item.days_until_due)}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {item.needs_review && <Badge className="border-0 bg-warning text-warning-foreground">مراجعة</Badge>}
+                    <span className="text-xs text-muted-foreground transition-transform group-open/item:rotate-90">‹</span>
+                  </div>
+                </summary>
+
+                <div className="mt-3 space-y-2 border-t pt-2">
+                  {item.review_reasons?.length > 0 && (
+                    <div className="text-xs text-warning">{item.review_reasons.join("، ")}</div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+                    <Stat label="آخر صرف PHIF" value={fmtDate(item.latest_dispensing_date)} />
+                    <Stat label="الاستحقاق القادم" value={fmtDate(item.next_due_date)} />
+                    <Stat
+                      label="الأيام"
+                      value={formatDueDelta(item.days_until_due)}
+                      tone={item.days_until_due === null ? "muted" : item.days_until_due < 0 ? "danger" : item.days_until_due <= 3 ? "warning" : "muted"}
+                    />
+                    <Stat label="الكمية" value={item.latest_quantity === null ? "—" : String(item.latest_quantity)} />
+                  </div>
+
+                  <details>
+                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground">حركات الصرف والفواتير الأصلية</summary>
+                    <div className="mt-2 space-y-2">
+                      {item.movements.map((movement: any) => (
+                        <Link
+                          key={`${item.identity_key}-${movement.invoice_id}-${movement.dispensing_date}`}
+                          to="/phif-invoices/$id"
+                          params={{ id: movement.invoice_id }}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background p-2 text-xs hover:bg-accent/50"
+                        >
+                          <span className="font-medium">{movement.invoice_number || movement.invoice_key}</span>
+                          <span className="text-muted-foreground">{fmtDate(movement.dispensing_date)}</span>
+                          <span className="text-muted-foreground" dir="ltr">{phifMovementName(movement)}</span>
+                          <span className="text-muted-foreground">كمية: {movement.quantity ?? "—"}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              </details>
+            ))}
+
+            {items.length === 0 && (
+              <div className="py-4 text-center text-sm text-muted-foreground">لا توجد أصناف PHIF مرتبطة بهذا المستفيد بعد</div>
+            )}
+          </div>
+
+          <div className="border-t pt-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold">معاينة التسوية مع الصرف اليدوي</h3>
+              <Badge variant="outline">{reconciliation.length}</Badge>
+            </div>
+            <div className="space-y-2">
+              {reconciliation.slice(0, 8).map((row: any, index: number) => (
+                <div key={`${row.kind}-${index}`} className="rounded-md border p-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Badge variant="secondary">{reconciliationLabel(row.kind)}</Badge>
+                    <span className="text-muted-foreground">يدوي: {fmtDate(row.manual_date)} / PHIF: {fmtDate(row.phif_date)}</span>
+                  </div>
+                  <div className="mt-1 text-muted-foreground">{row.reason}</div>
+                </div>
+              ))}
+              {reconciliation.length === 0 && (
+                <div className="py-2 text-center text-xs text-muted-foreground">لا توجد بيانات كافية لمعاينة التسوية</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </details>
+    </Card>
   );
 }
 

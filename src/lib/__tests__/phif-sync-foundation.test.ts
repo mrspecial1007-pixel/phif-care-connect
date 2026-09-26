@@ -605,18 +605,21 @@ describe("PHIF sync foundation", () => {
     const detailRoute = readProjectFile("src/routes/phif-invoices.$id.tsx");
     const patientRoute = readProjectFile("src/routes/patients.$id.tsx");
 
-    expect(detailRoute).toContain("InvoiceItemCard");
-    expect(detailRoute).toContain("SourceBadge");
-    expect(detailRoute).toContain("مورد PHIF");
+    expect(detailRoute).toContain("SourceLabel");
+    expect(detailRoute).toContain("itemNameWithStrength");
+    expect(detailRoute).toContain("min-w-[620px]");
+    expect(detailRoute).toContain("التأمين");
     expect(detailRoute).toContain("المورد الفعلي");
     expect(detailRoute).toContain("طباعة الفاتورة");
     expect(detailRoute).toContain("تفاصيل إضافية");
     expect(detailRoute).toContain("print:hidden");
     expect(detailRoute).toContain("formatMoney");
 
+    expect(patientRoute).toContain("CompactPhifMedicationProfileCard");
     expect(patientRoute).toContain("phifMedicationName");
     expect(patientRoute).toContain("phifMovementName");
-    expect(patientRoute).toContain("مطابقة الصنف تحتاج مراجعة");
+    expect(patientRoute).toContain("آخر صرف:");
+    expect(patientRoute).toContain("الاستحقاق:");
     expect(patientRoute).toContain("<details");
     expect(patientRoute).not.toContain("item.brand || item.active_ingredient");
   });

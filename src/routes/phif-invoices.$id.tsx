@@ -6,24 +6,16 @@ import { Gate } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { getPhifInvoiceDetail } from "@/lib/phif-invoices.functions";
 import {
   ArrowRight,
-  CheckCircle2,
+  Calendar,
   Clock,
   Copy,
-  CreditCard,
   Package,
   Printer,
   ReceiptText,
   UserRound,
-  WalletCards,
 } from "lucide-react";
 
 export const Route = createFileRoute("/phif-invoices/$id")({
@@ -65,101 +57,106 @@ function PhifInvoiceDetailPage() {
   const summary = invoiceFinancialSummary(invoice.items);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 pb-20 print:max-w-none print:pb-0" dir="rtl">
+    <div className="mx-auto max-w-5xl space-y-3 pb-20 print:max-w-none print:pb-0 print:text-slate-950" dir="rtl">
       <PageActions />
 
-      <Card className="overflow-hidden border-cyan-100 bg-gradient-to-br from-white via-cyan-50/40 to-white p-3 shadow-sm print:shadow-none">
-        <div className="grid gap-3 md:grid-cols-[1fr_240px] md:items-start">
-          <div className="min-w-0 space-y-3">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <UserRound className="h-4 w-4 text-cyan-700" />
+      <Card className="border-cyan-100 bg-white p-3 shadow-sm print:border-slate-200 print:shadow-none">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <UserRound className="h-3.5 w-3.5 text-cyan-700" />
               المستفيد
             </div>
-            <h1 className="break-words text-xl font-bold leading-tight text-slate-950">
+            <h1 className="break-words text-base font-bold leading-snug text-slate-950 sm:text-lg">
               {invoice.beneficiary_name || "مستفيد غير معروف"}
             </h1>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <CopyField label="رقم البطاقة" value={invoice.insurance_card_number || "غير متوفر"} />
-              <CopyField label="مفتاح الفاتورة" value={invoice.invoice_key} />
-            </div>
+            <CopyField compact label="رقم البطاقة" value={invoice.insurance_card_number || "غير متوفر"} />
           </div>
 
-          <div className="rounded-xl border border-cyan-100 bg-white/80 p-3 md:text-left print:border-slate-200">
-            <div className="flex items-center justify-between gap-2 md:flex-row-reverse">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <ReceiptText className="h-4 w-4 text-cyan-800" />
-                فاتورة PHIF
-              </div>
-              <MatchBadge matched={invoice.match_status === "matched"} />
-            </div>
-            <div className="mt-2 break-words text-3xl font-black tracking-normal text-slate-950" dir="ltr">
-              {invoice.invoice_number || invoice.invoice_key}
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <IconMetric icon={<CreditCard className="h-4 w-4" />} label="تاريخ الصرف" value={formatDate(invoice.dispensing_date)} />
-              <IconMetric icon={<Clock className="h-4 w-4" />} label="وقت الصرف" value={invoice.dispensing_time || "غير متوفر"} dir="ltr" />
-            </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <ReceiptText className="h-4 w-4 text-cyan-800" />
+            <span className="text-sm font-semibold">فاتورة PHIF</span>
+            <MatchBadge matched={invoice.match_status === "matched"} />
           </div>
         </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 border-t pt-3">
+          <HeaderMetric icon={<ReceiptText className="h-3.5 w-3.5" />} label="رقم الفاتورة" value={invoice.invoice_number || invoice.invoice_key} />
+          <HeaderMetric icon={<Calendar className="h-3.5 w-3.5" />} label="تاريخ الصرف" value={formatDate(invoice.dispensing_date)} />
+          <HeaderMetric icon={<Clock className="h-3.5 w-3.5" />} label="وقت الصرف" value={invoice.dispensing_time || "غير متوفر"} dir="ltr" />
+        </div>
+
+        <details className="mt-2 rounded-lg border bg-slate-50/60 px-3 py-2 print:hidden">
+          <summary className="cursor-pointer text-xs font-semibold text-slate-700">تفاصيل إضافية</summary>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <CopyField compact label="مفتاح الفاتورة" value={invoice.invoice_key} />
+            <Info label="حالة PHIF" value={invoice.status || "غير متوفرة"} />
+            <Info label="تاريخ الحفظ" value={formatDateTime(invoice.synced_at)} />
+            <Info label="حالة المراجعة" value={invoice.review_status || "غير متوفرة"} />
+          </div>
+        </details>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard label="عدد الأصناف" value={`${invoice.items.length} صنف`} icon={<Package className="h-5 w-5" />} />
-        <SummaryCard label="إجمالي الفاتورة" value={formatMoney(summary.total)} tone="blue" icon={<WalletCards className="h-5 w-5" />} />
-        <SummaryCard label="مبلغ التأمين" value={formatMoney(summary.insurance)} tone="green" icon={<CheckCircle2 className="h-5 w-5" />} />
-        <SummaryCard label="خارج التأمين" value={formatMoney(summary.outside)} tone="red" icon={<WalletCards className="h-5 w-5" />} />
-      </div>
-
-      <Card className="p-4 shadow-sm print:shadow-none">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <Card className="p-3 shadow-sm print:shadow-none">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-cyan-900" />
-            <h2 className="text-lg font-bold">الأصناف المصروفة</h2>
+            <Package className="h-4 w-4 text-cyan-900" />
+            <h2 className="text-base font-bold">الأصناف المصروفة</h2>
           </div>
           <Badge variant="secondary">{invoice.items.length} أصناف</Badge>
         </div>
 
         {invoice.items.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
             لا توجد أصناف محفوظة لهذه الفاتورة.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2 md:hidden">
-            {invoice.items.map((item, index) => (
-              <InvoiceItemCard key={item.id} item={item} index={index} />
-            ))}
-          </div>
-        )}
-
-        {invoice.items.length > 0 && (
-          <div className="hidden overflow-hidden rounded-xl border md:block">
-            <table className="w-full border-collapse text-sm">
+          <div className="overflow-x-auto rounded-lg border print:overflow-visible">
+            <table className="w-full min-w-[620px] table-fixed border-collapse text-xs sm:text-sm print:min-w-0">
+              <colgroup>
+                <col className="w-[52%]" />
+                <col className="w-[12%]" />
+                <col className="w-[18%]" />
+                <col className="w-[18%]" />
+              </colgroup>
               <thead className="bg-cyan-50/60 text-muted-foreground">
                 <tr>
-                  <th className="w-14 border-b p-3 text-right">#</th>
-                  <th className="border-b p-3 text-right">الاسم العلمي / التجاري</th>
-                  <th className="border-b p-3 text-right">التركيز</th>
-                  <th className="border-b p-3 text-right">الكمية</th>
-                  <th className="border-b p-3 text-right">المصدر</th>
-                  <th className="border-b p-3 text-right">المبلغ</th>
+                  <th className="border-b p-2 text-right">الصنف</th>
+                  <th className="border-b p-2 text-center">الكمية</th>
+                  <th className="border-b p-2 text-center">المصدر</th>
+                  <th className="border-b p-2 text-center">القيمة</th>
                 </tr>
               </thead>
               <tbody>
                 {invoice.items.map((item, index) => (
-                  <tr key={item.id} className="border-b last:border-b-0">
-                    <td className="p-3">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 font-semibold text-cyan-900">
-                        {index + 1}
-                      </span>
+                  <tr key={item.id} className="align-top border-b last:border-b-0">
+                    <td className="p-2">
+                      <div className="flex gap-2">
+                        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-cyan-50 text-xs font-semibold text-cyan-900">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="whitespace-normal break-words text-sm font-semibold leading-snug text-slate-950 [overflow-wrap:anywhere]" dir="ltr">
+                            {itemNameWithStrength(item)}
+                          </div>
+                          {item.brand && (
+                            <div className="mt-0.5 whitespace-normal break-words text-xs leading-snug text-muted-foreground [overflow-wrap:anywhere]" dir="ltr">
+                              {item.brand}
+                            </div>
+                          )}
+                          <details className="mt-1 text-[11px] text-muted-foreground print:hidden">
+                            <summary className="cursor-pointer">تفاصيل الصنف</summary>
+                            <div className="mt-1 space-y-0.5">
+                              {item.supplier && <div className="break-words">المورد: <span dir="ltr">{item.supplier}</span></div>}
+                              {item.phif_item_id && <div className="break-words">معرف PHIF: <span dir="ltr">{item.phif_item_id}</span></div>}
+                            </div>
+                          </details>
+                        </div>
+                      </div>
                     </td>
-                    <td className="min-w-0 p-3">
-                      <div className="font-semibold text-slate-950" dir="ltr">{item.active_ingredient || "صنف بدون اسم علمي"}</div>
-                      <ItemSubline item={item} />
-                    </td>
-                    <td className="p-3 font-medium" dir="ltr">{item.strength || "غير متوفر"}</td>
-                    <td className="p-3 font-medium" dir="ltr">{item.quantity ?? "غير متوفر"}</td>
-                    <td className="p-3"><SourceBadge item={item} /></td>
-                    <td className="p-3 font-semibold" dir="ltr">{formatMoney(itemFinancialAmount(item))}</td>
+                    <td className="p-2 text-center font-medium" dir="ltr">{item.quantity ?? "غير متوفر"}</td>
+                    <td className="p-2 text-center"><SourceLabel item={item} /></td>
+                    <td className="p-2 text-center font-semibold" dir="ltr">{formatMoney(itemFinancialAmount(item))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -168,23 +165,26 @@ function PhifInvoiceDetailPage() {
         )}
       </Card>
 
-      <Card className="p-4 print:hidden">
-        <Accordion type="single" collapsible>
-          <AccordionItem value="extra" className="border-0">
-            <AccordionTrigger className="py-0 text-base font-semibold hover:no-underline">
-              تفاصيل إضافية
-            </AccordionTrigger>
-            <AccordionContent className="pt-4">
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <Info label="حالة PHIF" value={invoice.status || "غير متوفرة"} />
-                <Info label="تاريخ الحفظ" value={formatDateTime(invoice.synced_at)} />
-                <Info label="معرّف الفاتورة" value={invoice.id} dir="ltr" />
-                <Info label="حالة المراجعة" value={invoice.review_status || "غير متوفرة"} />
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+      <Card className="p-3 shadow-sm print:shadow-none">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <TotalPanel label="إجمالي الفاتورة" value={summary.total} tone="blue" />
+          <TotalPanel label="مبلغ التأمين" value={summary.insurance} tone="green" />
+          <TotalPanel label="خارج التأمين" value={summary.outside} tone="red" />
+        </div>
       </Card>
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between print:hidden">
+        <Button variant="outline" className="gap-2" onClick={() => window.print()}>
+          <Printer className="h-4 w-4" />
+          طباعة الفاتورة
+        </Button>
+        <Button asChild className="gap-2">
+          <Link to="/phif-invoices">
+            العودة إلى فواتير PHIF
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }
@@ -200,117 +200,49 @@ function PageActions() {
       </Button>
       <Button variant="outline" size="sm" className="gap-2" onClick={() => window.print()}>
         <Printer className="h-4 w-4" />
-        طباعة الفاتورة
+        طباعة
       </Button>
     </div>
   );
 }
 
-function InvoiceItemCard({ item, index }: { item: any; index: number }) {
+function CopyField({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
   return (
-    <div className="min-w-0 rounded-xl border bg-white p-2 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs text-muted-foreground">#{index + 1}</div>
-          <div className="mt-1 break-words text-sm font-bold leading-snug text-slate-950" dir="ltr">
-            {item.active_ingredient || "صنف بدون اسم علمي"}
-          </div>
-          <ItemSubline item={item} />
-        </div>
-        <SourceBadge item={item} />
+    <div className={`flex items-center gap-2 rounded-lg bg-cyan-50/60 ${compact ? "p-2" : "p-3"}`}>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] text-muted-foreground">{label}</div>
+        <div className="mt-0.5 truncate text-sm font-semibold text-slate-950" dir="ltr">{value}</div>
       </div>
-      <div className="mt-2 grid gap-1 text-xs">
-        <MiniMetric label="التركيز" value={item.strength || "غير متوفر"} />
-        <MiniMetric label="الكمية" value={item.quantity === null ? "غير متوفرة" : String(item.quantity)} />
-        <MiniMetric label="المبلغ" value={formatMoney(itemFinancialAmount(item))} />
-      </div>
+      <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => navigator.clipboard?.writeText(value)}>
+        <Copy className="h-3.5 w-3.5" />
+      </Button>
     </div>
   );
 }
 
-function ItemSubline({ item }: { item: any }) {
-  if (item.source_classification === "phif-supplier") {
-    return <div className="mt-1 break-words text-sm text-cyan-800" dir="ltr">{item.supplier || "مورد PHIF"}</div>;
-  }
+function HeaderMetric({ icon, label, value, dir }: { icon: ReactNode; label: string; value: string; dir?: "rtl" | "ltr" }) {
   return (
-    <div className="mt-1 break-words text-sm text-muted-foreground" dir="ltr">
-      {item.brand || "اسم تجاري غير متوفر"}
+    <div className="min-w-0 rounded-lg bg-slate-50 px-2 py-1.5">
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="text-cyan-900">{icon}</span>
+        <span>{label}</span>
+      </div>
+      <div className="mt-0.5 truncate text-sm font-bold text-slate-950" dir={dir ?? "ltr"}>{value}</div>
     </div>
   );
 }
 
-function SourceBadge({ item }: { item: any }) {
+function SourceLabel({ item }: { item: any }) {
   const phif = item.source_classification === "phif-supplier";
   return (
-    <Badge className={`border-0 ${phif ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>
-      {phif ? "مورد PHIF" : item.supplier || "المورد الفعلي"}
-    </Badge>
+    <span className={`inline-flex rounded-md px-2 py-1 text-[11px] font-semibold ${phif ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"}`}>
+      {phif ? "التأمين" : "المورد الفعلي"}
+    </span>
   );
 }
 
-function CopyField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-xl bg-cyan-50/60 p-3">
-      <div className="min-w-0 flex-1">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-1 truncate font-semibold text-slate-950" dir="ltr">{value}</div>
-      </div>
-      <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => navigator.clipboard?.writeText(value)}>
-        <Copy className="h-4 w-4" />
-      </Button>
-    </div>
-  );
-}
-
-function IconMetric({ icon, label, value, dir }: { icon: ReactNode; label: string; value: string; dir?: "rtl" | "ltr" }) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="mt-0.5 text-cyan-900">{icon}</span>
-      <div>
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="font-semibold text-slate-950" dir={dir}>{value}</div>
-      </div>
-    </div>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  icon,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  icon: ReactNode;
-  tone?: "neutral" | "blue" | "green" | "red";
-}) {
-  const toneClass = {
-    neutral: "bg-slate-50 text-slate-900",
-    blue: "bg-blue-50 text-blue-900",
-    green: "bg-emerald-50 text-emerald-900",
-    red: "bg-red-50 text-red-900",
-  }[tone];
-  return (
-    <div className={`rounded-xl border p-4 ${toneClass}`}>
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/70">{icon}</span>
-        <div className="min-w-0">
-          <div className="text-sm text-muted-foreground">{label}</div>
-          <div className="mt-1 truncate text-lg font-bold" dir="ltr">{value}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MiniMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-cyan-50/60 p-2">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="mt-1 truncate font-semibold" dir="ltr">{value}</div>
-    </div>
-  );
+function itemNameWithStrength(item: any) {
+  return [item.active_ingredient || "صنف بدون اسم علمي", item.strength].filter(Boolean).join(" ");
 }
 
 function TotalPanel({ label, value, tone }: { label: string; value: number | null; tone: "blue" | "green" | "red" }) {
@@ -320,17 +252,16 @@ function TotalPanel({ label, value, tone }: { label: string; value: number | nul
     red: "bg-red-50 text-red-700",
   }[tone];
   return (
-    <div className={`rounded-xl p-4 text-center ${toneClass}`}>
-      <div className="text-sm">{label}</div>
-      <div className="mt-1 text-2xl font-black" dir="ltr">{formatMoney(value)}</div>
-      <div className="text-sm">دينار ليبي</div>
+    <div className={`rounded-lg p-3 text-center ${toneClass}`}>
+      <div className="text-xs">{label}</div>
+      <div className="mt-1 text-lg font-black sm:text-xl" dir="ltr">{formatMoney(value)}</div>
     </div>
   );
 }
 
 function MatchBadge({ matched }: { matched: boolean }) {
   return (
-    <Badge className={`border-0 px-3 py-1 text-sm ${matched ? "bg-teal-600 text-white" : "bg-amber-100 text-amber-800"}`}>
+    <Badge className={`border-0 px-2 py-0.5 text-xs ${matched ? "bg-teal-600 text-white" : "bg-amber-100 text-amber-800"}`}>
       {matched ? "مطابق" : "غير مطابق"}
     </Badge>
   );
@@ -338,9 +269,9 @@ function MatchBadge({ matched }: { matched: boolean }) {
 
 function Info({ label, value, dir }: { label: string; value: string; dir?: "rtl" | "ltr" }) {
   return (
-    <div className="rounded-md border bg-background p-3">
+    <div className="rounded-md border bg-background p-2">
       <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-sm font-medium" dir={dir}>
+      <div className="mt-0.5 break-words text-xs font-medium" dir={dir}>
         {value}
       </div>
     </div>

@@ -13,7 +13,7 @@ export function QuickSearchFab() {
   const nav = useNavigate();
   const loc = useLocation();
   const { data: rows } = usePatientStatuses();
-  const hideFab = loc.pathname === "/" || loc.pathname.startsWith("/patients");
+  const hideFab = loc.pathname === "/" || loc.pathname.startsWith("/patients") || loc.pathname.startsWith("/phif-invoices/");
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
