@@ -30,6 +30,7 @@ const createPatientFromInvoiceSchema = cardSchema.extend({
   patient_name: z.string().trim().min(1).max(200).optional(),
   phone: z.string().trim().max(40).optional().nullable(),
   address: z.string().trim().max(500).optional().nullable(),
+  confirm_existing_patient: z.boolean().optional(),
 });
 
 const linkExistingPatientSchema = cardSchema.extend({
@@ -286,15 +287,24 @@ async function requirePatientCardsTable(error: any): Promise<never> {
 }
 
 async function assertCardIsNotOwnedByAnotherPatient(admin: any, card: string, patientId: string) {
+  const owner = await findGlobalPatientByCard(admin, card);
+  if (owner.conflict) {
+    throw new Error("رقم البطاقة مرتبط ببيانات متعارضة ويحتاج مراجعة قبل الربط.");
+  }
+  if (owner.patient_id && owner.patient_id !== patientId) {
+    throw new Error("رقم البطاقة مرتبط بمستفيد آخر ولا يمكن ربطه تلقائيًا.");
+  }
+}
+
+async function findGlobalPatientByCard(admin: any, card: string) {
+  const owners = new Set<string>();
   const { data: cardOwner, error: cardError } = await admin
     .from("patient_insurance_cards")
     .select("patient_id")
     .eq("card_number", card)
     .maybeSingle();
   if (cardError) await requirePatientCardsTable(cardError);
-  if (cardOwner?.patient_id && cardOwner.patient_id !== patientId) {
-    throw new Error("رقم البطاقة مرتبط بمستفيد آخر ولا يمكن ربطه تلقائيًا.");
-  }
+  if (cardOwner?.patient_id) owners.add(cardOwner.patient_id);
 
   const { data: patientOwner, error: patientError } = await admin
     .from("patients")
@@ -302,9 +312,12 @@ async function assertCardIsNotOwnedByAnotherPatient(admin: any, card: string, pa
     .eq("insurance_card_number", card)
     .maybeSingle();
   if (patientError) throw new Error(patientError.message);
-  if (patientOwner?.id && patientOwner.id !== patientId) {
-    throw new Error("رقم البطاقة مستخدم كمفتاح حالي لمستفيد آخر.");
-  }
+  if (patientOwner?.id) owners.add(patientOwner.id);
+
+  return {
+    patient_id: owners.size === 1 ? [...owners][0] : null,
+    conflict: owners.size > 1,
+  };
 }
 
 async function setCurrentPatientInsuranceCard(admin: any, patientId: string, card: string, source: "manual" | "phif_review" = "manual") {
@@ -934,12 +947,39 @@ export const createPatientFromPhifInvoice = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { normalizeArabicName } = await import("@/lib/name-normalize");
+    const { authorizePatientForSessionPharmacy, ensurePatientPharmacyAccess } = await import("@/lib/pharmacy-isolation");
     const { pharmacy_id } = await requireTiryaqPhifArchiveAccess();
     const db = supabaseAdmin as any;
     const card = data.insurance_card_number.trim();
     const invoices = await rowsForReviewCard(db, pharmacy_id, card);
     if (invoices.length === 0) throw new Error("PHIF review case was not found");
-    await assertCardIsNotOwnedByAnotherPatient(db, card, "00000000-0000-0000-0000-000000000000");
+    const existingOwner = await findGlobalPatientByCard(db, card);
+    if (existingOwner.conflict) {
+      return {
+        ok: false as const,
+        needs_review: true as const,
+        message: "رقم البطاقة مرتبط ببيانات متعارضة ويحتاج مراجعة قبل الربط.",
+      };
+    }
+    if (existingOwner.patient_id) {
+      if (await authorizePatientForSessionPharmacy(db, pharmacy_id, existingOwner.patient_id)) {
+        await linkInvoicesForCard(db, pharmacy_id, card, existingOwner.patient_id);
+        return { ok: true as const, patient_id: existingOwner.patient_id as string, linked_invoices: invoices.length, matched: "existing" as const };
+      }
+      if (data.confirm_existing_patient !== true) {
+        return {
+          ok: false as const,
+          needs_existing_patient_confirmation: true as const,
+          message: "رقم البطاقة مسجل مسبقًا لهوية مستفيد موجودة. أكد إضافة هذه الهوية إلى صيدلية الترياق دون إنشاء مستفيد جديد.",
+        };
+      }
+      const accessCreated = await ensurePatientPharmacyAccess(db, pharmacy_id, existingOwner.patient_id, "phif_review");
+      if (!accessCreated) {
+        throw new Error("جدول علاقة المستفيد بالصيدلية غير مطبق بعد. طبّق migration الخاص بـ patient_pharmacy_access أولًا.");
+      }
+      await linkInvoicesForCard(db, pharmacy_id, card, existingOwner.patient_id);
+      return { ok: true as const, patient_id: existingOwner.patient_id as string, linked_invoices: invoices.length, matched: "existing_added_to_pharmacy" as const };
+    }
 
     const { data: existing } = await db
       .from("patients")
@@ -962,6 +1002,11 @@ export const createPatientFromPhifInvoice = createServerFn({ method: "POST" })
       .single();
     if (error || !inserted) throw new Error(error?.message ?? "Failed to create patient");
 
+    const accessCreated = await ensurePatientPharmacyAccess(db, pharmacy_id, inserted.id, "phif_review");
+    if (!accessCreated) {
+      await db.from("patients").delete().eq("id", inserted.id);
+      throw new Error("جدول علاقة المستفيد بالصيدلية غير مطبق بعد. طبّق migration الخاص بـ patient_pharmacy_access أولًا.");
+    }
     await setCurrentPatientInsuranceCard(db, inserted.id, card, "phif_review");
     await linkInvoicesForCard(db, pharmacy_id, card, inserted.id);
     return { ok: true as const, patient_id: inserted.id as string, linked_invoices: invoices.length };

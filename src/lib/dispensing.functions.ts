@@ -240,6 +240,7 @@ export const upsertPatient = createServerFn({ method: "POST" })
     const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
     const { writeAudit } = await import("@/lib/audit.server");
     const { normalizeArabicName } = await import("@/lib/name-normalize");
+    const { ensurePatientPharmacyAccess } = await import("@/lib/pharmacy-isolation");
     const { getRequestIP } = await import("@tanstack/react-start/server");
 
     const { pharmacy_id } = await requirePharmacySession();
@@ -257,6 +258,7 @@ export const upsertPatient = createServerFn({ method: "POST" })
         if (!(await authorizePatientForPharmacy(supabaseAdmin, pharmacy_id, existing.id))) {
           return { ok: false as const, error: "patient_not_found" };
         }
+        await ensurePatientPharmacyAccess(supabaseAdmin, pharmacy_id, existing.id, "manual");
         return { ok: true as const, id: existing.id, matched: "card" as const };
       }
     }
@@ -287,6 +289,11 @@ export const upsertPatient = createServerFn({ method: "POST" })
 
     const { data: inserted, error } = await supabaseAdmin.from("patients").insert(payload).select("id").single();
     if (error || !inserted) return { ok: false as const, error: error?.message ?? "insert_failed" };
+    const accessCreated = await ensurePatientPharmacyAccess(supabaseAdmin, pharmacy_id, inserted.id, "manual");
+    if (!accessCreated) {
+      await supabaseAdmin.from("patients").delete().eq("id", inserted.id);
+      return { ok: false as const, error: "patient_pharmacy_access_missing" };
+    }
     await writeAudit({ pharmacy_id, action: "create_patient", entity: "patient", entity_id: inserted.id, after: payload, ip });
     return { ok: true as const, id: inserted.id, matched: "created" as const };
   });

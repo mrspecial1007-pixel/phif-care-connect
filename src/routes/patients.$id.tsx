@@ -886,14 +886,20 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
   const items = profile?.items ?? [];
   const reconciliation = profile?.reconciliation ?? [];
   return (
-    <Card className="p-4 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <Card className="p-3">
+      <details className="group">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-semibold">الملف الدوائي PHIF</h2>
-          <p className="text-xs text-muted-foreground">دورات مستقلة لكل صنف اعتمادًا على تاريخ صرف PHIF</p>
+          <p className="text-xs text-muted-foreground">
+            {items.length} صنف{profile?.nearest_due_date ? ` · أقرب استحقاق ${fmtDate(profile.nearest_due_date)}` : ""}
+          </p>
         </div>
-        <Badge variant="secondary">{items.length} صنف</Badge>
-      </div>
+        <Badge variant="secondary" className="group-open:hidden">عرض التفاصيل</Badge>
+        <Badge variant="outline" className="hidden group-open:inline-flex">إخفاء التفاصيل</Badge>
+      </summary>
+
+      <div className="mt-4 space-y-4">
 
       {profile?.nearest_due_date && (
         <div className="rounded-lg border bg-muted/30 p-3 text-sm">
@@ -906,18 +912,18 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
 
       <div className="space-y-3">
         {items.map((item: any) => (
-          <div key={item.identity_key} className="rounded-lg border p-3">
+          <div key={item.identity_key} className="rounded-lg border p-2">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="font-semibold" dir="ltr">{phifMedicationName(item)}</div>
+                <div className="text-sm font-semibold" dir="ltr">{phifMedicationName(item)}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {[item.active_ingredient, item.strength, item.dosage_form].filter(Boolean).join(" · ") || "بيانات الصنف غير مكتملة"}
                 </div>
               </div>
-              {item.needs_review && <Badge className="border-0 bg-warning text-warning-foreground">يحتاج مراجعة</Badge>}
+              {item.needs_review && <Badge className="border-0 bg-warning text-warning-foreground">مطابقة الصنف تحتاج مراجعة</Badge>}
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
               <Stat label="آخر صرف PHIF" value={fmtDate(item.latest_dispensing_date)} />
               <Stat label="الاستحقاق القادم" value={fmtDate(item.next_due_date)} />
               <Stat
@@ -930,12 +936,13 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
 
             {item.review_reasons?.length > 0 && (
               <div className="mt-2 rounded-md bg-warning/10 p-2 text-xs text-warning">
-                {item.review_reasons.join("، ")}
+                مطابقة الصنف تحتاج مراجعة ولا تعني أن الفاتورة غير صحيحة. {item.review_reasons.join("، ")}
               </div>
             )}
 
-            <div className="mt-3 space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">حركات الصرف والفواتير الأصلية</div>
+            <details className="mt-3">
+              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">حركات الصرف والفواتير الأصلية</summary>
+              <div className="mt-2 space-y-2">
               {item.movements.map((movement: any) => (
                 <Link
                   key={`${item.identity_key}-${movement.invoice_id}-${movement.dispensing_date}`}
@@ -949,7 +956,8 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
                   <span className="text-muted-foreground">كمية: {movement.quantity ?? "—"}</span>
                 </Link>
               ))}
-            </div>
+              </div>
+            </details>
           </div>
         ))}
 
@@ -978,6 +986,8 @@ function PhifMedicationProfileCard({ profile }: { profile: any }) {
           )}
         </div>
       </div>
+      </div>
+      </details>
     </Card>
   );
 }

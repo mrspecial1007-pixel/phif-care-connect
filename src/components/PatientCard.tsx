@@ -14,6 +14,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { daysUntilDate } from "@/lib/date";
 
+const TIRYAQ_PHARMACY_NAME = "صيدلية الترياق الشافي";
+
 function trackRemainingDays(track: {
   next_due_date?: string | null;
   remaining_days?: number | null;
@@ -43,7 +45,7 @@ export function statusMeta(row: PatientStatusRow) {
   }
   
   if (row.current_cycle_status === "Waiting")
-    return { key: "waiting", label: "بانتظار الصرف", color: "bg-success text-success-foreground" };
+    return { key: "waiting", label: row.phif_due_summaries?.length ? "موعد استحقاق قادم" : "بانتظار الصرف", color: "bg-success text-success-foreground" };
   
   return { key: "ok", label: "مكتمل", color: "bg-secondary text-secondary-foreground" };
 }
@@ -69,6 +71,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
   const [remOpen, setRemOpen] = useState(false);
   const { data: session } = useSession();
   const isPartial = row.current_cycle_status === "Partial";
+  const isTiryaq = session?.pharmacy?.name === TIRYAQ_PHARMACY_NAME;
   const qc = useQueryClient();
   const updatePatient = useServerFn(upsertPatient);
   const [favBusy, setFavBusy] = useState(false);
@@ -199,7 +202,15 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
         </Link>
 
         <div className="mt-3">
-          {isPartial ? (
+          {isTiryaq ? (
+            <Button
+              className="w-full h-11"
+              variant="outline"
+              onClick={(e: MouseEvent) => { stop(e); window.location.href = `/patients/${row.patient_id}`; }}
+            >
+              <Clock className="h-4 w-4 ml-2" /> عرض سجل الصرف
+            </Button>
+          ) : isPartial ? (
             <Button
               className="w-full h-11 bg-info text-info-foreground hover:bg-info/90"
               onClick={(e: MouseEvent) => { stop(e); setRemOpen(true); }}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { usePatientStatuses } from "@/lib/queries";
 import { nameMatchesQuery } from "@/lib/name-normalize";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,9 @@ export function QuickSearchFab() {
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const nav = useNavigate();
+  const loc = useLocation();
   const { data: rows } = usePatientStatuses();
+  const hideFab = loc.pathname === "/" || loc.pathname.startsWith("/patients");
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
@@ -26,6 +28,7 @@ export function QuickSearchFab() {
         (r) =>
           nameMatchesQuery(r.patient_name, q) ||
           (digits && (r.insurance_card_number ?? "").includes(digits)) ||
+          (digits && (r.insurance_cards ?? []).some((card) => card.card_number.includes(digits))) ||
           (digits && (r.national_id ?? "").includes(digits)) ||
           (digits && (r.phone ?? "").includes(digits)),
       )
@@ -34,13 +37,15 @@ export function QuickSearchFab() {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        aria-label="بحث سريع"
-        className="fixed z-40 bottom-24 md:bottom-6 left-4 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 transition"
-      >
-        <Search className="h-6 w-6" />
-      </button>
+      {!hideFab && (
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="بحث سريع"
+          className="fixed z-40 bottom-28 md:bottom-6 left-4 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 transition"
+        >
+          <Search className="h-5 w-5" />
+        </button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur flex flex-col">

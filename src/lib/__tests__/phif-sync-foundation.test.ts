@@ -536,6 +536,43 @@ describe("PHIF sync foundation", () => {
     expect(patientRoute).toContain("patient_insurance_cards");
   });
 
+  it("adds explicit patient pharmacy access for shared identity without exposing other pharmacy operations", () => {
+    const migration = readProjectFile("supabase/migrations/20260926010000_add_patient_pharmacy_access.sql");
+    const isolation = readProjectFile("src/lib/pharmacy-isolation.ts");
+    const invoices = readProjectFile("src/lib/phif-invoices.functions.ts");
+    const dispensing = readProjectFile("src/lib/dispensing.functions.ts");
+    const reviewRoute = readProjectFile("src/routes/phif-review.tsx");
+
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS public.patient_pharmacy_access");
+    expect(migration).toContain("patient_pharmacy_access_patient_pharmacy_uidx");
+    expect(migration).toContain("FROM public.audit_log al");
+    expect(migration).toContain("al.action = 'create_patient'");
+    expect(migration).toContain("SELECT DISTINCT dt.patient_id, dt.pharmacy_id");
+    expect(migration).toContain("SELECT DISTINCT pi.patient_id, pi.pharmacy_id");
+    expect(migration).toContain("CREATE OR REPLACE VIEW public.v_patient_pharmacy_access_unassigned");
+    expect(migration).toContain("Do not auto-link them to any pharmacy without manual verification");
+    expect(migration).toContain("REVOKE ALL ON public.patient_pharmacy_access FROM anon, authenticated");
+
+    expect(isolation).toContain("ensurePatientPharmacyAccess");
+    expect(isolation).toContain("patient_pharmacy_access");
+    expect(isolation).toContain("patientAccessTableAvailable");
+    expect(isolation).toContain("patientHasSessionAccess");
+    expect(isolation).toContain('if (hasAccessTable) return false');
+    expect(isolation).toContain('.from("patients")');
+    expect(isolation).toContain('for (const r of rows) anyTx.add(r.id)');
+
+    expect(invoices).toContain("needs_existing_patient_confirmation");
+    expect(invoices).toContain("confirm_existing_patient");
+    expect(invoices).toContain("existing_added_to_pharmacy");
+    expect(invoices).toContain("رقم البطاقة مرتبط ببيانات متعارضة");
+    expect(invoices).toContain("await ensurePatientPharmacyAccess(db, pharmacy_id, existingOwner.patient_id, \"phif_review\")");
+    expect(invoices).toContain('await db.from("patients").delete().eq("id", inserted.id)');
+    expect(dispensing).toContain("ensurePatientPharmacyAccess");
+    expect(dispensing).toContain('await supabaseAdmin.from("patients").delete().eq("id", inserted.id)');
+    expect(dispensing).toContain("patient_pharmacy_access_missing");
+    expect(reviewRoute).toContain("تأكيد إضافة المستفيد الحالي");
+  });
+
   it("uses PHIF invoices as Tiryaq operational dispensing source while archiving old manual rows", () => {
     const readsSource = readProjectFile("src/lib/reads.functions.ts");
     const patientCard = readProjectFile("src/components/PatientCard.tsx");
@@ -570,8 +607,8 @@ describe("PHIF sync foundation", () => {
 
     expect(detailRoute).toContain("InvoiceItemCard");
     expect(detailRoute).toContain("SourceBadge");
-    expect(detailRoute).toContain("PHIF Supplier");
-    expect(detailRoute).toContain("Actual Supplier");
+    expect(detailRoute).toContain("مورد PHIF");
+    expect(detailRoute).toContain("المورد الفعلي");
     expect(detailRoute).toContain("طباعة الفاتورة");
     expect(detailRoute).toContain("تفاصيل إضافية");
     expect(detailRoute).toContain("print:hidden");
@@ -579,7 +616,8 @@ describe("PHIF sync foundation", () => {
 
     expect(patientRoute).toContain("phifMedicationName");
     expect(patientRoute).toContain("phifMovementName");
-    expect(patientRoute).toContain("PHIF Supplier");
+    expect(patientRoute).toContain("مطابقة الصنف تحتاج مراجعة");
+    expect(patientRoute).toContain("<details");
     expect(patientRoute).not.toContain("item.brand || item.active_ingredient");
   });
 });

@@ -68,14 +68,14 @@ function PhifInvoiceDetailPage() {
     <div className="mx-auto max-w-5xl space-y-4 pb-20 print:max-w-none print:pb-0" dir="rtl">
       <PageActions />
 
-      <Card className="overflow-hidden border-cyan-100 bg-gradient-to-br from-white via-cyan-50/40 to-white p-4 shadow-sm print:shadow-none">
-        <div className="grid gap-4 md:grid-cols-[1fr_260px] md:items-start">
+      <Card className="overflow-hidden border-cyan-100 bg-gradient-to-br from-white via-cyan-50/40 to-white p-3 shadow-sm print:shadow-none">
+        <div className="grid gap-3 md:grid-cols-[1fr_240px] md:items-start">
           <div className="min-w-0 space-y-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <UserRound className="h-4 w-4 text-cyan-700" />
               المستفيد
             </div>
-            <h1 className="break-words text-2xl font-bold leading-tight text-slate-950">
+            <h1 className="break-words text-xl font-bold leading-tight text-slate-950">
               {invoice.beneficiary_name || "مستفيد غير معروف"}
             </h1>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -84,7 +84,7 @@ function PhifInvoiceDetailPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-cyan-100 bg-white/80 p-4 md:text-left print:border-slate-200">
+          <div className="rounded-xl border border-cyan-100 bg-white/80 p-3 md:text-left print:border-slate-200">
             <div className="flex items-center justify-between gap-2 md:flex-row-reverse">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <ReceiptText className="h-4 w-4 text-cyan-800" />
@@ -92,7 +92,7 @@ function PhifInvoiceDetailPage() {
               </div>
               <MatchBadge matched={invoice.match_status === "matched"} />
             </div>
-            <div className="mt-2 break-words text-4xl font-black tracking-normal text-slate-950" dir="ltr">
+            <div className="mt-2 break-words text-3xl font-black tracking-normal text-slate-950" dir="ltr">
               {invoice.invoice_number || invoice.invoice_key}
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -124,7 +124,7 @@ function PhifInvoiceDetailPage() {
             لا توجد أصناف محفوظة لهذه الفاتورة.
           </div>
         ) : (
-          <div className="grid gap-3 md:hidden">
+          <div className="grid grid-cols-2 gap-2 md:hidden">
             {invoice.items.map((item, index) => (
               <InvoiceItemCard key={item.id} item={item} index={index} />
             ))}
@@ -168,18 +168,6 @@ function PhifInvoiceDetailPage() {
         )}
       </Card>
 
-      <Card className="p-4 shadow-sm print:shadow-none">
-        <div className="mb-3 flex items-center gap-2">
-          <WalletCards className="h-5 w-5 text-cyan-900" />
-          <h2 className="text-lg font-bold">ملخص الفاتورة</h2>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <TotalPanel label="إجمالي الفاتورة" value={summary.total} tone="blue" />
-          <TotalPanel label="مبلغ التأمين" value={summary.insurance} tone="green" />
-          <TotalPanel label="خارج التأمين" value={summary.outside} tone="red" />
-        </div>
-      </Card>
-
       <Card className="p-4 print:hidden">
         <Accordion type="single" collapsible>
           <AccordionItem value="extra" className="border-0">
@@ -220,18 +208,18 @@ function PageActions() {
 
 function InvoiceItemCard({ item, index }: { item: any; index: number }) {
   return (
-    <div className="rounded-xl border bg-white p-3 shadow-sm">
+    <div className="min-w-0 rounded-xl border bg-white p-2 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">#{index + 1}</div>
-          <div className="mt-1 break-words font-bold text-slate-950" dir="ltr">
+          <div className="mt-1 break-words text-sm font-bold leading-snug text-slate-950" dir="ltr">
             {item.active_ingredient || "صنف بدون اسم علمي"}
           </div>
           <ItemSubline item={item} />
         </div>
         <SourceBadge item={item} />
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+      <div className="mt-2 grid gap-1 text-xs">
         <MiniMetric label="التركيز" value={item.strength || "غير متوفر"} />
         <MiniMetric label="الكمية" value={item.quantity === null ? "غير متوفرة" : String(item.quantity)} />
         <MiniMetric label="المبلغ" value={formatMoney(itemFinancialAmount(item))} />
@@ -242,7 +230,7 @@ function InvoiceItemCard({ item, index }: { item: any; index: number }) {
 
 function ItemSubline({ item }: { item: any }) {
   if (item.source_classification === "phif-supplier") {
-    return <div className="mt-1 text-sm text-cyan-800">PHIF Supplier</div>;
+    return <div className="mt-1 break-words text-sm text-cyan-800" dir="ltr">{item.supplier || "مورد PHIF"}</div>;
   }
   return (
     <div className="mt-1 break-words text-sm text-muted-foreground" dir="ltr">
@@ -255,7 +243,7 @@ function SourceBadge({ item }: { item: any }) {
   const phif = item.source_classification === "phif-supplier";
   return (
     <Badge className={`border-0 ${phif ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>
-      {phif ? "PHIF Supplier" : "Actual Supplier"}
+      {phif ? "مورد PHIF" : item.supplier || "المورد الفعلي"}
     </Badge>
   );
 }

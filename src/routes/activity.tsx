@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { useDispensingTransactions, DispensingTransactionRow } from "@/lib/queries";
+import { useDispensingTransactions, DispensingTransactionRow, useSession } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { 
   Building2, 
@@ -49,6 +49,8 @@ function DispensingActivityPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const { data: session } = useSession();
+  const isTiryaq = session?.pharmacy?.name === "صيدلية الترياق الشافي";
 
   const queryOptions = useMemo(() => {
     if (rangeMode) {
@@ -87,6 +89,10 @@ function DispensingActivityPage() {
       partial: transactions.filter(t => t.transaction_type === "Partial").length,
       remaining: transactions.filter(t => t.transaction_type === "Remaining").length,
       phif: transactions.filter(t => t.source === "phif" || t.transaction_type === "PHIF").length,
+      phifItems: transactions
+        .filter(t => t.source === "phif" || t.transaction_type === "PHIF")
+        .reduce((sum, t) => sum + (t.items_dispensed || 0), 0),
+      beneficiaries: new Set(transactions.map(t => t.patient_id)).size,
       pharmacies: {} as Record<string, number>
     };
     transactions.forEach(t => {
@@ -297,26 +303,41 @@ function DispensingActivityPage() {
       <div className="max-w-4xl mx-auto px-4 space-y-6">
         {/* Summary Stats */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 md:gap-3">
             <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
-              <span className="text-[10px] font-bold text-slate-500 block mb-1">إجمالي العمليات</span>
+              <span className="text-[10px] font-bold text-slate-500 block mb-1">{isTiryaq ? "الفواتير" : "إجمالي العمليات"}</span>
               <span className="text-xl font-black text-primary">{stats.total}</span>
             </Card>
-            <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
-              <span className="text-[10px] font-bold text-slate-500 block mb-1">صرف كامل</span>
-              <span className="text-xl font-black text-success">{stats.completed}</span>
-            </Card>
-            <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
-              <span className="text-[10px] font-bold text-slate-500 block mb-1">صرف جزئي</span>
-              <span className="text-xl font-black text-info">{stats.partial}</span>
-            </Card>
-            {stats.phif > 0 && (
+            {isTiryaq ? (
+              <>
+                <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-1">الأصناف</span>
+                  <span className="text-xl font-black text-cyan-700">{stats.phifItems}</span>
+                </Card>
+                <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-1">المستفيدون</span>
+                  <span className="text-xl font-black text-slate-700">{stats.beneficiaries}</span>
+                </Card>
+              </>
+            ) : (
+              <>
+                <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-1">صرف كامل</span>
+                  <span className="text-xl font-black text-success">{stats.completed}</span>
+                </Card>
+                <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-1">صرف جزئي</span>
+                  <span className="text-xl font-black text-info">{stats.partial}</span>
+                </Card>
+              </>
+            )}
+            {!isTiryaq && stats.phif > 0 && (
               <Card className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
                 <span className="text-[10px] font-bold text-slate-500 block mb-1">PHIF</span>
                 <span className="text-xl font-black text-cyan-700">{stats.phif}</span>
               </Card>
             )}
-            {Object.entries(stats.pharmacies).map(([name, count]) => (
+            {!isTiryaq && Object.entries(stats.pharmacies).map(([name, count]) => (
               <Card key={name} className="p-3 bg-white shadow-sm border-none ring-1 ring-slate-200">
                 <span className="text-[10px] font-bold text-slate-500 block mb-1">{name}</span>
                 <span className="text-xl font-black text-slate-700">{count}</span>
@@ -343,9 +364,9 @@ function DispensingActivityPage() {
             <SelectContent>
               <SelectItem value="all">كل الأنواع</SelectItem>
               <SelectItem value="PHIF">PHIF</SelectItem>
-              <SelectItem value="Completed">صرف كامل</SelectItem>
-              <SelectItem value="Partial">صرف جزئي</SelectItem>
-              <SelectItem value="Remaining">صرف متبقي</SelectItem>
+              {!isTiryaq && <SelectItem value="Completed">صرف كامل</SelectItem>}
+              {!isTiryaq && <SelectItem value="Partial">صرف جزئي</SelectItem>}
+              {!isTiryaq && <SelectItem value="Remaining">صرف متبقي</SelectItem>}
             </SelectContent>
           </Select>
         </div>

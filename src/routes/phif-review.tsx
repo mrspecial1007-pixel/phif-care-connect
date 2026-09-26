@@ -180,6 +180,7 @@ function CreatePatientDialog({
   reviewCase: PhifInvoiceReviewCase;
 }) {
   const [name, setName] = useState(reviewCase.beneficiary_name ?? "");
+  const [confirmExistingPatient, setConfirmExistingPatient] = useState(false);
   const createPatient = useServerFn(createPatientFromPhifInvoice);
   const qc = useQueryClient();
   const mutation = useMutation({
@@ -188,11 +189,22 @@ function CreatePatientDialog({
         data: {
           insurance_card_number: reviewCase.insurance_card_number,
           patient_name: name.trim() || reviewCase.beneficiary_name || undefined,
+          confirm_existing_patient: confirmExistingPatient,
         },
       }),
-    onSuccess: async () => {
-      toast.success("تم إنشاء المستفيد وربط الفواتير");
+    onSuccess: async (result) => {
+      if (!result.ok && result.needs_existing_patient_confirmation) {
+        setConfirmExistingPatient(true);
+        toast.warning(result.message);
+        return;
+      }
+      if (!result.ok && result.needs_review) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(result.matched === "existing_added_to_pharmacy" ? "تمت إضافة المستفيد الحالي إلى الترياق وربط الفواتير" : "تم إنشاء المستفيد وربط الفواتير");
       onOpenChange(false);
+      setConfirmExistingPatient(false);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["phif_review_cases"] }),
         qc.invalidateQueries({ queryKey: ["phif_invoices_archive"] }),
@@ -212,13 +224,18 @@ function CreatePatientDialog({
           <div className="rounded-md bg-muted/50 p-3 text-sm">
             سيتم إنشاء مستفيد جديد برقم البطاقة <span dir="ltr">{reviewCase.insurance_card_number}</span> وربط جميع فواتير هذه البطاقة به.
           </div>
+          {confirmExistingPatient && (
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+              رقم البطاقة مسجل مسبقًا لهوية مستفيد موجودة. أكد إضافة هذه الهوية إلى صيدلية الترياق دون إنشاء مستفيد جديد ودون كشف بيانات الصيدلية الأخرى.
+            </div>
+          )}
           <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="اسم المستفيد" />
         </div>
         <DialogFooter className="gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>إلغاء</Button>
           <Button onClick={() => mutation.mutate()} disabled={mutation.isPending} className="gap-2">
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            تأكيد الإضافة
+            {confirmExistingPatient ? "تأكيد إضافة المستفيد الحالي" : "تأكيد الإضافة"}
           </Button>
         </DialogFooter>
       </DialogContent>
