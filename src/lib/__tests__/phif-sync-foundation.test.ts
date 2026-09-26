@@ -608,8 +608,8 @@ describe("PHIF sync foundation", () => {
     expect(detailRoute).toContain("SourceLabel");
     expect(detailRoute).toContain("itemNameWithStrength");
     expect(detailRoute).toContain("min-w-[620px]");
-    expect(detailRoute).toContain("التأمين");
-    expect(detailRoute).toContain("المورد الفعلي");
+    expect(detailRoute).toContain("PHIF");
+    expect(detailRoute).toContain("Actual");
     expect(detailRoute).toContain("طباعة الفاتورة");
     expect(detailRoute).toContain("تفاصيل إضافية");
     expect(detailRoute).toContain("print:hidden");

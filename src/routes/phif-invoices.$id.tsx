@@ -114,9 +114,9 @@ function PhifInvoiceDetailPage() {
           <div className="overflow-x-auto rounded-lg border print:overflow-visible">
             <table className="w-full min-w-[620px] table-fixed border-collapse text-xs sm:text-sm print:min-w-0">
               <colgroup>
-                <col className="w-[52%]" />
-                <col className="w-[12%]" />
-                <col className="w-[18%]" />
+                <col className="w-[58%]" />
+                <col className="w-[10%]" />
+                <col className="w-[14%]" />
                 <col className="w-[18%]" />
               </colgroup>
               <thead className="bg-cyan-50/60 text-muted-foreground">
@@ -124,7 +124,7 @@ function PhifInvoiceDetailPage() {
                   <th className="border-b p-2 text-right">الصنف</th>
                   <th className="border-b p-2 text-center">الكمية</th>
                   <th className="border-b p-2 text-center">المصدر</th>
-                  <th className="border-b p-2 text-center">القيمة</th>
+                  <th className="border-b p-2 text-center">القيمة (د.ل)</th>
                 </tr>
               </thead>
               <tbody>
@@ -136,11 +136,11 @@ function PhifInvoiceDetailPage() {
                           {index + 1}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="whitespace-normal break-words text-sm font-semibold leading-snug text-slate-950 [overflow-wrap:anywhere]" dir="ltr">
+                          <div className="whitespace-normal break-words text-right text-sm font-semibold leading-snug text-slate-950" dir="ltr">
                             {itemNameWithStrength(item)}
                           </div>
                           {item.brand && (
-                            <div className="mt-0.5 whitespace-normal break-words text-xs leading-snug text-muted-foreground [overflow-wrap:anywhere]" dir="ltr">
+                            <div className="mt-0.5 whitespace-normal break-words text-right text-xs leading-snug text-muted-foreground" dir="ltr">
                               {item.brand}
                             </div>
                           )}
@@ -156,7 +156,7 @@ function PhifInvoiceDetailPage() {
                     </td>
                     <td className="p-2 text-center font-medium" dir="ltr">{item.quantity ?? "غير متوفر"}</td>
                     <td className="p-2 text-center"><SourceLabel item={item} /></td>
-                    <td className="p-2 text-center font-semibold" dir="ltr">{formatMoney(itemFinancialAmount(item))}</td>
+                    <td className="p-2 text-center font-semibold" dir="ltr">{formatAmount(itemFinancialAmount(item))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -166,7 +166,7 @@ function PhifInvoiceDetailPage() {
       </Card>
 
       <Card className="p-3 shadow-sm print:shadow-none">
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-3 gap-2">
           <TotalPanel label="إجمالي الفاتورة" value={summary.total} tone="blue" />
           <TotalPanel label="مبلغ التأمين" value={summary.insurance} tone="green" />
           <TotalPanel label="خارج التأمين" value={summary.outside} tone="red" />
@@ -236,7 +236,7 @@ function SourceLabel({ item }: { item: any }) {
   const phif = item.source_classification === "phif-supplier";
   return (
     <span className={`inline-flex rounded-md px-2 py-1 text-[11px] font-semibold ${phif ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"}`}>
-      {phif ? "التأمين" : "المورد الفعلي"}
+      {phif ? "PHIF" : "Actual"}
     </span>
   );
 }
@@ -252,9 +252,9 @@ function TotalPanel({ label, value, tone }: { label: string; value: number | nul
     red: "bg-red-50 text-red-700",
   }[tone];
   return (
-    <div className={`rounded-lg p-3 text-center ${toneClass}`}>
-      <div className="text-xs">{label}</div>
-      <div className="mt-1 text-lg font-black sm:text-xl" dir="ltr">{formatMoney(value)}</div>
+    <div className={`rounded-lg p-2 text-center ${toneClass}`}>
+      <div className="text-[11px] leading-tight">{label}</div>
+      <div className="mt-1 text-sm font-black sm:text-lg" dir="ltr">{formatMoney(value)}</div>
     </div>
   );
 }
@@ -307,6 +307,11 @@ function readMoney(fields: Record<string, unknown> | null | undefined, keys: str
 function formatMoney(value: number | null) {
   if (value === null) return "غير متوفر";
   return `${value.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} د.ل`;
+}
+
+function formatAmount(value: number | null) {
+  if (value === null) return "غير متوفر";
+  return value.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
 
 function formatDate(value: string | null) {
