@@ -7,10 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  completeSavedPhifInvoiceItemRange,
   createPhifLoginSession,
   getPhifSessionStatus,
+  inspectSavedPhifInvoiceItemCompletion,
   inspectPhifTransactionsRange,
   saveNewPhifInvoices,
+  type PhifInvoiceItemCompletionResult,
   type PhifInvoicePreview,
 } from "@/lib/phif-sync.functions";
 import { getPhifInvoiceArchiveStats } from "@/lib/phif-invoices.functions";
@@ -30,10 +33,19 @@ function PhifSyncPage() {
   const createLoginSession = useServerFn(createPhifLoginSession);
   const inspect = useServerFn(inspectPhifTransactionsRange);
   const saveInvoices = useServerFn(saveNewPhifInvoices);
+  const inspectItemCompletion = useServerFn(inspectSavedPhifInvoiceItemCompletion);
+  const completeItemRange = useServerFn(completeSavedPhifInvoiceItemRange);
   const archiveStats = useServerFn(getPhifInvoiceArchiveStats);
   const today = new Date().toISOString().slice(0, 10);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
+  const [completionInvoiceKey, setCompletionInvoiceKey] = useState("");
+  const [completionRangeFrom, setCompletionRangeFrom] = useState(today);
+  const [completionRangeTo, setCompletionRangeTo] = useState(today);
+  const [completionRangeLimit, setCompletionRangeLimit] = useState(100);
+  const [completionResult, setCompletionResult] = useState<PhifInvoiceItemCompletionResult | null>(null);
+  const [completionMode, setCompletionMode] = useState<"single" | "range" | null>(null);
+  const [completionRunning, setCompletionRunning] = useState(false);
   const [preview, setPreview] = useState<PhifInvoicePreview[]>([]);
   const [summary, setSummary] = useState({
     total: 0,
@@ -119,6 +131,54 @@ function PhifSyncPage() {
       toast.error(error?.message ?? "فشل حفظ فواتير PHIF");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSingleCompletion(dryRun: boolean) {
+    const invoiceKey = completionInvoiceKey.trim();
+    if (!invoiceKey) {
+      toast.error("أدخل مفتاح الفاتورة أولًا");
+      return;
+    }
+    if (!status?.authenticated) {
+      toast.error("يجب تسجيل الدخول إلى PHIF أولًا");
+      return;
+    }
+    setCompletionRunning(true);
+    try {
+      const result = await inspectItemCompletion({ data: { invoice_key: invoiceKey, dry_run: dryRun } });
+      setCompletionResult(result);
+      setCompletionMode("single");
+      toast.success(dryRun ? "تمت معاينة استكمال الأصناف" : `تمت إضافة ${result.added_item_count} صنف`);
+    } catch (error: any) {
+      toast.error(error?.message ?? "تعذر استكمال أصناف الفاتورة");
+    } finally {
+      setCompletionRunning(false);
+    }
+  }
+
+  async function handleRangeCompletion(dryRun: boolean) {
+    if (!status?.authenticated) {
+      toast.error("يجب تسجيل الدخول إلى PHIF أولًا");
+      return;
+    }
+    setCompletionRunning(true);
+    try {
+      const result = await completeItemRange({
+        data: {
+          dateFrom: completionRangeFrom,
+          dateTo: completionRangeTo,
+          limit: completionRangeLimit,
+          dry_run: dryRun,
+        },
+      });
+      setCompletionResult(result);
+      setCompletionMode("range");
+      toast.success(dryRun ? "تمت معاينة نطاق الاستكمال" : `تم استكمال ${result.completed_invoice_count} فاتورة`);
+    } catch (error: any) {
+      toast.error(error?.message ?? "تعذر استكمال نطاق الفواتير");
+    } finally {
+      setCompletionRunning(false);
     }
   }
 
@@ -222,6 +282,98 @@ function PhifSyncPage() {
         </Button>
       </Card>
 
+      <Card className="space-y-4 p-4">
+        <div>
+          <div className="font-semibold">استكمال أصناف فواتير PHIF المحفوظة</div>
+          <div className="text-sm text-muted-foreground">
+            يعيد جلب تفاصيل الفاتورة من PHIF Bridge ويضيف الأصناف الناقصة فقط دون حذف أو تكرار الأصناف الموجودة.
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted-foreground">مفتاح الفاتورة</span>
+            <input
+              value={completionInvoiceKey}
+              onChange={(event) => setCompletionInvoiceKey(event.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              dir="ltr"
+              placeholder="2026-4193942-..."
+            />
+          </label>
+          <Button
+            variant="outline"
+            onClick={() => handleSingleCompletion(true)}
+            disabled={completionRunning || !status?.authenticated}
+            className="gap-2 self-end"
+          >
+            {completionRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            معاينة فقط
+          </Button>
+          <Button
+            onClick={() => handleSingleCompletion(false)}
+            disabled={completionRunning || !status?.authenticated || completionMode !== "single" || !completionResult || completionResult.dry_run !== true || completionResult.added_item_count === 0}
+            className="gap-2 self-end"
+          >
+            {completionRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            تأكيد الحفظ
+          </Button>
+        </div>
+
+        <details className="rounded-lg border bg-muted/20 p-3">
+          <summary className="cursor-pointer text-sm font-semibold">استكمال نطاق تاريخي لاحقًا</summary>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="grid gap-1 text-sm">
+              <span className="text-muted-foreground">من تاريخ</span>
+              <input
+                type="date"
+                value={completionRangeFrom}
+                onChange={(event) => setCompletionRangeFrom(event.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="text-muted-foreground">إلى تاريخ</span>
+              <input
+                type="date"
+                value={completionRangeTo}
+                onChange={(event) => setCompletionRangeTo(event.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="text-muted-foreground">الحد الأقصى</span>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={completionRangeLimit}
+                onChange={(event) => setCompletionRangeLimit(Number(event.target.value) || 100)}
+                className="h-9 w-28 rounded-md border border-input bg-background px-3 text-sm"
+                dir="ltr"
+              />
+            </label>
+            <Button
+              variant="outline"
+              onClick={() => handleRangeCompletion(true)}
+              disabled={completionRunning || !status?.authenticated}
+              className="gap-2"
+            >
+              معاينة النطاق
+            </Button>
+            <Button
+              onClick={() => handleRangeCompletion(false)}
+              disabled={completionRunning || !status?.authenticated || completionMode !== "range" || !completionResult || completionResult.dry_run !== true || completionResult.added_item_count === 0}
+              className="gap-2"
+            >
+              تأكيد حفظ النطاق
+            </Button>
+          </div>
+        </details>
+
+        {completionResult && <CompletionResult result={completionResult} />}
+      </Card>
+
       <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold">Preview قبل الحفظ</div>
@@ -294,4 +446,88 @@ function SummaryCard({
       <div className="text-xs text-muted-foreground mt-1">{label}</div>
     </Card>
   );
+}
+
+function CompletionResult({ result }: { result: PhifInvoiceItemCompletionResult }) {
+  return (
+    <div className="space-y-3 rounded-lg border bg-background p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-semibold">نتيجة الاستكمال</div>
+        <Badge variant={result.dry_run ? "outline" : "default"}>
+          {result.dry_run ? "معاينة فقط" : "تم الحفظ"}
+        </Badge>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <MiniStat label="فواتير فُحصت" value={result.checked_count} />
+        <MiniStat label="فواتير ستُستكمل" value={result.completed_invoice_count} />
+        <MiniStat label="أصناف مضافة" value={result.added_item_count} />
+        <MiniStat label="تعذر/فشل" value={result.unavailable.length + result.failed.length} />
+      </div>
+
+      {result.invoices.length > 0 && (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead className="bg-muted/50 text-muted-foreground">
+              <tr>
+                <th className="p-2 text-right">الفاتورة</th>
+                <th className="p-2 text-center">التاريخ</th>
+                <th className="p-2 text-center">الموجود</th>
+                <th className="p-2 text-center">من المصدر</th>
+                <th className="p-2 text-center">الناقص</th>
+                <th className="p-2 text-center">الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.invoices.map((invoice) => (
+                <tr key={invoice.id} className="border-t">
+                  <td className="p-2">
+                    <div className="font-medium" dir="ltr">{invoice.invoice_number ?? invoice.invoice_key}</div>
+                    <div className="text-xs text-muted-foreground" dir="ltr">{invoice.invoice_key}</div>
+                  </td>
+                  <td className="p-2 text-center" dir="ltr">{invoice.dispensing_date ?? "—"}</td>
+                  <td className="p-2 text-center">{invoice.existing_item_count}</td>
+                  <td className="p-2 text-center">{invoice.source_item_count}</td>
+                  <td className="p-2 text-center">{invoice.missing_item_count}</td>
+                  <td className="p-2 text-center">{completionStatusLabel(invoice.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(result.unavailable.length > 0 || result.failed.length > 0) && (
+        <div className="grid gap-2 text-sm">
+          {result.unavailable.map((invoice) => (
+            <div key={`unavailable-${invoice.id}`} className="rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
+              لم يرجع المصدر أصنافًا للفاتورة <span dir="ltr">{invoice.invoice_number ?? invoice.invoice_key}</span>: {invoice.reason}
+            </div>
+          ))}
+          {result.failed.map((invoice) => (
+            <div key={`failed-${invoice.id}`} className="rounded-md border border-destructive/20 bg-destructive/10 p-2 text-destructive">
+              فشل استكمال الفاتورة <span dir="ltr">{invoice.invoice_number ?? invoice.invoice_key}</span>: {invoice.reason}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md bg-muted/50 p-2 text-center">
+      <div className="text-lg font-bold">{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
+function completionStatusLabel(status: PhifInvoiceItemCompletionResult["invoices"][number]["status"]) {
+  if (status === "dry_run") return "سيُستكمل";
+  if (status === "completed") return "استُكمل";
+  if (status === "already_complete") return "مكتملة";
+  if (status === "source_empty") return "المصدر بلا أصناف";
+  return status;
 }

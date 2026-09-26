@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   classifyPhifItemSource,
+  completeSavedPhifInvoiceItemsFromSource,
   filterMissingPhifInvoiceItems,
   normalizePhifCard,
   parsePhifTodayTransactions,
@@ -18,6 +19,56 @@ import { buildPhifHistoryRows, phifDueSummariesToTracks } from "@/lib/reads.func
 
 function readProjectFile(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
+}
+
+function phifItem(
+  phif_item_id: string,
+  active_ingredient: string,
+  strength: string,
+  supplier = "PHIF Supplier",
+  source_classification = "phif-supplier",
+) {
+  return {
+    phif_item_id,
+    active_ingredient,
+    strength,
+    brand: null,
+    quantity: 30,
+    supplier,
+    source_classification,
+    phif_financial_fields: {},
+    metadata: {},
+  };
+}
+
+function fakePhifItemsDb(initialRows: Record<string, any[]>) {
+  const rowsByInvoice = new Map(Object.entries(initialRows).map(([key, value]) => [key, [...value]]));
+  const inserted: any[] = [];
+  return {
+    inserted,
+    from(table: string) {
+      if (table !== "phif_invoice_items") throw new Error(`Unexpected table ${table}`);
+      return {
+        select() {
+          return {
+            async eq(column: string, invoiceId: string) {
+              if (column !== "phif_invoice_id") throw new Error(`Unexpected filter ${column}`);
+              return { data: rowsByInvoice.get(invoiceId) ?? [], error: null };
+            },
+          };
+        },
+        async insert(rows: any[]) {
+          inserted.push(...rows);
+          for (const row of rows) {
+            const current = rowsByInvoice.get(row.phif_invoice_id) ?? [];
+            current.push(row);
+            rowsByInvoice.set(row.phif_invoice_id, current);
+          }
+          return { error: null };
+        },
+      };
+    },
+  };
 }
 
 describe("PHIF sync foundation", () => {
@@ -149,6 +200,103 @@ describe("PHIF sync foundation", () => {
     expect(source).toContain("if (missing.length === 0) continue");
     expect(route).toContain("completed_item_invoice_count");
     expect(route).toContain("completion_failed_count");
+    expect(route).toContain("inspectSavedPhifInvoiceItemCompletion");
+    expect(route).toContain("completeSavedPhifInvoiceItemRange");
+    expect(route).toContain("معاينة فقط");
+    expect(route).toContain("تأكيد الحفظ");
+  });
+
+  it("dry-runs saved invoice item completion without inserting rows", async () => {
+    const db = fakePhifItemsDb({ "invoice-4193942": [] });
+    const result = await completeSavedPhifInvoiceItemsFromSource({
+      db,
+      dryRun: true,
+      invoices: [
+        {
+          id: "invoice-4193942",
+          invoice_key: "2026-4193942-real-key",
+          invoice_number: "4193942",
+          dispensing_date: "2026-09-15",
+        },
+      ],
+      fetchInvoice: async () => ({
+        invoice_key: "2026-4193942-real-key",
+        invoice_number: "4193942",
+        insurance_card_number: "0061600113888",
+        beneficiary_name: "Test",
+        dispensing_date: "2026-09-15",
+        dispensing_time: null,
+        status: "confirmed",
+        metadata: {},
+        items: [
+          phifItem("PHIF-A", "Amlodipine", "5MG"),
+          phifItem("PHIF-B", "Valsartan", "160MG"),
+        ],
+      }),
+    });
+
+    expect(result).toMatchObject({
+      checked_count: 1,
+      completed_invoice_count: 1,
+      added_item_count: 2,
+      dry_run: true,
+    });
+    expect(result.invoices[0]).toMatchObject({
+      id: "invoice-4193942",
+      source_item_count: 2,
+      missing_item_count: 2,
+      added_item_count: 2,
+      status: "dry_run",
+    });
+    expect(db.inserted).toEqual([]);
+  });
+
+  it("completes partial saved invoice items without duplicating existing rows", async () => {
+    const existing = phifItem("ACTUAL-1", "Atorvastatin", "20MG", "Actual Supplier", "actual-supplier");
+    const missing = phifItem("PHIF-A", "Amlodipine", "5MG");
+    const db = fakePhifItemsDb({ "invoice-partial": [existing] });
+    const invoice = {
+      id: "invoice-partial",
+      invoice_key: "2026-partial-key",
+      invoice_number: "3499535",
+      dispensing_date: "2026-07-31",
+    };
+    const fetchInvoice = async () => ({
+      invoice_key: invoice.invoice_key,
+      invoice_number: invoice.invoice_number,
+      insurance_card_number: "0061600113888",
+      beneficiary_name: "Test",
+      dispensing_date: invoice.dispensing_date,
+      dispensing_time: null,
+      status: "confirmed",
+      metadata: {},
+      items: [existing, missing],
+    });
+
+    const firstRun = await completeSavedPhifInvoiceItemsFromSource({
+      db,
+      dryRun: false,
+      invoices: [invoice],
+      fetchInvoice,
+    });
+    expect(firstRun.completed_invoice_count).toBe(1);
+    expect(firstRun.added_item_count).toBe(1);
+    expect(db.inserted).toHaveLength(1);
+    expect(db.inserted[0]).toMatchObject({
+      phif_invoice_id: "invoice-partial",
+      phif_item_id: "PHIF-A",
+      source_classification: "phif-supplier",
+    });
+
+    const secondRun = await completeSavedPhifInvoiceItemsFromSource({
+      db,
+      dryRun: false,
+      invoices: [invoice],
+      fetchInvoice,
+    });
+    expect(secondRun.completed_invoice_count).toBe(0);
+    expect(secondRun.added_item_count).toBe(0);
+    expect(db.inserted).toHaveLength(1);
   });
 
   it("builds independent 28-day PHIF medication cycles per item", () => {

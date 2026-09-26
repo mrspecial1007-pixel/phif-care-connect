@@ -56,6 +56,18 @@ const inspectSchema = z.object({
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
+const completionSingleSchema = z.object({
+  invoice_key: z.string().trim().min(1),
+  dry_run: z.boolean().optional().default(true),
+});
+
+const completionRangeSchema = z.object({
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dry_run: z.boolean().optional().default(true),
+  limit: z.number().int().min(1).max(500).optional().default(100),
+});
+
 const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:5174";
 const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com";
 const COMMON_FINANCIAL_KEYS = [
@@ -131,6 +143,126 @@ export function filterMissingPhifInvoiceItems(
     seen.add(key);
     return true;
   });
+}
+
+export type PhifInvoiceItemCompletionTarget = {
+  id: string;
+  invoice_key: string;
+  invoice_number: string | null;
+  dispensing_date: string | null;
+};
+
+export type PhifInvoiceItemCompletionResult = {
+  checked_count: number;
+  completed_invoice_count: number;
+  added_item_count: number;
+  dry_run: boolean;
+  invoices: {
+    id: string;
+    invoice_key: string;
+    invoice_number: string | null;
+    dispensing_date: string | null;
+    existing_item_count: number;
+    source_item_count: number;
+    missing_item_count: number;
+    added_item_count: number;
+    status: "completed" | "already_complete" | "source_empty" | "dry_run";
+  }[];
+  unavailable: {
+    id: string;
+    invoice_key: string;
+    invoice_number: string | null;
+    reason: string;
+  }[];
+  failed: {
+    id: string;
+    invoice_key: string;
+    invoice_number: string | null;
+    reason: string;
+  }[];
+};
+
+export async function completeSavedPhifInvoiceItemsFromSource({
+  db,
+  invoices,
+  fetchInvoice,
+  dryRun,
+}: {
+  db: any;
+  invoices: PhifInvoiceItemCompletionTarget[];
+  fetchInvoice: (invoiceKey: string) => Promise<Omit<PhifInvoicePreview, "patient_match" | "patient_id">>;
+  dryRun: boolean;
+}): Promise<PhifInvoiceItemCompletionResult> {
+  const result: PhifInvoiceItemCompletionResult = {
+    checked_count: invoices.length,
+    completed_invoice_count: 0,
+    added_item_count: 0,
+    dry_run: dryRun,
+    invoices: [],
+    unavailable: [],
+    failed: [],
+  };
+
+  for (const invoice of invoices) {
+    try {
+      const [source, existing] = await Promise.all([
+        fetchInvoice(invoice.invoice_key),
+        existingPhifInvoiceItems(db, invoice.id),
+      ]);
+      if (source.items.length === 0) {
+        result.unavailable.push({
+          id: invoice.id,
+          invoice_key: invoice.invoice_key,
+          invoice_number: invoice.invoice_number,
+          reason: "source returned no invoice items",
+        });
+        result.invoices.push({
+          ...invoice,
+          existing_item_count: existing.length,
+          source_item_count: 0,
+          missing_item_count: 0,
+          added_item_count: 0,
+          status: "source_empty",
+        });
+        continue;
+      }
+
+      const missing = filterMissingPhifInvoiceItems(source.items, existing);
+      if (missing.length === 0) {
+        result.invoices.push({
+          ...invoice,
+          existing_item_count: existing.length,
+          source_item_count: source.items.length,
+          missing_item_count: 0,
+          added_item_count: 0,
+          status: "already_complete",
+        });
+        continue;
+      }
+
+      let inserted = missing.length;
+      if (!dryRun) inserted = await insertMissingPhifInvoiceItems(db, invoice.id, missing);
+      result.completed_invoice_count++;
+      result.added_item_count += inserted;
+      result.invoices.push({
+        ...invoice,
+        existing_item_count: existing.length,
+        source_item_count: source.items.length,
+        missing_item_count: missing.length,
+        added_item_count: inserted,
+        status: dryRun ? "dry_run" : "completed",
+      });
+    } catch (error: any) {
+      result.failed.push({
+        id: invoice.id,
+        invoice_key: invoice.invoice_key,
+        invoice_number: invoice.invoice_number,
+        reason: error?.message ?? "unknown completion failure",
+      });
+    }
+  }
+
+  return result;
 }
 
 function normalizeDate(raw: string | null): string | null {
@@ -867,3 +999,100 @@ export const saveNewPhifInvoices = createServerFn({ method: "POST" })
       completion_failed_count,
     };
   });
+
+export const inspectSavedPhifInvoiceItemCompletion = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => completionSingleSchema.parse(d))
+  .handler(async ({ data }) => {
+    return completeSavedInvoiceItemsForCurrentSession({
+      dryRun: data.dry_run,
+      invoiceKey: data.invoice_key,
+    });
+  });
+
+export const completeSavedPhifInvoiceItemRange = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => completionRangeSchema.parse(d))
+  .handler(async ({ data }) => {
+    if (Date.parse(data.dateFrom) > Date.parse(data.dateTo)) {
+      throw new Error("dateFrom must be before or equal dateTo");
+    }
+    return completeSavedInvoiceItemsForCurrentSession({
+      dryRun: data.dry_run,
+      dateFrom: data.dateFrom,
+      dateTo: data.dateTo,
+      limit: data.limit,
+    });
+  });
+
+async function completeSavedInvoiceItemsForCurrentSession({
+  dryRun,
+  invoiceKey,
+  dateFrom,
+  dateTo,
+  limit,
+}: {
+  dryRun: boolean;
+  invoiceKey?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+}) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+  const { pharmacy_id } = await requirePharmacySession();
+  const db = supabaseAdmin as any;
+  const session = await currentBridgeSession(db, pharmacy_id);
+  if (!session) throw new Error("PHIF login is required before completing saved invoice items");
+
+  const invoices = invoiceKey
+    ? await savedPhifInvoiceCompletionTargetsByKey(db, pharmacy_id, invoiceKey)
+    : await savedPhifInvoiceCompletionTargetsByDateRange(db, pharmacy_id, dateFrom!, dateTo!, limit ?? 100);
+  if (invoiceKey && invoices.length === 0) throw new Error("Saved PHIF invoice was not found for this pharmacy");
+
+  return completeSavedPhifInvoiceItemsFromSource({
+    db,
+    invoices,
+    dryRun,
+    fetchInvoice: async (key) => normalizeBridgeInvoice(
+      key,
+      await bridgeJson(
+        `/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/invoices/${encodeURIComponent(key)}`,
+        { pharmacyId: pharmacy_id },
+      ),
+    ),
+  });
+}
+
+async function savedPhifInvoiceCompletionTargetsByKey(
+  db: any,
+  pharmacyId: string,
+  invoiceKey: string,
+): Promise<PhifInvoiceItemCompletionTarget[]> {
+  const { data, error } = await db
+    .from("phif_invoices")
+    .select("id, invoice_key, invoice_number, dispensing_date")
+    .eq("pharmacy_id", pharmacyId)
+    .eq("invoice_key", invoiceKey)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PhifInvoiceItemCompletionTarget[];
+}
+
+async function savedPhifInvoiceCompletionTargetsByDateRange(
+  db: any,
+  pharmacyId: string,
+  dateFrom: string,
+  dateTo: string,
+  limit: number,
+): Promise<PhifInvoiceItemCompletionTarget[]> {
+  const { data, error } = await db
+    .from("phif_invoices")
+    .select("id, invoice_key, invoice_number, dispensing_date")
+    .eq("pharmacy_id", pharmacyId)
+    .gte("dispensing_date", dateFrom)
+    .lte("dispensing_date", dateTo)
+    .order("dispensing_date", { ascending: true })
+    .order("invoice_number", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PhifInvoiceItemCompletionTarget[];
+}
