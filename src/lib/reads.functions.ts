@@ -93,6 +93,12 @@ export function phifDueSummariesToTracks(phifDueSummaries: any[] = []) {
     .sort((a, b) => String(a.next_due_date).localeCompare(String(b.next_due_date)));
 }
 
+function pickDisplayDueTrack(tracks: any[] = []) {
+  return tracks.find((track) => typeof track.remaining_days === "number" && track.remaining_days >= -3)
+    ?? tracks[0]
+    ?? null;
+}
+
 export function buildPhifHistoryRows(profile: any, pharmacyId: string, pharmacyName: string) {
   const phifRowsByInvoice = new Map<string, any>();
   for (const item of profile?.items ?? []) {
@@ -322,7 +328,7 @@ export const listPatientStatuses = createServerFn({ method: "GET" }).handler(asy
     if (!profile || profile.items.length === 0) return { ...resetManualOperationalStatus(row), insurance_cards };
 
     const phifTracks = phifDueSummariesToTracks(profile.due_summaries);
-    const nearestTrack = phifTracks[0] ?? null;
+    const nearestTrack = pickDisplayDueTrack(phifTracks);
     const latestPhifDate = profile.items
       .map((item) => item.latest_dispensing_date)
       .filter(Boolean)

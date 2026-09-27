@@ -14,6 +14,7 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
     const { getPharmacySession, verifyPin, rateLimit, clearRateLimit } = await import(
       "@/lib/pharmacy-session.server"
     );
+    const { adminPermissions, normalizePermissions } = await import("@/lib/user-permissions");
     const { writeAudit } = await import("@/lib/audit.server");
     const { getRequestIP } = await import("@tanstack/react-start/server");
 
@@ -23,6 +24,41 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
     const rl = rateLimit(rlKey);
     if (!rl.ok) {
       return { ok: false as const, error: "too_many_attempts" };
+    }
+
+    const { data: user } = await supabaseAdmin
+      .from("pharmacy_users")
+      .select("id, pharmacy_id, display_name, login_identifier, password_hash, role, permissions, is_active, pharmacies(id, name, address, phone)")
+      .ilike("login_identifier", email)
+      .maybeSingle();
+
+    if (user) {
+      const pharm = Array.isArray(user.pharmacies) ? user.pharmacies[0] : user.pharmacies;
+      if (!user.is_active || !verifyPin(data.password, user.password_hash) || !pharm?.id) {
+        return { ok: false as const, error: "invalid_pin" };
+      }
+      clearRateLimit(rlKey);
+      await supabaseAdmin.from("pharmacy_users").update({ last_login_at: new Date().toISOString() }).eq("id", user.id);
+      const session = await getPharmacySession(data.remember);
+      await session.update({
+        pharmacy_id: pharm.id,
+        pharmacy_name: pharm.name,
+        pharmacy_address: pharm.address ?? undefined,
+        pharmacy_phone: pharm.phone ?? undefined,
+        user_id: user.id,
+        user_name: user.display_name,
+        user_role: user.role,
+        user_permissions: user.role === "admin" ? adminPermissions() : normalizePermissions(user.permissions),
+        unlocked_at: Date.now(),
+      });
+      await writeAudit({
+        pharmacy_id: pharm.id,
+        action: "user_login",
+        entity: "pharmacy_user",
+        entity_id: user.id,
+        ip,
+      });
+      return { ok: true as const, pharmacy: { id: pharm.id, name: pharm.name } };
     }
 
     const { data: pharm } = await supabaseAdmin
@@ -51,6 +87,8 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
       pharmacy_name: pharm.name,
       pharmacy_address: pharm.address ?? undefined,
       pharmacy_phone: pharm.phone ?? undefined,
+      user_role: "legacy",
+      user_permissions: adminPermissions(),
       unlocked_at: Date.now(),
     });
     await writeAudit({
@@ -82,5 +120,13 @@ export const currentSession = createServerFn({ method: "GET" }).handler(async ()
       address: session.data.pharmacy_address ?? "",
       phone: session.data.pharmacy_phone ?? "",
     },
+    user: session.data.user_role
+      ? {
+          id: session.data.user_id ?? null,
+          name: session.data.user_name ?? (session.data.user_role === "legacy" ? "Legacy pharmacy session" : ""),
+          role: session.data.user_role,
+          permissions: session.data.user_permissions ?? {},
+        }
+      : null,
   };
 });

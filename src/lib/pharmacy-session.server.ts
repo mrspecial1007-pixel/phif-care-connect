@@ -5,6 +5,10 @@ export type PharmacySessionData = {
   pharmacy_name?: string;
   pharmacy_address?: string;
   pharmacy_phone?: string;
+  user_id?: string;
+  user_name?: string;
+  user_role?: "admin" | "employee" | "legacy";
+  user_permissions?: Record<string, boolean>;
   unlocked_at?: number;
 };
 

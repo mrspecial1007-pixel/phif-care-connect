@@ -1,10 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useServerFn } from "@tanstack/react-start";
 import { exportAllData } from "@/lib/activity.functions";
-import { Download, Database } from "lucide-react";
+import { Download, Database, Users, RefreshCw, Wrench, Building2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -63,6 +63,12 @@ function SettingsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">الإعدادات</h1>
+      <div className="grid gap-3 md:grid-cols-4">
+        <SettingsLink to="/settings/users" title="إدارة الموظفين" desc="الحسابات والصلاحيات" icon={Users} />
+        <SettingsLink to="/phif-sync" title="مزامنة PHIF" desc="تسجيل الدخول وفحص الحركات" icon={RefreshCw} />
+        <SettingsLink to="/phif-sync" title="استكمال فواتير PHIF" desc="أداة صيانة الأصناف الناقصة" icon={Wrench} />
+        <SettingsLink to="/settings" title="بيانات الصيدلية" desc="الإعدادات الحالية" icon={Building2} />
+      </div>
       <Card className="p-4 space-y-3">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -83,6 +89,18 @@ function SettingsPage() {
       <SmsGatewaySettingsCard />
       <NotificationSettingsCard />
     </div>
+  );
+}
+
+function SettingsLink({ to, title, desc, icon: Icon }: { to: string; title: string; desc: string; icon: any }) {
+  return (
+    <Link to={to as any} className="block">
+      <Card className="p-4 h-full hover:bg-accent/40 transition-colors">
+        <Icon className="h-5 w-5 text-primary mb-2" />
+        <div className="font-semibold text-sm">{title}</div>
+        <div className="text-xs text-muted-foreground mt-1">{desc}</div>
+      </Card>
+    </Link>
   );
 }
 

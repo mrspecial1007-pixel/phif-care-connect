@@ -645,8 +645,8 @@ async function findAccessiblePatientByCard(admin: any, pharmacyId: string, card:
 
 export const getPhifSessionStatus = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
-  const { pharmacy_id } = await requirePharmacySession();
+  const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+  const { pharmacy_id } = await requireTiryaqPermission("phif_sync_run");
   const db = supabaseAdmin as any;
   if (!bridgeSecret()) {
     return {
@@ -698,8 +698,8 @@ export const getPhifSessionStatus = createServerFn({ method: "GET" }).handler(as
 
 export const createPhifLoginSession = createServerFn({ method: "POST" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
-  const { pharmacy_id } = await requirePharmacySession();
+  const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+  const { pharmacy_id } = await requireTiryaqPermission("phif_sync_run");
   const db = supabaseAdmin as any;
   if (!bridgeSecret()) throw new Error("PHIF bridge secret is not configured");
   const session = await getOrCreateBridgeSession(db, pharmacy_id);
@@ -722,8 +722,8 @@ export const inspectPhifTransactionsRange = createServerFn({ method: "POST" })
 
 async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchema>) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
-  const { pharmacy_id } = await requirePharmacySession();
+  const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+  const { pharmacy_id } = await requireTiryaqPermission("phif_sync_run");
   const db = supabaseAdmin as any;
   const session = await currentBridgeSession(db, pharmacy_id);
   if (!session) throw new Error("PHIF login is required before checking transactions");
@@ -909,8 +909,8 @@ export const saveNewPhifInvoices = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => saveSchema.parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
-    const { pharmacy_id } = await requirePharmacySession();
+    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+    const { pharmacy_id } = await requireTiryaqPermission("phif_sync_run");
     const db = supabaseAdmin as any;
 
     const { data: run, error: runError } = await db
@@ -1037,8 +1037,8 @@ async function completeSavedInvoiceItemsForCurrentSession({
   limit?: number;
 }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
-  const { pharmacy_id } = await requirePharmacySession();
+  const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+  const { pharmacy_id } = await requireTiryaqPermission("phif_completion_run");
   const db = supabaseAdmin as any;
   const session = await currentBridgeSession(db, pharmacy_id);
   if (!session) throw new Error("PHIF login is required before completing saved invoice items");

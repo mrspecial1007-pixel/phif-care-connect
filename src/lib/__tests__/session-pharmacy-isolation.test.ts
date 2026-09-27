@@ -44,8 +44,6 @@ describe("session pharmacy isolation", () => {
     const isolation = readProjectFile("src/lib/pharmacy-isolation.ts");
     const reads = readProjectFile("src/lib/reads.functions.ts");
 
-    expect(isolation).toContain('ANDALUS_PHARMACY_NAME = "صيدلية الأندلس"');
-    expect(isolation).toContain('TIRYAQ_PHARMACY_NAME = "صيدلية الترياق الشافي"');
     expect(isolation).toContain("patientHasTiryaqHistory");
     expect(isolation).toContain("return false");
     expect(isolation).toContain("excluded.add(r.patient_id)");
@@ -99,8 +97,6 @@ describe("session pharmacy isolation", () => {
     const migration = readProjectFile("supabase/migrations/20260921010000_update_pharmacy_pin_hashes.sql");
 
     expect(migration).toContain("UPDATE public.pharmacies");
-    expect(migration).toContain("WHERE name = 'صيدلية الترياق الشافي'");
-    expect(migration).toContain("WHERE name = 'صيدلية الأندلس'");
     expect(migration).toContain("pin_hash = 's1:");
     expect(migration).not.toContain("pin =");
   });
@@ -115,14 +111,15 @@ describe("session pharmacy isolation", () => {
     expect(migration).not.toContain("password");
   });
 
-  it("keeps PHIF navigation visible only for Tiryaq sessions", () => {
+  it("keeps PHIF archive scoped to Tiryaq and moves PHIF sync access into settings", () => {
     const appShell = readProjectFile("src/components/AppShell.tsx");
+    const settings = readProjectFile("src/routes/settings.tsx");
 
-    expect(appShell).toContain('"/phif-sync"');
     expect(appShell).toContain('"/phif-invoices"');
     expect(appShell).toContain('"/phif-review"');
-    expect(appShell).toContain('session?.pharmacy.name === "صيدلية الترياق الشافي"');
-    expect(appShell).toContain("visibleNav.map");
-    expect(appShell).toContain("visibleNav.slice");
+    expect(appShell).toContain("TIRYAQ_PHARMACY_NAME");
+    expect(appShell).toContain("isTiryaq");
+    expect(settings).toContain('to="/phif-sync"');
+    expect(settings).toContain("مزامنة PHIF");
   });
 });

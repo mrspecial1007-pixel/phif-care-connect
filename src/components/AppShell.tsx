@@ -2,12 +2,28 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Pill, LayoutDashboard, Upload, LogOut, Users, Activity, ShieldCheck, Settings, MessageSquare, RefreshCw, ReceiptText, ClipboardCheck } from "lucide-react";
+import {
+  Activity,
+  BriefcaseBusiness,
+  ClipboardCheck,
+  LayoutDashboard,
+  LogOut,
+  MessageSquare,
+  Pill,
+  ReceiptText,
+  Settings,
+  ShieldCheck,
+  Upload,
+  Users,
+} from "lucide-react";
 import { lockPharmacy } from "@/lib/auth.functions";
 import { useSession } from "@/lib/queries";
+import { hasPermission } from "@/lib/user-permissions";
 import type { ReactNode } from "react";
 import { UnlockScreen } from "./UnlockScreen";
 import { QuickSearchFab } from "./QuickSearchFab";
+
+const TIRYAQ_PHARMACY_NAME = "صيدلية الترياق الشافي";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
@@ -20,23 +36,26 @@ export function AppShell({ children }: { children: ReactNode }) {
     await qc.invalidateQueries({ queryKey: ["session"] });
   }
 
+  const isTiryaq = session?.pharmacy.name === TIRYAQ_PHARMACY_NAME;
+  const canSeeManagement =
+    isTiryaq &&
+    (hasPermission(session?.user?.role, session?.user?.permissions, "reports_read") ||
+      hasPermission(session?.user?.role, session?.user?.permissions, "treasury_read") ||
+      hasPermission(session?.user?.role, session?.user?.permissions, "inventory_read"));
+
   const nav = [
     { to: "/", label: "الرئيسية", icon: LayoutDashboard },
     { to: "/patients", label: "المستفيدون", icon: Users },
     { to: "/activity", label: "حركات الصرف", icon: Activity },
     { to: "/quality", label: "جودة البيانات", icon: ShieldCheck },
     { to: "/messages", label: "الرسائل", icon: MessageSquare },
-    { to: "/phif-sync", label: "مزامنة PHIF", icon: RefreshCw },
-    { to: "/phif-invoices", label: "فواتير PHIF", icon: ReceiptText },
-    { to: "/phif-review", label: "مراجعة PHIF", icon: ClipboardCheck },
+    ...(isTiryaq ? [
+      { to: "/phif-invoices", label: "فواتير PHIF", icon: ReceiptText },
+      { to: "/phif-review", label: "مراجعة PHIF", icon: ClipboardCheck },
+    ] : []),
+    ...(canSeeManagement ? [{ to: "/management", label: "الإدارة", icon: BriefcaseBusiness }] : []),
     { to: "/import", label: "استيراد", icon: Upload },
-    { to: "/settings", label: "الإعدادات", icon: Settings },
   ] as const;
-  const visibleNav = nav.filter(
-    (item) =>
-      !["/phif-sync", "/phif-invoices", "/phif-review"].includes(item.to) ||
-      session?.pharmacy.name === "صيدلية الترياق الشافي",
-  );
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
@@ -49,15 +68,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="font-bold text-sm leading-tight">PHIF Tracker</div>
             <div className="text-xs text-muted-foreground truncate">
               {session?.unlocked ? session.pharmacy.name : ""}
+              {session?.user?.name ? ` · ${session.user.name}` : ""}
             </div>
           </div>
           <nav className="hidden md:flex gap-1">
-            {visibleNav.map((n) => {
+            {nav.map((n) => {
               const active = loc.pathname === n.to || (n.to !== "/" && loc.pathname.startsWith(n.to));
               return (
                 <Link
                   key={n.to}
-                  to={n.to}
+                  to={n.to as any}
                   className={`px-3 py-2 rounded-md text-sm font-medium ${
                     active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent"
                   }`}
@@ -67,6 +87,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
+          <Link to="/settings" className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent" title="الإعدادات">
+            <Settings className="h-4 w-4" />
+          </Link>
           <Button variant="ghost" size="sm" onClick={onLock} title="إغلاق الجلسة">
             <LogOut className="h-4 w-4" />
           </Button>
@@ -77,13 +100,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t bg-card">
         <div className="grid grid-cols-6">
-          {visibleNav.slice(0, 6).map((n) => {
+          {nav.slice(0, 6).map((n) => {
             const Icon = n.icon;
             const active = loc.pathname === n.to || (n.to !== "/" && loc.pathname.startsWith(n.to));
             return (
               <Link
                 key={n.to}
-                to={n.to}
+                to={n.to as any}
                 className={`flex flex-col items-center py-2 text-[10px] ${
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
@@ -106,7 +129,7 @@ export function Gate({ children }: { children: ReactNode }) {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-        جاري التحميل…
+        جاري التحميل...
       </div>
     );
   }

@@ -14,13 +14,18 @@ import { Route as QualityRouteImport } from './routes/quality'
 import { Route as PhifSyncRouteImport } from './routes/phif-sync'
 import { Route as PhifReviewRouteImport } from './routes/phif-review'
 import { Route as MessagesRouteImport } from './routes/messages'
+import { Route as ManagementRouteImport } from './routes/management'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PhifInvoicesIndexRouteImport } from './routes/phif-invoices.index'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
+import { Route as SettingsUsersRouteImport } from './routes/settings.users'
 import { Route as PhifInvoicesIdRouteImport } from './routes/phif-invoices.$id'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
+import { Route as ManagementTreasuryRouteImport } from './routes/management.treasury'
+import { Route as ManagementReportsRouteImport } from './routes/management.reports'
+import { Route as ManagementInventoryRouteImport } from './routes/management.inventory'
 import { Route as ApiPublicSchedulerRouteImport } from './routes/api/public/scheduler'
 import { Route as ApiPublicGatewayStatusRouteImport } from './routes/api/public/gateway/status'
 import { Route as ApiPublicGatewayRegisterRouteImport } from './routes/api/public/gateway/register'
@@ -51,6 +56,11 @@ const MessagesRoute = MessagesRouteImport.update({
   path: '/messages',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ManagementRoute = ManagementRouteImport.update({
+  id: '/management',
+  path: '/management',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ImportRoute = ImportRouteImport.update({
   id: '/import',
   path: '/import',
@@ -76,6 +86,11 @@ const PatientsIndexRoute = PatientsIndexRouteImport.update({
   path: '/patients/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsUsersRoute = SettingsUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const PhifInvoicesIdRoute = PhifInvoicesIdRouteImport.update({
   id: '/phif-invoices/$id',
   path: '/phif-invoices/$id',
@@ -85,6 +100,21 @@ const PatientsIdRoute = PatientsIdRouteImport.update({
   id: '/patients/$id',
   path: '/patients/$id',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ManagementTreasuryRoute = ManagementTreasuryRouteImport.update({
+  id: '/treasury',
+  path: '/treasury',
+  getParentRoute: () => ManagementRoute,
+} as any)
+const ManagementReportsRoute = ManagementReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => ManagementRoute,
+} as any)
+const ManagementInventoryRoute = ManagementInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => ManagementRoute,
 } as any)
 const ApiPublicSchedulerRoute = ApiPublicSchedulerRouteImport.update({
   id: '/api/public/scheduler',
@@ -112,13 +142,18 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/management': typeof ManagementRouteWithChildren
   '/messages': typeof MessagesRoute
   '/phif-review': typeof PhifReviewRoute
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
+  '/management/inventory': typeof ManagementInventoryRoute
+  '/management/reports': typeof ManagementReportsRoute
+  '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
+  '/settings/users': typeof SettingsUsersRoute
   '/patients/': typeof PatientsIndexRoute
   '/phif-invoices/': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
@@ -130,13 +165,18 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/management': typeof ManagementRouteWithChildren
   '/messages': typeof MessagesRoute
   '/phif-review': typeof PhifReviewRoute
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
+  '/management/inventory': typeof ManagementInventoryRoute
+  '/management/reports': typeof ManagementReportsRoute
+  '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
+  '/settings/users': typeof SettingsUsersRoute
   '/patients': typeof PatientsIndexRoute
   '/phif-invoices': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
@@ -149,13 +189,18 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/import': typeof ImportRoute
+  '/management': typeof ManagementRouteWithChildren
   '/messages': typeof MessagesRoute
   '/phif-review': typeof PhifReviewRoute
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
+  '/management/inventory': typeof ManagementInventoryRoute
+  '/management/reports': typeof ManagementReportsRoute
+  '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
+  '/settings/users': typeof SettingsUsersRoute
   '/patients/': typeof PatientsIndexRoute
   '/phif-invoices/': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
@@ -169,13 +214,18 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/import'
+    | '/management'
     | '/messages'
     | '/phif-review'
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/inventory'
+    | '/management/reports'
+    | '/management/treasury'
     | '/patients/$id'
     | '/phif-invoices/$id'
+    | '/settings/users'
     | '/patients/'
     | '/phif-invoices/'
     | '/api/public/scheduler'
@@ -187,13 +237,18 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/import'
+    | '/management'
     | '/messages'
     | '/phif-review'
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/inventory'
+    | '/management/reports'
+    | '/management/treasury'
     | '/patients/$id'
     | '/phif-invoices/$id'
+    | '/settings/users'
     | '/patients'
     | '/phif-invoices'
     | '/api/public/scheduler'
@@ -205,13 +260,18 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/import'
+    | '/management'
     | '/messages'
     | '/phif-review'
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/inventory'
+    | '/management/reports'
+    | '/management/treasury'
     | '/patients/$id'
     | '/phif-invoices/$id'
+    | '/settings/users'
     | '/patients/'
     | '/phif-invoices/'
     | '/api/public/scheduler'
@@ -224,11 +284,12 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActivityRoute: typeof ActivityRoute
   ImportRoute: typeof ImportRoute
+  ManagementRoute: typeof ManagementRouteWithChildren
   MessagesRoute: typeof MessagesRoute
   PhifReviewRoute: typeof PhifReviewRoute
   PhifSyncRoute: typeof PhifSyncRoute
   QualityRoute: typeof QualityRoute
-  SettingsRoute: typeof SettingsRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   PatientsIdRoute: typeof PatientsIdRoute
   PhifInvoicesIdRoute: typeof PhifInvoicesIdRoute
   PatientsIndexRoute: typeof PatientsIndexRoute
@@ -276,6 +337,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/management': {
+      id: '/management'
+      path: '/management'
+      fullPath: '/management'
+      preLoaderRoute: typeof ManagementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/import': {
       id: '/import'
       path: '/import'
@@ -311,6 +379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PatientsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/users': {
+      id: '/settings/users'
+      path: '/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof SettingsUsersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/phif-invoices/$id': {
       id: '/phif-invoices/$id'
       path: '/phif-invoices/$id'
@@ -324,6 +399,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/patients/$id'
       preLoaderRoute: typeof PatientsIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/management/treasury': {
+      id: '/management/treasury'
+      path: '/treasury'
+      fullPath: '/management/treasury'
+      preLoaderRoute: typeof ManagementTreasuryRouteImport
+      parentRoute: typeof ManagementRoute
+    }
+    '/management/reports': {
+      id: '/management/reports'
+      path: '/reports'
+      fullPath: '/management/reports'
+      preLoaderRoute: typeof ManagementReportsRouteImport
+      parentRoute: typeof ManagementRoute
+    }
+    '/management/inventory': {
+      id: '/management/inventory'
+      path: '/inventory'
+      fullPath: '/management/inventory'
+      preLoaderRoute: typeof ManagementInventoryRouteImport
+      parentRoute: typeof ManagementRoute
     }
     '/api/public/scheduler': {
       id: '/api/public/scheduler'
@@ -356,15 +452,44 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ManagementRouteChildren {
+  ManagementInventoryRoute: typeof ManagementInventoryRoute
+  ManagementReportsRoute: typeof ManagementReportsRoute
+  ManagementTreasuryRoute: typeof ManagementTreasuryRoute
+}
+
+const ManagementRouteChildren: ManagementRouteChildren = {
+  ManagementInventoryRoute: ManagementInventoryRoute,
+  ManagementReportsRoute: ManagementReportsRoute,
+  ManagementTreasuryRoute: ManagementTreasuryRoute,
+}
+
+const ManagementRouteWithChildren = ManagementRoute._addFileChildren(
+  ManagementRouteChildren,
+)
+
+interface SettingsRouteChildren {
+  SettingsUsersRoute: typeof SettingsUsersRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsUsersRoute: SettingsUsersRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActivityRoute: ActivityRoute,
   ImportRoute: ImportRoute,
+  ManagementRoute: ManagementRouteWithChildren,
   MessagesRoute: MessagesRoute,
   PhifReviewRoute: PhifReviewRoute,
   PhifSyncRoute: PhifSyncRoute,
   QualityRoute: QualityRoute,
-  SettingsRoute: SettingsRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   PatientsIdRoute: PatientsIdRoute,
   PhifInvoicesIdRoute: PhifInvoicesIdRoute,
   PatientsIndexRoute: PatientsIndexRoute,

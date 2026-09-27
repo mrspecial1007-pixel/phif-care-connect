@@ -75,7 +75,7 @@ function List() {
       // "الكل" = no status/favorite/phone/pharmacy filtering for non-archived rows.
       switch (filter) {
         case "all":
-          return true;
+          return r.remaining_days === null || r.remaining_days >= -3;
         case "active":
           return !r.is_follow_up_suspended && (r.remaining_days === null || r.remaining_days >= -2);
         case "favorite":
@@ -102,12 +102,16 @@ function List() {
     return [...list].sort((a, b) => {
       const getPriority = (row: any) => {
         const days = row.remaining_days;
-        if (days === -1) return 0;
+        if (days === -3) return 0;
         if (days === -2) return 1;
-        if (days === 0) return 2;
-        if (days > 0) return 3;
-        if (days !== null && days < -2) return 4;
-        return 5;
+        if (days === -1) return 2;
+        if (days === 0) return 3;
+        if (days === 1) return 4;
+        if (days === 2) return 5;
+        if (days === 3) return 6;
+        if (days !== null && days > 3) return 7;
+        if (days !== null && days < -3) return 8;
+        return 9;
       };
 
       const pa = getPriority(a);
@@ -116,14 +120,6 @@ function List() {
       if (pa !== pb) return pa - pb;
 
       if (a.remaining_days !== null && b.remaining_days !== null) {
-        if (pa === 0 || pa === 1) {
-          return b.remaining_days - a.remaining_days; // -1 before -2
-        }
-        if (pa === 4) {
-          // General overdue (days < -2)
-          // Closest first: -3, -4, -5...
-          return b.remaining_days - a.remaining_days;
-        }
         return a.remaining_days - b.remaining_days;
       }
       return a.patient_name.localeCompare(b.patient_name, "ar");
