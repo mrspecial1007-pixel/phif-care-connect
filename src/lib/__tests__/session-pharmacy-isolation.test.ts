@@ -150,12 +150,16 @@ describe("session pharmacy isolation", () => {
   it("keeps PHIF archive scoped to Tiryaq and moves PHIF sync access into settings", () => {
     const appShell = readProjectFile("src/components/AppShell.tsx");
     const settings = readProjectFile("src/routes/settings.tsx");
+    const phifSettings = readProjectFile("src/routes/settings.phif.tsx");
 
-    expect(appShell).toContain('"/phif-invoices"');
+    expect(appShell).not.toContain('"/phif-invoices"');
     expect(appShell).toContain('"/phif-review"');
     expect(appShell).toContain("TIRYAQ_PHARMACY_NAME");
     expect(appShell).toContain("isTiryaq");
-    expect(settings).toContain('to="/phif-sync"');
-    expect(settings).toContain("مزامنة PHIF");
+    expect(settings).toContain('to="/settings/phif"');
+    expect(settings).not.toContain('to="/phif-sync"');
+    expect(phifSettings).toContain('to: "/phif-invoices"');
+    expect(phifSettings).toContain('to: "/phif-sync"');
+    expect(phifSettings).toContain("مزامنة PHIF");
   });
 });

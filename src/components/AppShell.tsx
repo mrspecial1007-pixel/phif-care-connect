@@ -10,7 +10,6 @@ import {
   LogOut,
   MessageSquare,
   Pill,
-  ReceiptText,
   Settings,
   ShieldCheck,
   Upload,
@@ -52,7 +51,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     { to: "/quality", label: "جودة البيانات", icon: ShieldCheck },
     { to: "/messages", label: "الرسائل", icon: MessageSquare },
     ...(isTiryaq ? [
-      { to: "/phif-invoices", label: "فواتير PHIF", icon: ReceiptText },
       { to: "/phif-review", label: "مراجعة PHIF", icon: ClipboardCheck },
     ] : []),
     ...(canSeeManagement ? [{ to: "/management", label: "الإدارة", icon: BriefcaseBusiness }] : []),

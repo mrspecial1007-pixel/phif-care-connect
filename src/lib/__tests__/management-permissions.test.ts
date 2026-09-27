@@ -36,21 +36,36 @@ describe("Tiryaq management and permissions", () => {
 
   it("exposes actual settings and management routes without dead links", () => {
     const settings = readProjectFile("src/routes/settings.tsx");
+    const phifSettings = readProjectFile("src/routes/settings.phif.tsx");
+    const management = readProjectFile("src/routes/management.tsx");
     const appShell = readProjectFile("src/components/AppShell.tsx");
     const routeTree = readProjectFile("src/routeTree.gen.ts");
 
+    expect(routeTree).toContain("'/settings/phif'");
     expect(routeTree).toContain("'/settings/users'");
+    expect(routeTree).toContain("'/management'");
     expect(routeTree).toContain("'/management/reports'");
     expect(routeTree).toContain("'/management/treasury'");
     expect(routeTree).toContain("'/phif-invoices'");
     expect(settings).toContain("return <Outlet />");
+    expect(settings).toContain('to="/settings/phif"');
     expect(settings).toContain('to="/settings/users"');
-    expect(settings).toContain('to="/management/reports"');
-    expect(settings).toContain('to="/management/treasury"');
     expect(settings).toContain('to="/management"');
-    expect(settings).toContain('to="/phif-invoices"');
+    expect(settings).not.toContain('to="/management/reports"');
+    expect(settings).not.toContain('to="/management/treasury"');
+    expect(settings).not.toContain('to="/phif-invoices"');
+    expect(settings).not.toContain('title="مزامنة PHIF"');
+    expect(phifSettings).toContain('to: "/phif-invoices"');
+    expect(phifSettings).toContain('to: "/phif-sync"');
+    expect(phifSettings).toContain("فواتير PHIF");
+    expect(phifSettings).toContain("مزامنة PHIF");
+    expect(phifSettings).toContain("استكمال فواتير PHIF");
+    expect(management).toContain("التقارير");
+    expect(management).toContain("خزينة الصرف");
+    expect(management).toContain("الإدارة العامة");
     expect(appShell).toContain("isLegacyTiryaq");
     expect(appShell).toContain("isLegacyTiryaq ||");
+    expect(appShell).not.toContain('{ to: "/phif-invoices"');
   });
 
   it("orders patient list by the current display due window and hides older overdue by default", () => {

@@ -12,7 +12,7 @@ function ManagementPage() {
   const items = [
     { to: "/management/reports", title: "التقارير", desc: "تقارير الصرف والفواتير المحفوظة", icon: BarChart3 },
     { to: "/management/treasury", title: "خزينة الصرف", desc: "قيم الصرف Actual وPHIF دون افتراض تحصيل نقدي", icon: BriefcaseBusiness },
-    { to: "/management/inventory", title: "المخزون", desc: "تجهيز فقط لهذه المرحلة", icon: PackageSearch, soon: true },
+    { to: "/management/inventory", title: "الإدارة العامة", desc: "أدوات إدارية عامة وتجهيزات المرحلة التالية", icon: PackageSearch, soon: true },
   ] as const;
 
   return (

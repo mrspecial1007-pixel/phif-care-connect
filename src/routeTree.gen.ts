@@ -21,6 +21,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as PhifInvoicesIndexRouteImport } from './routes/phif-invoices.index'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
 import { Route as SettingsUsersRouteImport } from './routes/settings.users'
+import { Route as SettingsPhifRouteImport } from './routes/settings.phif'
 import { Route as PhifInvoicesIdRouteImport } from './routes/phif-invoices.$id'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as ManagementTreasuryRouteImport } from './routes/management.treasury'
@@ -91,6 +92,11 @@ const SettingsUsersRoute = SettingsUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsPhifRoute = SettingsPhifRouteImport.update({
+  id: '/phif',
+  path: '/phif',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const PhifInvoicesIdRoute = PhifInvoicesIdRouteImport.update({
   id: '/phif-invoices/$id',
   path: '/phif-invoices/$id',
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
+  '/settings/phif': typeof SettingsPhifRoute
   '/settings/users': typeof SettingsUsersRoute
   '/patients/': typeof PatientsIndexRoute
   '/phif-invoices/': typeof PhifInvoicesIndexRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
+  '/settings/phif': typeof SettingsPhifRoute
   '/settings/users': typeof SettingsUsersRoute
   '/patients': typeof PatientsIndexRoute
   '/phif-invoices': typeof PhifInvoicesIndexRoute
@@ -200,6 +208,7 @@ export interface FileRoutesById {
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
+  '/settings/phif': typeof SettingsPhifRoute
   '/settings/users': typeof SettingsUsersRoute
   '/patients/': typeof PatientsIndexRoute
   '/phif-invoices/': typeof PhifInvoicesIndexRoute
@@ -225,6 +234,7 @@ export interface FileRouteTypes {
     | '/management/treasury'
     | '/patients/$id'
     | '/phif-invoices/$id'
+    | '/settings/phif'
     | '/settings/users'
     | '/patients/'
     | '/phif-invoices/'
@@ -248,6 +258,7 @@ export interface FileRouteTypes {
     | '/management/treasury'
     | '/patients/$id'
     | '/phif-invoices/$id'
+    | '/settings/phif'
     | '/settings/users'
     | '/patients'
     | '/phif-invoices'
@@ -271,6 +282,7 @@ export interface FileRouteTypes {
     | '/management/treasury'
     | '/patients/$id'
     | '/phif-invoices/$id'
+    | '/settings/phif'
     | '/settings/users'
     | '/patients/'
     | '/phif-invoices/'
@@ -386,6 +398,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsUsersRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/phif': {
+      id: '/settings/phif'
+      path: '/phif'
+      fullPath: '/settings/phif'
+      preLoaderRoute: typeof SettingsPhifRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/phif-invoices/$id': {
       id: '/phif-invoices/$id'
       path: '/phif-invoices/$id'
@@ -469,10 +488,12 @@ const ManagementRouteWithChildren = ManagementRoute._addFileChildren(
 )
 
 interface SettingsRouteChildren {
+  SettingsPhifRoute: typeof SettingsPhifRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsPhifRoute: SettingsPhifRoute,
   SettingsUsersRoute: SettingsUsersRoute,
 }
 
