@@ -73,7 +73,7 @@ export const exportAllData = createServerFn({ method: "GET" }).handler(async () 
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
   const { patientAccessSetsForSession } = await import("@/lib/pharmacy-isolation");
   const { pharmacy_id: sessionPharmacyId } = await requirePharmacySession();
-  const { served, anyTx, excluded } = await patientAccessSetsForSession(supabaseAdmin, sessionPharmacyId);
+  const { served, anyTx, excluded, accessTableEnforced } = await patientAccessSetsForSession(supabaseAdmin, sessionPharmacyId);
   const [patients, cycles, txs, audit, pharmacies] = await Promise.all([
     supabaseAdmin.from("patients").select("*"),
     supabaseAdmin.from("dispensing_cycles").select("*").eq("pharmacy_id", sessionPharmacyId),
@@ -82,7 +82,10 @@ export const exportAllData = createServerFn({ method: "GET" }).handler(async () 
     supabaseAdmin.from("pharmacies").select("id, name, address, phone, created_at").eq("id", sessionPharmacyId),
   ]);
   return {
-    patients: (patients.data ?? []).filter((p: any) => !excluded.has(p.id) && (served.has(p.id) || !anyTx.has(p.id))),
+    patients: (patients.data ?? []).filter((p: any) =>
+      !excluded.has(p.id)
+      && (accessTableEnforced ? served.has(p.id) : served.has(p.id) || !anyTx.has(p.id))
+    ),
     cycles: cycles.data ?? [],
     transactions: txs.data ?? [],
     audit: audit.data ?? [],

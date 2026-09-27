@@ -296,7 +296,7 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
 
 export const listPatientStatuses = createServerFn({ method: "GET" }).handler(async () => {
   const { pharmacy_id, pharmacy_name, admin } = await ctx();
-  const { served, anyTx, excluded } = await patientAccessSetsForSession(admin, pharmacy_id);
+  const { served, anyTx, excluded, accessTableEnforced } = await patientAccessSetsForSession(admin, pharmacy_id);
   const rows: any[] = [];
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
@@ -309,7 +309,10 @@ export const listPatientStatuses = createServerFn({ method: "GET" }).handler(asy
     rows.push(...page);
     if (page.length < PAGE) break;
   }
-  const filtered = rows.filter((r: any) => !excluded.has(r.patient_id) && (served.has(r.patient_id) || !anyTx.has(r.patient_id)));
+  const filtered = rows.filter((r: any) =>
+    !excluded.has(r.patient_id)
+    && (accessTableEnforced ? served.has(r.patient_id) : served.has(r.patient_id) || !anyTx.has(r.patient_id))
+  );
   if (pharmacy_name !== TIRYAQ_PHARMACY_NAME) return filtered;
 
   const [phifProfiles, cardsByPatient] = await Promise.all([

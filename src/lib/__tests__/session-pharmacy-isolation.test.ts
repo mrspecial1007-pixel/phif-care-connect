@@ -51,6 +51,29 @@ describe("session pharmacy isolation", () => {
     expect(reads).toContain("!excluded.has(r.patient_id)");
   });
 
+  it("uses patient_pharmacy_access as the enforced patient scope when available", () => {
+    const isolation = readProjectFile("src/lib/pharmacy-isolation.ts");
+    const reads = readProjectFile("src/lib/reads.functions.ts");
+    const activity = readProjectFile("src/lib/activity.functions.ts");
+    const phifInvoices = readProjectFile("src/lib/phif-invoices.functions.ts");
+
+    expect(isolation).toContain("accessTableEnforced: true");
+    expect(isolation).toContain("accessTableEnforced: false");
+    expect(reads).toContain("accessTableEnforced ? served.has(r.patient_id) : served.has(r.patient_id) || !anyTx.has(r.patient_id)");
+    expect(activity).toContain("accessTableEnforced ? served.has(p.id) : served.has(p.id) || !anyTx.has(p.id)");
+    expect(phifInvoices).toContain("accessTableEnforced ? served.has(row.patient_id) : served.has(row.patient_id) || !anyTx.has(row.patient_id)");
+    expect(phifInvoices).toContain("accessTableEnforced ? served.has(patient.id) : served.has(patient.id) || !anyTx.has(patient.id)");
+  });
+
+  it("prevents direct patient detail access outside the session pharmacy", () => {
+    const reads = readProjectFile("src/lib/reads.functions.ts");
+
+    const getPatientSection = reads.slice(reads.indexOf("export const getPatient"), reads.indexOf("export const getPatientHistory"));
+    expect(getPatientSection).toContain("authorizePatient(admin, pharmacy_id, data.id)");
+    expect(getPatientSection).toContain("return null");
+    expect(reads).toContain("authorizePatientForSessionPharmacy(admin, pharmacyId, patientId)");
+  });
+
   it("keeps transaction and activity reads scoped to the session pharmacy", () => {
     const reads = readProjectFile("src/lib/reads.functions.ts");
     const activity = readProjectFile("src/lib/activity.functions.ts");

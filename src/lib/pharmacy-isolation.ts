@@ -139,7 +139,7 @@ export async function patientAccessSetsForSession(admin: any, pharmacyId: string
       for (const r of rows) anyTx.add(r.id);
       if (rows.length < PAGE) break;
     }
-    return { served, anyTx, excluded };
+    return { served, anyTx, excluded, accessTableEnforced: true };
   }
 
   const isAndalus = await isAndalusSession(admin, pharmacyId);
@@ -160,5 +160,5 @@ export async function patientAccessSetsForSession(admin: any, pharmacyId: string
     if (rows.length < PAGE) break;
   }
 
-  return { served, anyTx, excluded };
+  return { served, anyTx, excluded, accessTableEnforced: false };
 }

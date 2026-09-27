@@ -166,7 +166,7 @@ async function accessiblePatientsByCard(admin: any, pharmacyId: string, cards: (
   const matches = new Map<string, string>();
   if (uniqueCards.length === 0) return matches;
 
-  const { served, anyTx, excluded } = await patientAccessSets(admin, pharmacyId);
+  const { served, anyTx, excluded, accessTableEnforced } = await patientAccessSets(admin, pharmacyId);
 
   const { data: cardRows, error: cardError } = await admin
     .from("patient_insurance_cards")
@@ -175,7 +175,9 @@ async function accessiblePatientsByCard(admin: any, pharmacyId: string, cards: (
   if (!cardError) {
     for (const row of cardRows ?? []) {
       if (!row.patient_id || !row.card_number || excluded.has(row.patient_id)) continue;
-      if (served.has(row.patient_id) || !anyTx.has(row.patient_id)) matches.set(row.card_number, row.patient_id);
+      if (accessTableEnforced ? served.has(row.patient_id) : served.has(row.patient_id) || !anyTx.has(row.patient_id)) {
+        matches.set(row.card_number, row.patient_id);
+      }
     }
   }
 
@@ -187,7 +189,9 @@ async function accessiblePatientsByCard(admin: any, pharmacyId: string, cards: (
 
   for (const patient of patients ?? []) {
     if (!patient?.id || !patient.insurance_card_number || excluded.has(patient.id)) continue;
-    if (served.has(patient.id) || !anyTx.has(patient.id)) matches.set(patient.insurance_card_number, patient.id);
+    if (accessTableEnforced ? served.has(patient.id) : served.has(patient.id) || !anyTx.has(patient.id)) {
+      matches.set(patient.insurance_card_number, patient.id);
+    }
   }
   return matches;
 }
@@ -882,7 +886,7 @@ export const searchPhifLinkPatients = createServerFn({ method: "POST" })
       .or(`patient_name.ilike.%${term}%,insurance_card_number.ilike.%${term}%,phone.ilike.%${term}%`)
       .limit(30);
     if (error) throw new Error(error.message);
-    const { served, anyTx, excluded } = await patientAccessSets(db, pharmacy_id);
+    const { served, anyTx, excluded, accessTableEnforced } = await patientAccessSets(db, pharmacy_id);
     const byId = new Map<string, any>();
     for (const patient of rows ?? []) byId.set(patient.id, patient);
 
@@ -905,7 +909,10 @@ export const searchPhifLinkPatients = createServerFn({ method: "POST" })
       }
     }
 
-    return [...byId.values()].filter((patient: any) => !excluded.has(patient.id) && (served.has(patient.id) || !anyTx.has(patient.id)));
+    return [...byId.values()].filter((patient: any) =>
+      !excluded.has(patient.id)
+      && (accessTableEnforced ? served.has(patient.id) : served.has(patient.id) || !anyTx.has(patient.id))
+    );
   });
 
 export const listPatientInsuranceCards = createServerFn({ method: "POST" })
