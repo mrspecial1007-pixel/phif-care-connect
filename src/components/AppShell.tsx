@@ -37,9 +37,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const isTiryaq = session?.pharmacy.name === TIRYAQ_PHARMACY_NAME;
+  const isLegacyTiryaq = isTiryaq && (!session?.user || session.user.role === "legacy");
   const canSeeManagement =
     isTiryaq &&
-    (hasPermission(session?.user?.role, session?.user?.permissions, "reports_read") ||
+    (isLegacyTiryaq ||
+      hasPermission(session?.user?.role, session?.user?.permissions, "reports_read") ||
       hasPermission(session?.user?.role, session?.user?.permissions, "treasury_read") ||
       hasPermission(session?.user?.role, session?.user?.permissions, "inventory_read"));
 

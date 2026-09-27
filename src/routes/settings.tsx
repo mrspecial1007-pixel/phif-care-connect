@@ -1,10 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useServerFn } from "@tanstack/react-start";
 import { exportAllData } from "@/lib/activity.functions";
-import { Download, Database, Users, RefreshCw, Wrench, Building2 } from "lucide-react";
+import { Download, Database, Users, RefreshCw, Wrench, Building2, ReceiptText, BarChart3, BriefcaseBusiness } from "lucide-react";
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -30,8 +30,11 @@ export const Route = createFileRoute("/settings")({
 });
 
 function SettingsPage() {
+  const location = useLocation();
   const exportFn = useServerFn(exportAllData);
   const [busy, setBusy] = useState(false);
+
+  if (location.pathname !== "/settings") return <Outlet />;
 
   async function fullBackup() {
     setBusy(true);
@@ -64,7 +67,11 @@ function SettingsPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-bold">الإعدادات</h1>
       <div className="grid gap-3 md:grid-cols-4">
+        <SettingsLink to="/phif-invoices" title="فواتير PHIF" desc="أرشيف الفواتير المحفوظة" icon={ReceiptText} />
         <SettingsLink to="/settings/users" title="إدارة الموظفين" desc="الحسابات والصلاحيات" icon={Users} />
+        <SettingsLink to="/management/reports" title="التقارير" desc="تقارير الصرف والفواتير" icon={BarChart3} />
+        <SettingsLink to="/management/treasury" title="الخزينة" desc="قيم الصرف اليومية والفترات" icon={BriefcaseBusiness} />
+        <SettingsLink to="/management" title="الإدارة" desc="تقارير وخزينة ومخزون" icon={BriefcaseBusiness} />
         <SettingsLink to="/phif-sync" title="مزامنة PHIF" desc="تسجيل الدخول وفحص الحركات" icon={RefreshCw} />
         <SettingsLink to="/phif-sync" title="استكمال فواتير PHIF" desc="أداة صيانة الأصناف الناقصة" icon={Wrench} />
         <SettingsLink to="/settings" title="بيانات الصيدلية" desc="الإعدادات الحالية" icon={Building2} />

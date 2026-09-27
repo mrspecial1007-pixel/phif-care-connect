@@ -34,6 +34,25 @@ describe("Tiryaq management and permissions", () => {
     expect(source).toContain('requireTiryaqPermission("phif_completion_run")');
   });
 
+  it("exposes actual settings and management routes without dead links", () => {
+    const settings = readProjectFile("src/routes/settings.tsx");
+    const appShell = readProjectFile("src/components/AppShell.tsx");
+    const routeTree = readProjectFile("src/routeTree.gen.ts");
+
+    expect(routeTree).toContain("'/settings/users'");
+    expect(routeTree).toContain("'/management/reports'");
+    expect(routeTree).toContain("'/management/treasury'");
+    expect(routeTree).toContain("'/phif-invoices'");
+    expect(settings).toContain("return <Outlet />");
+    expect(settings).toContain('to="/settings/users"');
+    expect(settings).toContain('to="/management/reports"');
+    expect(settings).toContain('to="/management/treasury"');
+    expect(settings).toContain('to="/management"');
+    expect(settings).toContain('to="/phif-invoices"');
+    expect(appShell).toContain("isLegacyTiryaq");
+    expect(appShell).toContain("isLegacyTiryaq ||");
+  });
+
   it("orders patient list by the current display due window and hides older overdue by default", () => {
     const patientRoute = readProjectFile("src/routes/patients.index.tsx");
     const reads = readProjectFile("src/lib/reads.functions.ts");
