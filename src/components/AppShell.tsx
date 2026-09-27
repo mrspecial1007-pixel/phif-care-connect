@@ -89,9 +89,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <Link to="/settings" className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent" title="الإعدادات">
-            <Settings className="h-4 w-4" />
-          </Link>
+          {isTiryaq && (
+            <Link to="/settings" className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent" title="الإعدادات">
+              <Settings className="h-4 w-4" />
+            </Link>
+          )}
           <Button variant="ghost" size="sm" onClick={onLock} title="إغلاق الجلسة">
             <LogOut className="h-4 w-4" />
           </Button>
