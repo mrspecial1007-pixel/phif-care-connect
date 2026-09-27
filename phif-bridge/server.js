@@ -97,6 +97,27 @@ async function handleApi(req, res, url, context) {
     return json(res, 200, { ok: true, rows: parseTodayTransactions(result.json), raw_count: countRawRows(result.json) });
   }
 
+  if (req.method === "GET" && action === "stock") {
+    const client = new PhifClient({
+      fetchImpl: (input, options) => phifSessionFetch(session, input, { ...options, ...context }),
+      timeoutMs: context.timeoutMs,
+    });
+    const result = await fetchCompleteStock(client);
+    if (!result.ok) return json(res, result.blocked ? 403 : 502, safeStockFailure(result));
+    return json(res, 200, {
+      ok: true,
+      rows: result.rows,
+      raw_count: result.rows.length,
+      recordsTotal: result.recordsTotal,
+      recordsFiltered: result.recordsFiltered,
+      metadata: {
+        source: "get-pharmacy-stock",
+        request_method: "GET",
+        pages: result.pages,
+      },
+    });
+  }
+
   if (req.method === "POST" && action === "historical-transactions") {
     const body = await readJson(req);
     const dateFrom = normalizeDateInput(body.dateFrom);
@@ -191,6 +212,78 @@ function countRawRows(payload) {
   return 0;
 }
 
+async function fetchCompleteStock(client) {
+  const first = await client.getJson("/get-pharmacy-stock");
+  if (!first.ok) return first;
+  const firstRows = Array.isArray(first.json?.data) ? first.json.data : [];
+  const total = Number(first.json?.recordsTotal ?? first.json?.recordsFiltered ?? firstRows.length);
+  const rows = [];
+  const seen = new Set();
+  addUniqueStockRows(rows, seen, firstRows);
+  if (!Number.isFinite(total) || total <= firstRows.length || firstRows.length === 0) {
+    if (Number.isFinite(total) && rows.length < total) {
+      return incompleteStockPaginationFailure();
+    }
+    return {
+      ok: true,
+      rows,
+      recordsTotal: Number.isFinite(total) ? total : firstRows.length,
+      recordsFiltered: Number(first.json?.recordsFiltered ?? firstRows.length),
+      pages: 1,
+    };
+  }
+
+  const length = Math.max(firstRows.length, 100);
+  let pages = 1;
+  for (let start = firstRows.length; start < total; start += length) {
+    const page = await client.getJson(`/get-pharmacy-stock?start=${start}&length=${length}`);
+    if (!page.ok) return page;
+    const pageRows = Array.isArray(page.json?.data) ? page.json.data : [];
+    const added = addUniqueStockRows(rows, seen, pageRows);
+    pages++;
+    if (pageRows.length === 0 || added === 0) break;
+  }
+
+  if (rows.length < total) {
+    return incompleteStockPaginationFailure();
+  }
+
+  return {
+    ok: true,
+    rows,
+    recordsTotal: total,
+    recordsFiltered: Number(first.json?.recordsFiltered ?? total),
+    pages,
+  };
+}
+
+function incompleteStockPaginationFailure() {
+  return {
+    ok: false,
+    status: 502,
+    contentType: "application/json",
+    message: "PHIF stock pagination did not return all records",
+  };
+}
+
+function addUniqueStockRows(target, seen, rows) {
+  let added = 0;
+  for (const row of rows) {
+    const key = stockRowKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    target.push(row);
+    added++;
+  }
+  return added;
+}
+
+function stockRowKey(row) {
+  const id = row?.id ?? row?.stock_id ?? row?.stockId;
+  if (id !== undefined && id !== null && String(id).trim()) return `id:${String(id).trim()}`;
+  return `row:${JSON.stringify(row)}`;
+}
+
 function normalizeDateInput(value) {
   const text = String(value ?? "").trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
@@ -233,6 +326,20 @@ function safeUpstreamFailure(result) {
       authRequired: result?.authRequired === true,
       classification: classifyUpstreamBody(result),
       redirect: result?.location ? classifyRedirect(result.location) : null,
+      message: result?.message ?? null,
+    },
+  };
+}
+
+function safeStockFailure(result) {
+  return {
+    ok: false,
+    error: "PHIF stock request failed",
+    diagnostic: {
+      status: result?.status ?? null,
+      contentType: result?.contentType ?? null,
+      authRequired: result?.authRequired === true,
+      classification: classifyUpstreamBody(result),
       message: result?.message ?? null,
     },
   };

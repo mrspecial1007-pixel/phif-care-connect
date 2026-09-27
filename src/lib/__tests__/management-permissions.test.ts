@@ -62,7 +62,7 @@ describe("Tiryaq management and permissions", () => {
     expect(phifSettings).toContain("استكمال فواتير PHIF");
     expect(management).toContain("التقارير");
     expect(management).toContain("خزينة الصرف");
-    expect(management).toContain("الإدارة العامة");
+    expect(management).toContain("مخزون PHIF");
     expect(management).toContain("return <Outlet />");
     expect(management).toContain('to: "/management/reports"');
     expect(management).toContain('to: "/management/treasury"');

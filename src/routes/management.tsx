@@ -1,7 +1,6 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { BarChart3, BriefcaseBusiness, PackageSearch } from "lucide-react";
 
 export const Route = createFileRoute("/management")({
@@ -13,7 +12,7 @@ function ManagementPage() {
   const items = [
     { to: "/management/reports", title: "التقارير", desc: "تقارير الصرف والفواتير المحفوظة", icon: BarChart3 },
     { to: "/management/treasury", title: "خزينة الصرف", desc: "قيم الصرف Actual وPHIF دون افتراض تحصيل نقدي", icon: BriefcaseBusiness },
-    { to: "/management/inventory", title: "الإدارة العامة", desc: "أدوات إدارية عامة وتجهيزات المرحلة التالية", icon: PackageSearch, soon: true },
+    { to: "/management/inventory", title: "مخزون PHIF", desc: "مزامنة وقراءة مخزون التأمين بدون تعديل بيانات PHIF", icon: PackageSearch },
   ] as const;
 
   if (location.pathname !== "/management") return <Outlet />;
@@ -37,7 +36,6 @@ function ManagementPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h2 className="font-semibold">{item.title}</h2>
-                      {item.soon && <Badge variant="secondary">قريبًا</Badge>}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{item.desc}</p>
                   </div>

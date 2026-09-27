@@ -7,7 +7,8 @@ export const TIRYAQ_PERMISSIONS = {
   treasury_read: "عرض خزينة الصرف",
   phif_sync_run: "تشغيل مزامنة PHIF",
   phif_completion_run: "استكمال أصناف الفواتير المحفوظة",
-  inventory_read: "عرض المخزون مستقبلًا",
+  inventory_read: "عرض المخزون",
+  stock_cost_read: "عرض سعر تكلفة مخزون PHIF",
   users_manage: "إدارة الموظفين والصلاحيات",
 } as const;
 

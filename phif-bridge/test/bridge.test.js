@@ -50,6 +50,7 @@ test("read allowlist permits only phase-one read endpoints", () => {
   assert.equal(isAllowedReadPath("/showPharmacyFilterTransactions"), true);
   assert.equal(isAllowedReadPath("/pharmacyFilteredtransactions"), true);
   assert.equal(isAllowedReadPath("/PosTransaction"), true);
+  assert.equal(isAllowedReadPath("/get-pharmacy-stock"), true);
   assert.equal(isAllowedReadPath("/getTransaction/2026-4197020-2857276"), true);
 
   assert.equal(isAllowedReadPath("/cashing"), false);
@@ -191,6 +192,68 @@ test("known PHIF empty-day server response returns zero today transactions", asy
   assert.deepEqual(result.body.rows, []);
   assert.equal(result.body.raw_count, 0);
   assert.equal(result.body.metadata.empty_day_server_response, true);
+});
+
+test("stock endpoint fetches all pages using read-only GET requests", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const requested = [];
+  const server = createPhifBridgeServer({
+    secret: SECRET,
+    store,
+    fetchImpl: async (input, init) => {
+      const url = new URL(String(input));
+      requested.push({ path: `${url.pathname}${url.search}`, method: init?.method ?? "GET" });
+      if (url.searchParams.get("start") === "2") {
+        return new Response(JSON.stringify({
+          recordsTotal: 3,
+          recordsFiltered: 3,
+          data: [{ id: 3, quantity: "9" }],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        recordsTotal: 3,
+        recordsFiltered: 3,
+        data: [{ id: 1, quantity: "4" }, { id: 2, quantity: "5" }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  await using app = await listen(server);
+
+  const result = await fetchJson(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/stock`, {
+    headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.raw_count, 3);
+  assert.deepEqual(result.body.rows.map((row) => row.id), [1, 2, 3]);
+  assert.deepEqual(requested.map((req) => req.method), ["GET", "GET"]);
+  assert.equal(requested[0].path, "/get-pharmacy-stock");
+  assert.equal(requested[1].path, "/get-pharmacy-stock?start=2&length=100");
+});
+
+test("stock endpoint rejects incomplete pagination instead of duplicating rows", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const server = createPhifBridgeServer({
+    secret: SECRET,
+    store,
+    fetchImpl: async () => new Response(JSON.stringify({
+      recordsTotal: 3,
+      recordsFiltered: 3,
+      data: [{ id: 1, quantity: "4" }, { id: 2, quantity: "5" }],
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+  });
+  await using app = await listen(server);
+
+  const response = await fetch(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/stock`, {
+    headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.error, "PHIF stock request failed");
+  assert.equal(body.diagnostic.message, "PHIF stock pagination did not return all records");
 });
 
 test("different PHIF 500 remains an upstream error", async () => {

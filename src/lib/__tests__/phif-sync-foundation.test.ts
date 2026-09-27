@@ -16,6 +16,7 @@ import {
   phifMedicationIdentityKey,
 } from "@/lib/phif-invoices.functions";
 import { buildPhifHistoryRows, phifDueSummariesToTracks } from "@/lib/reads.functions";
+import { assertExpectedTiryaqStockSource, normalizePhifStockRows } from "@/lib/phif-stock.functions";
 
 function readProjectFile(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -843,5 +844,118 @@ describe("PHIF sync foundation", () => {
     expect(patientRoute).toContain("الاستحقاق:");
     expect(patientRoute).toContain("<details");
     expect(patientRoute).not.toContain("item.brand || item.active_ingredient");
+  });
+
+  it("adds server-only PHIF stock snapshot tables without touching invoices or dispensing", () => {
+    const migration = readProjectFile("supabase/migrations/20260928010000_add_phif_stock_snapshots.sql");
+    expect(migration).toContain("CREATE TABLE public.phif_stock_sync_runs");
+    expect(migration).toContain("CREATE TABLE public.phif_stock_items");
+    expect(migration).toContain("source_stock_id text NOT NULL");
+    expect(migration).toContain("cost_price numeric(18, 6)");
+    expect(migration).toContain("sale_price numeric(18, 6)");
+    expect(migration).toContain("phif_stock_items_snapshot_uidx");
+    expect(migration).toContain("phif_stock_items_current_source_uidx");
+    expect(migration).toContain("CREATE OR REPLACE FUNCTION public.replace_phif_stock_snapshots");
+    expect(migration).toContain("SECURITY DEFINER");
+    expect(migration).toContain("GRANT EXECUTE ON FUNCTION public.replace_phif_stock_snapshots");
+    expect(migration).toContain("ALTER TABLE public.phif_stock_items ENABLE ROW LEVEL SECURITY");
+    expect(migration).toContain("REVOKE ALL ON public.phif_stock_items FROM anon, authenticated");
+    expect(migration).not.toContain("dispensing_transactions");
+    expect(migration).not.toContain("phif_invoices");
+  });
+
+  it("normalizes complete PHIF stock response while preserving decimal strings and missing nested fields", () => {
+    const rows = normalizePhifStockRows({
+      recordsTotal: 2,
+      data: [
+        {
+          id: 10,
+          pharmacies_id: 55,
+          genaric_names_id: 77,
+          medical_suppliers_id: 88,
+          supplier_brand_name_id: 99,
+          patsh_numbers_id: 111,
+          quantity: "12.500",
+          supplier_brand_name: {
+            brand_name: "FORMIN",
+            unit: "tablet",
+            doses: "500mg",
+            package_quantity: "30",
+            strips_quantity: "3",
+            cost_price: "0.284",
+            sale_price: "0.340",
+            factory_price: "0.250",
+          },
+          patsh_numbers: {
+            batch_number: "B-001",
+            expiry_date: "2027-05-01",
+          },
+          medical_supplier: { name: "Supplier A" },
+          genaric_name: { name: "METFORMIN" },
+        },
+        {
+          id: 11,
+          quantity: null,
+        },
+      ],
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      source_stock_id: "10",
+      source_pharmacy_id: "55",
+      generic_ingredient_id: "77",
+      supplier_id: "88",
+      brand_product_id: "99",
+      batch_id: "111",
+      brand_name: "FORMIN",
+      active_ingredient: "METFORMIN",
+      strength: "500mg",
+      stock_quantity: "12.500",
+      cost_price: "0.284",
+      sale_price: "0.340",
+      batch_number: "B-001",
+      expiry_date: "2027-05-01",
+    });
+    expect(rows[1].source_stock_id).toBe("11");
+    expect(rows[1].brand_name).toBeNull();
+    expect(rows[0].content_hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("rejects PHIF stock responses that do not match the documented Tiryaq source pharmacy", () => {
+    const rows = normalizePhifStockRows({
+      data: [
+        { id: 10, pharmacies_id: "55", quantity: "1" },
+        { id: 11, pharmacies_id: "55", quantity: "2" },
+      ],
+    });
+
+    expect(() => assertExpectedTiryaqStockSource(rows, null)).toThrow("PHIF_TIRYAQ_SOURCE_PHARMACY_ID");
+    expect(() => assertExpectedTiryaqStockSource(rows, "77")).toThrow("does not match Tiryaq");
+    expect(() => assertExpectedTiryaqStockSource(rows, "55")).not.toThrow();
+
+    const missingSource = normalizePhifStockRows({ data: [{ id: 12, quantity: "3" }] });
+    expect(() => assertExpectedTiryaqStockSource(missingSource, "55")).toThrow("without source pharmacy identity");
+  });
+
+  it("keeps PHIF stock read-only through the bridge and protects cost prices server-side", () => {
+    const bridgeClient = readProjectFile("phif-bridge/phif/client.js");
+    const bridgeServer = readProjectFile("phif-bridge/server.js");
+    const stockFunctions = readProjectFile("src/lib/phif-stock.functions.ts");
+    const route = readProjectFile("src/routes/management.inventory.tsx");
+
+    expect(bridgeClient).toContain('/^\\/get-pharmacy-stock$/');
+    expect(bridgeServer).toContain('action === "stock"');
+    expect(bridgeServer).toContain('client.getJson("/get-pharmacy-stock")');
+    expect(bridgeServer).not.toContain('postForm("/get-pharmacy-stock"');
+    expect(stockFunctions).toContain('requireTiryaqPermission("inventory_read")');
+    expect(stockFunctions).toContain("PHIF_TIRYAQ_SOURCE_PHARMACY_ID");
+    expect(stockFunctions).toContain("assertExpectedTiryaqStockSource");
+    expect(stockFunctions).toContain('rpc("replace_phif_stock_snapshots"');
+    expect(stockFunctions).toContain('"stock_cost_read"');
+    expect(stockFunctions).toContain("const { cost_price, ...safe } = row");
+    expect(stockFunctions).toContain('.from("phif_stock_items")');
+    expect(route).toContain("syncPhifStock");
+    expect(route).toContain("canViewCost");
   });
 });
