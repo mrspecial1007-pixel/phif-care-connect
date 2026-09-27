@@ -80,15 +80,33 @@ async function patientHasSessionAccess(admin: any, pharmacyId: string, patientId
   return (count ?? 0) > 0;
 }
 
+async function patientAccessPharmacyCount(admin: any, patientId: string) {
+  const { data, error } = await admin
+    .from("patient_pharmacy_access")
+    .select("pharmacy_id")
+    .eq("patient_id", patientId);
+  if (error) {
+    if (isMissingPatientAccessTable(error)) return null;
+    throw new Error(error.message);
+  }
+  return new Set((data ?? []).map((row: any) => row.pharmacy_id).filter(Boolean)).size;
+}
+
 export async function authorizePatientForSessionPharmacy(admin: any, pharmacyId: string, patientId: string) {
+  const isAndalus = await isAndalusSession(admin, pharmacyId);
   const hasAccess = await patientHasSessionAccess(admin, pharmacyId, patientId);
-  if (hasAccess === true) return true;
+  if (hasAccess === true) {
+    if (!isAndalus) return true;
+    const pharmacyCount = await patientAccessPharmacyCount(admin, patientId);
+    return pharmacyCount === 1;
+  }
   if (hasAccess === false) {
     const hasAccessTable = await patientAccessTableAvailable(admin);
     if (hasAccessTable) return false;
   }
+  if (hasAccess === null && isAndalus) return false;
 
-  if ((await isAndalusSession(admin, pharmacyId)) && (await patientHasTiryaqHistory(admin, patientId))) {
+  if (isAndalus && (await patientHasTiryaqHistory(admin, patientId))) {
     return false;
   }
 
@@ -113,9 +131,11 @@ export async function patientAccessSetsForSession(admin: any, pharmacyId: string
   const anyTx = new Set<string>();
   const excluded = new Set<string>();
   const hasAccessTable = await patientAccessTableAvailable(admin);
+  const isAndalus = await isAndalusSession(admin, pharmacyId);
 
   const PAGE = 1000;
   if (hasAccessTable) {
+    const pharmacyCountByPatient = new Map<string, Set<string>>();
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await admin
         .from("patient_pharmacy_access")
@@ -125,9 +145,19 @@ export async function patientAccessSetsForSession(admin: any, pharmacyId: string
       const rows = data ?? [];
       for (const r of rows) {
         anyTx.add(r.patient_id);
+        if (!pharmacyCountByPatient.has(r.patient_id)) pharmacyCountByPatient.set(r.patient_id, new Set());
+        pharmacyCountByPatient.get(r.patient_id)!.add(r.pharmacy_id);
         if (r.pharmacy_id === pharmacyId) served.add(r.patient_id);
       }
       if (rows.length < PAGE) break;
+    }
+    if (isAndalus) {
+      for (const [patientId, pharmacies] of pharmacyCountByPatient) {
+        if (pharmacies.size > 1) {
+          excluded.add(patientId);
+          served.delete(patientId);
+        }
+      }
     }
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await admin
@@ -142,7 +172,8 @@ export async function patientAccessSetsForSession(admin: any, pharmacyId: string
     return { served, anyTx, excluded, accessTableEnforced: true };
   }
 
-  const isAndalus = await isAndalusSession(admin, pharmacyId);
+  if (isAndalus) return { served, anyTx, excluded, accessTableEnforced: true };
+
   const tiryaq = isAndalus ? await pharmacyByName(admin, TIRYAQ_PHARMACY_NAME) : null;
 
   for (let from = 0; ; from += PAGE) {

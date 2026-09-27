@@ -65,6 +65,19 @@ describe("session pharmacy isolation", () => {
     expect(phifInvoices).toContain("accessTableEnforced ? served.has(patient.id) : served.has(patient.id) || !anyTx.has(patient.id)");
   });
 
+  it("excludes shared patients only from Andalus sessions while leaving Tiryaq served scope unchanged", () => {
+    const isolation = readProjectFile("src/lib/pharmacy-isolation.ts");
+
+    expect(isolation).toContain("const isAndalus = await isAndalusSession(admin, pharmacyId)");
+    expect(isolation).toContain("patientAccessPharmacyCount");
+    expect(isolation).toContain("if (!isAndalus) return true");
+    expect(isolation).toContain("return pharmacyCount === 1");
+    expect(isolation).toContain("if (isAndalus) {");
+    expect(isolation).toContain("if (pharmacies.size > 1)");
+    expect(isolation).toContain("served.delete(patientId)");
+    expect(isolation).toContain("if (isAndalus) return { served, anyTx, excluded, accessTableEnforced: true }");
+  });
+
   it("prevents direct patient detail access outside the session pharmacy", () => {
     const reads = readProjectFile("src/lib/reads.functions.ts");
 
