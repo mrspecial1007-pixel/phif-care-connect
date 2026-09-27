@@ -96,6 +96,8 @@ export type PhifMedicationProfileMovement = {
   active_ingredient: string | null;
   strength: string | null;
   brand: string | null;
+  phif_item_id?: string | null;
+  supplier?: string | null;
   source_classification: string | null;
 };
 
@@ -464,7 +466,11 @@ function pickMetadataString(metadata: Record<string, unknown> | null | undefined
 
 function normalizeIdentityPart(value: unknown) {
   if (value === undefined || value === null) return "";
-  return String(value).trim().toLowerCase();
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[ـ_\-]+/g, "");
 }
 
 export function phifMedicationIdentityKey(item: {
@@ -474,13 +480,17 @@ export function phifMedicationIdentityKey(item: {
   brand?: string | null;
   metadata?: Record<string, unknown> | null;
 }) {
-  if (item.phif_item_id) return `phif:${normalizeIdentityPart(item.phif_item_id)}`;
   const dosageForm = pickMetadataString(item.metadata, ["dosage_form", "dosageForm", "form", "pharmaceuticalForm"]);
+  const active = normalizeIdentityPart(item.active_ingredient);
+  const strength = normalizeIdentityPart(item.strength);
+  const form = normalizeIdentityPart(dosageForm);
+  if (active && strength) return ["medication", active, strength, form].join("|");
+  if (item.phif_item_id) return `uncertain-phif:${normalizeIdentityPart(item.phif_item_id)}`;
   return [
-    "derived",
-    normalizeIdentityPart(item.active_ingredient),
-    normalizeIdentityPart(item.strength),
-    normalizeIdentityPart(dosageForm),
+    "uncertain",
+    active,
+    strength,
+    form,
     normalizeIdentityPart(item.brand),
   ].join("|");
 }
@@ -491,15 +501,16 @@ export function buildPhifMedicationProfileFromRows(
   manualTransactions: any[] = [],
 ): PhifMedicationProfile {
   const invoicesById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
-  const grouped = new Map<string, { sample: any; movements: PhifMedicationProfileMovement[]; reasons: Set<string> }>();
+  const grouped = new Map<string, { sample: any; movements: PhifMedicationProfileMovement[]; reasons: Set<string>; phifItemIds: Set<string> }>();
 
   for (const item of items) {
     const invoice = invoicesById.get(item.phif_invoice_id);
     if (!invoice) continue;
     const key = phifMedicationIdentityKey(item);
-    const group = grouped.get(key) ?? { sample: item, movements: [], reasons: new Set<string>() };
+    const group = grouped.get(key) ?? { sample: item, movements: [], reasons: new Set<string>(), phifItemIds: new Set<string>() };
     if (!item.phif_item_id) group.reasons.add("مطابقة الصنف مشتقة من البيانات المتاحة وتحتاج مراجعة عند التشابه");
     if (!item.active_ingredient || !item.strength) group.reasons.add("بيانات المادة الفعالة أو التركيز غير مكتملة");
+    if (item.phif_item_id) group.phifItemIds.add(String(item.phif_item_id));
     group.movements.push({
       invoice_id: invoice.id,
       invoice_key: invoice.invoice_key,
@@ -510,12 +521,15 @@ export function buildPhifMedicationProfileFromRows(
       active_ingredient: item.active_ingredient ?? null,
       strength: item.strength ?? null,
       brand: item.brand ?? null,
+      phif_item_id: item.phif_item_id ?? null,
+      supplier: item.supplier ?? null,
       source_classification: item.source_classification ?? null,
     });
     grouped.set(key, group);
   }
 
   const profileItems = [...grouped.entries()].map(([identity_key, group]) => {
+    if (group.phifItemIds.size > 1) group.reasons.add("معرفات PHIF متعددة لنفس الصنف وتحتاج مراجعة");
     const movements = group.movements.sort((a, b) => String(a.dispensing_date ?? "").localeCompare(String(b.dispensing_date ?? "")));
     for (let index = 1; index < movements.length; index++) {
       const prev = movements[index - 1].dispensing_date;

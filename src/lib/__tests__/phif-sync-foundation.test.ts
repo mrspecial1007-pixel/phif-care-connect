@@ -442,7 +442,42 @@ describe("PHIF sync foundation", () => {
     expect(profile.items[0].review_reasons.join(" ")).toContain("أقل من 28");
   });
 
-  it("does not merge uncertain PHIF item identities by name alone", () => {
+  it("groups the same PHIF medication despite brand or PHIF item id differences", () => {
+    expect(
+      phifMedicationIdentityKey({
+        phif_item_id: "PHIF-1",
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Brand A",
+        metadata: { dosage_form: "tablet" },
+      }),
+    ).toBe(
+      phifMedicationIdentityKey({
+        phif_item_id: "PHIF-2",
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Brand B",
+        metadata: { dosage_form: "tablet" },
+      }),
+    );
+  });
+
+  it("keeps different PHIF strengths and forms as separate medication identities", () => {
+    expect(
+      phifMedicationIdentityKey({
+        active_ingredient: "Metformin",
+        strength: "500 mg",
+        brand: "Brand A",
+        metadata: { dosage_form: "tablet" },
+      }),
+    ).not.toBe(
+      phifMedicationIdentityKey({
+        active_ingredient: "Metformin",
+        strength: "850 mg",
+        brand: "Brand A",
+        metadata: { dosage_form: "tablet" },
+      }),
+    );
     expect(
       phifMedicationIdentityKey({
         active_ingredient: "Metformin",
@@ -454,10 +489,47 @@ describe("PHIF sync foundation", () => {
       phifMedicationIdentityKey({
         active_ingredient: "Metformin",
         strength: "500 mg",
-        brand: "Brand B",
-        metadata: { dosage_form: "tablet" },
+        brand: "Brand A",
+        metadata: { dosage_form: "syrup" },
       }),
     );
+  });
+
+  it("uses the latest PHIF movement for the current due date without duplicating medication cards", () => {
+    const invoices = [
+      { id: "invoice-1", invoice_key: "INV-1", invoice_number: "4354537", dispensing_date: "2026-09-01", status: "ok" },
+      { id: "invoice-2", invoice_key: "INV-2", invoice_number: "4352696", dispensing_date: "2026-09-26", status: "ok" },
+    ];
+    const profile = buildPhifMedicationProfileFromRows(invoices, [
+      {
+        phif_invoice_id: "invoice-1",
+        phif_item_id: "PHIF-A",
+        active_ingredient: "Atorvastatin",
+        strength: "40 MG",
+        brand: "Old Brand",
+        quantity: 30,
+        metadata: { dosage_form: "tablet" },
+        source_classification: "phif-supplier",
+      },
+      {
+        phif_invoice_id: "invoice-2",
+        phif_item_id: "ACTUAL-A",
+        active_ingredient: "ATORVASTATIN",
+        strength: "40MG",
+        brand: "New Brand",
+        quantity: 28,
+        metadata: { dosage_form: "tablet" },
+        source_classification: "actual-supplier",
+      },
+    ]);
+
+    expect(profile.items).toHaveLength(1);
+    expect(profile.items[0].movements).toHaveLength(2);
+    expect(profile.items[0].latest_dispensing_date).toBe("2026-09-26");
+    expect(profile.items[0].next_due_date).toBe("2026-10-24");
+    expect(profile.due_summaries).toEqual([
+      expect.objectContaining({ next_due_date: "2026-10-24", item_count: 1 }),
+    ]);
   });
 
   it("builds read-only manual dispensing reconciliation preview", () => {
@@ -735,6 +807,7 @@ describe("PHIF sync foundation", () => {
     expect(readsSource).toContain("phifRowsByInvoice");
     expect(readsSource).toContain('.from("phif_invoices")');
     expect(readsSource).toContain('.from("phif_invoice_items")');
+    expect(readsSource).not.toContain('.not("patient_id", "is", null)');
     expect(readsSource).not.toContain('.from("dispensing_transactions").insert');
     expect(readsSource).not.toContain('.from("dispensing_due_tracks").insert');
     expect(readsSource).not.toContain('.from("dispensing_cycles").insert');

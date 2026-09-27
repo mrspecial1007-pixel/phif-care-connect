@@ -481,7 +481,6 @@ export const listDispensingTransactions = createServerFn({ method: "POST" })
         .from("phif_invoices")
         .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, pharmacy_id, patient_id, review_status, patients(patient_name, insurance_card_number)")
         .eq("pharmacy_id", pharmacy_id)
-        .not("patient_id", "is", null)
         .order("dispensing_date", { ascending: false, nullsFirst: false })
         .order("synced_at", { ascending: false });
 
