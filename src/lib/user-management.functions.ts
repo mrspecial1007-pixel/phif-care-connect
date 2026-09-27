@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { randomBytes } from "node:crypto";
 import { ALL_TIRYAQ_PERMISSIONS, adminPermissions, normalizePermissions, TIRYAQ_PERMISSIONS, type TiryaqPermission } from "@/lib/user-permissions";
 
 const TIRYAQ_PHARMACY_NAME = "صيدلية الترياق الشافي";
@@ -12,16 +11,28 @@ const userInput = z.object({
   permissions: z.record(z.boolean()).default({}),
 });
 
+const pinFields = {
+  pin: z.string().trim().regex(/^\d{4,8}$/, "PIN must be 4 to 8 digits"),
+  pin_confirm: z.string().trim(),
+};
+
+const createUserInput = userInput.extend(pinFields).refine((data) => data.pin === data.pin_confirm, {
+  message: "PIN confirmation does not match",
+  path: ["pin_confirm"],
+});
+
 const updateUserInput = userInput.extend({
   id: z.string().uuid(),
   is_active: z.boolean(),
 });
 
-const idInput = z.object({ id: z.string().uuid() });
-
-function temporaryPassword() {
-  return randomBytes(15).toString("base64url");
-}
+const resetPasswordInput = z.object({
+  id: z.string().uuid(),
+  ...pinFields,
+}).refine((data) => data.pin === data.pin_confirm, {
+  message: "PIN confirmation does not match",
+  path: ["pin_confirm"],
+});
 
 async function context() {
   const { requirePharmacySession, hashPin } = await import("@/lib/pharmacy-session.server");
@@ -82,16 +93,15 @@ export const listPharmacyUsers = createServerFn({ method: "GET" }).handler(async
 });
 
 export const createPharmacyUser = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => userInput.parse(d))
+  .inputValidator((d: unknown) => createUserInput.parse(d))
   .handler(async ({ data }) => {
     const { pharmacy_id, db, hashPin, session } = await context();
     await requireUserManagement();
-    const password = temporaryPassword();
     const payload = {
       pharmacy_id,
       display_name: data.display_name,
       login_identifier: data.login_identifier.trim().toLowerCase(),
-      password_hash: hashPin(password),
+      password_hash: hashPin(data.pin),
       role: data.role,
       permissions: data.role === "admin" ? adminPermissions() : normalizePermissions(data.permissions),
       is_active: true,
@@ -110,7 +120,7 @@ export const createPharmacyUser = createServerFn({ method: "POST" })
       entity_id: inserted.id,
       metadata: { role: inserted.role },
     });
-    return { user: inserted, temporary_password: password };
+    return { user: inserted };
   });
 
 export const updatePharmacyUser = createServerFn({ method: "POST" })
@@ -146,14 +156,13 @@ export const updatePharmacyUser = createServerFn({ method: "POST" })
   });
 
 export const resetPharmacyUserPassword = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => idInput.parse(d))
+  .inputValidator((d: unknown) => resetPasswordInput.parse(d))
   .handler(async ({ data }) => {
     const { pharmacy_id, db, hashPin, session } = await context();
     await requireUserManagement();
-    const password = temporaryPassword();
     const { data: updated, error } = await db
       .from("pharmacy_users")
-      .update({ password_hash: hashPin(password), updated_at: new Date().toISOString() })
+      .update({ password_hash: hashPin(data.pin), updated_at: new Date().toISOString() })
       .eq("id", data.id)
       .eq("pharmacy_id", pharmacy_id)
       .select("id")
@@ -166,5 +175,5 @@ export const resetPharmacyUserPassword = createServerFn({ method: "POST" })
       entity: "pharmacy_user",
       entity_id: updated.id,
     });
-    return { temporary_password: password };
+    return { ok: true };
   });

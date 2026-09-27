@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,7 +23,16 @@ type DraftUser = {
   role: "admin" | "employee";
   is_active: boolean;
   permissions: Record<string, boolean>;
+  pin: string;
+  pin_confirm: string;
 };
+
+type ResetPinState = {
+  userId: string;
+  displayName: string;
+  pin: string;
+  pin_confirm: string;
+} | null;
 
 const emptyDraft: DraftUser = {
   display_name: "",
@@ -30,6 +40,8 @@ const emptyDraft: DraftUser = {
   role: "employee",
   is_active: true,
   permissions: {},
+  pin: "",
+  pin_confirm: "",
 };
 
 function UsersSettingsPage() {
@@ -40,7 +52,7 @@ function UsersSettingsPage() {
   const updateFn = useServerFn(updatePharmacyUser);
   const resetFn = useServerFn(resetPharmacyUserPassword);
   const [draft, setDraft] = useState<DraftUser>(emptyDraft);
-  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [resetPin, setResetPin] = useState<ResetPinState>(null);
 
   const { data: users, isLoading } = useQuery({ queryKey: ["pharmacy_users"], queryFn: () => listUsersFn() });
   const { data: permissions } = useQuery({ queryKey: ["tiryaq_permissions"], queryFn: () => listPermissionsFn() });
@@ -48,11 +60,13 @@ function UsersSettingsPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (draft.id) return updateFn({ data: draft as any });
+      if (draft.id) {
+        const { pin, pin_confirm, ...payload } = draft;
+        return updateFn({ data: payload as any });
+      }
       return createFn({ data: draft as any });
     },
-    onSuccess: (result: any) => {
-      if (result?.temporary_password) setTemporaryPassword(result.temporary_password);
+    onSuccess: () => {
       toast.success(draft.id ? "تم حفظ المستخدم" : "تم إنشاء المستخدم");
       setDraft(emptyDraft);
       qc.invalidateQueries({ queryKey: ["pharmacy_users"] });
@@ -61,12 +75,12 @@ function UsersSettingsPage() {
   });
 
   const resetMutation = useMutation({
-    mutationFn: (id: string) => resetFn({ data: { id } }),
-    onSuccess: (result: any) => {
-      setTemporaryPassword(result.temporary_password);
-      toast.success("تمت إعادة تعيين كلمة المرور");
+    mutationFn: (input: { id: string; pin: string; pin_confirm: string }) => resetFn({ data: input }),
+    onSuccess: () => {
+      setResetPin(null);
+      toast.success("تم حفظ الرقم السري الجديد");
     },
-    onError: (error: any) => toast.error(error?.message ?? "تعذر إعادة تعيين كلمة المرور"),
+    onError: (error: any) => toast.error(error?.message ?? "تعذر حفظ الرقم السري"),
   });
 
   function setPermission(key: string, value: boolean) {
@@ -74,7 +88,6 @@ function UsersSettingsPage() {
   }
 
   function editUser(user: any) {
-    setTemporaryPassword(null);
     setDraft({
       id: user.id,
       display_name: user.display_name,
@@ -82,6 +95,8 @@ function UsersSettingsPage() {
       role: user.role,
       is_active: user.is_active,
       permissions: user.permissions ?? {},
+      pin: "",
+      pin_confirm: "",
     });
   }
 
@@ -89,17 +104,8 @@ function UsersSettingsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">إدارة الموظفين</h1>
-        <p className="text-sm text-muted-foreground">إدارة حسابات الترياق وصلاحياتها. لا تُحفظ كلمات المرور كنص صريح.</p>
+        <p className="text-sm text-muted-foreground">إدارة حسابات الترياق وصلاحياتها. لا تُحفظ الأرقام السرية كنص صريح.</p>
       </div>
-
-      {temporaryPassword && (
-        <Card className="p-4 bg-emerald-50 border-emerald-200 space-y-2">
-          <div className="font-semibold text-emerald-900">كلمة المرور المؤقتة</div>
-          <div className="font-mono text-lg break-all" dir="ltr">{temporaryPassword}</div>
-          <Button type="button" variant="outline" onClick={() => navigator.clipboard?.writeText(temporaryPassword)}>نسخ</Button>
-          <p className="text-xs text-emerald-900">لن تظهر هذه الكلمة مرة أخرى بعد مغادرة الشاشة.</p>
-        </Card>
-      )}
 
       <Card className="p-4 space-y-3">
         <div className="grid gap-3 md:grid-cols-3">
@@ -113,6 +119,30 @@ function UsersSettingsPage() {
             </SelectContent>
           </Select>
         </div>
+        {!draft.id && (
+          <div className="grid gap-3 md:grid-cols-2">
+            <Input
+              placeholder="الرقم السري"
+              value={draft.pin}
+              onChange={(e) => setDraft({ ...draft, pin: e.target.value })}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              type="password"
+              dir="ltr"
+              autoComplete="new-password"
+            />
+            <Input
+              placeholder="تأكيد الرقم السري"
+              value={draft.pin_confirm}
+              onChange={(e) => setDraft({ ...draft, pin_confirm: e.target.value })}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              type="password"
+              dir="ltr"
+              autoComplete="new-password"
+            />
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Switch checked={draft.is_active} onCheckedChange={(value) => setDraft({ ...draft, is_active: value })} />
           <span className="text-sm">الحساب فعال</span>
@@ -131,7 +161,7 @@ function UsersSettingsPage() {
         </div>
         <div className="flex gap-2">
           <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-            {draft.id ? "حفظ التعديلات" : "إضافة موظف وتوليد كلمة مرور"}
+            {draft.id ? "حفظ التعديلات" : "إضافة موظف"}
           </Button>
           {draft.id && <Button variant="outline" onClick={() => setDraft(emptyDraft)}>إلغاء التحرير</Button>}
         </div>
@@ -148,11 +178,62 @@ function UsersSettingsPage() {
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => editUser(user)}>تعديل</Button>
-              <Button variant="outline" size="sm" onClick={() => resetMutation.mutate(user.id)}>إعادة تعيين كلمة المرور</Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setResetPin({ userId: user.id, displayName: user.display_name, pin: "", pin_confirm: "" })}
+              >
+                إعادة تعيين الرقم السري
+              </Button>
             </div>
           </Card>
         ))}
       </div>
+
+      <Dialog open={!!resetPin} onOpenChange={(open) => !open && setResetPin(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>إعادة تعيين الرقم السري</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">{resetPin?.displayName}</div>
+            <Input
+              placeholder="الرقم السري الجديد"
+              value={resetPin?.pin ?? ""}
+              onChange={(e) => setResetPin((prev) => prev ? { ...prev, pin: e.target.value } : prev)}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              type="password"
+              dir="ltr"
+              autoComplete="new-password"
+            />
+            <Input
+              placeholder="تأكيد الرقم السري"
+              value={resetPin?.pin_confirm ?? ""}
+              onChange={(e) => setResetPin((prev) => prev ? { ...prev, pin_confirm: e.target.value } : prev)}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              type="password"
+              dir="ltr"
+              autoComplete="new-password"
+            />
+            <p className="text-xs text-muted-foreground">يجب أن يكون الرقم السري من 4 إلى 8 أرقام.</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setResetPin(null)} disabled={resetMutation.isPending}>إلغاء</Button>
+            <Button
+              disabled={!resetPin || resetMutation.isPending}
+              onClick={() => resetPin && resetMutation.mutate({
+                id: resetPin.userId,
+                pin: resetPin.pin,
+                pin_confirm: resetPin.pin_confirm,
+              })}
+            >
+              حفظ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -19,6 +19,29 @@ describe("Tiryaq management and permissions", () => {
     expect(migration).not.toMatch(/1235|6456|temporary_password/i);
   });
 
+  it("lets managers set employee PINs server-side without returning or logging plaintext PINs", () => {
+    const users = readProjectFile("src/lib/user-management.functions.ts");
+    const route = readProjectFile("src/routes/settings.users.tsx");
+
+    expect(users).toContain("pinFields");
+    expect(users).toContain("/^\\d{4,8}$/");
+    expect(users).toContain("pin === data.pin_confirm");
+    expect(users).toContain("password_hash: hashPin(data.pin)");
+    expect(users).toContain("requireTiryaqPermission(\"users_manage\")");
+    expect(users).toContain("return { user: inserted }");
+    expect(users).toContain("return { ok: true }");
+    expect(users).not.toContain("temporaryPassword");
+    expect(users).not.toContain("temporary_password");
+    expect(users).not.toContain("metadata: { pin");
+
+    expect(route).toContain("الرقم السري");
+    expect(route).toContain("تأكيد الرقم السري");
+    expect(route).toContain("إعادة تعيين الرقم السري");
+    expect(route).toContain("resetFn({ data: input })");
+    expect(route).not.toContain("temporaryPassword");
+    expect(route).not.toContain("navigator.clipboard");
+  });
+
   it("treats admins as all-permission users and employees as explicit permissions only", () => {
     expect(hasPermission("admin", {}, "users_manage")).toBe(true);
     expect(hasPermission("employee", { reports_read: true }, "reports_read")).toBe(true);
