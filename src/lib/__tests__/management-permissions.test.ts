@@ -63,6 +63,9 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain("التقارير");
     expect(management).toContain("خزينة الصرف");
     expect(management).toContain("الإدارة العامة");
+    expect(management).toContain("return <Outlet />");
+    expect(management).toContain('to: "/management/reports"');
+    expect(management).toContain('to: "/management/treasury"');
     expect(appShell).toContain("isLegacyTiryaq");
     expect(appShell).toContain("isLegacyTiryaq ||");
     expect(appShell).not.toContain('{ to: "/phif-invoices"');

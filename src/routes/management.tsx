@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,11 +9,14 @@ export const Route = createFileRoute("/management")({
 });
 
 function ManagementPage() {
+  const location = useLocation();
   const items = [
     { to: "/management/reports", title: "التقارير", desc: "تقارير الصرف والفواتير المحفوظة", icon: BarChart3 },
     { to: "/management/treasury", title: "خزينة الصرف", desc: "قيم الصرف Actual وPHIF دون افتراض تحصيل نقدي", icon: BriefcaseBusiness },
     { to: "/management/inventory", title: "الإدارة العامة", desc: "أدوات إدارية عامة وتجهيزات المرحلة التالية", icon: PackageSearch, soon: true },
   ] as const;
+
+  if (location.pathname !== "/management") return <Outlet />;
 
   return (
     <div className="space-y-4">
