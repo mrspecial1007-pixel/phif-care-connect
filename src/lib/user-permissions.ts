@@ -4,6 +4,7 @@ export const TIRYAQ_PERMISSIONS = {
   dispensing_write: "تسجيل الصرف",
   communications_write: "التواصل والرسائل",
   reports_read: "عرض التقارير",
+  reports_export: "تصدير التقارير",
   treasury_read: "عرض خزينة الصرف",
   phif_sync_run: "تشغيل مزامنة PHIF",
   phif_completion_run: "استكمال أصناف الفواتير المحفوظة",
