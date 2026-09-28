@@ -195,65 +195,110 @@ test("known PHIF empty-day server response returns zero today transactions", asy
 });
 
 test("stock endpoint fetches all pages using read-only GET requests", async () => {
+  const previousSource = process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID;
+  process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID = "55";
   const store = new BridgeSessionStore();
   const session = store.create("pharmacy-a");
   const requested = [];
-  const server = createPhifBridgeServer({
-    secret: SECRET,
-    store,
-    fetchImpl: async (input, init) => {
-      const url = new URL(String(input));
-      requested.push({ path: `${url.pathname}${url.search}`, method: init?.method ?? "GET" });
-      if (url.searchParams.get("start") === "2") {
+  try {
+    const server = createPhifBridgeServer({
+      secret: SECRET,
+      store,
+      fetchImpl: async (input, init) => {
+        const url = new URL(String(input));
+        requested.push({ path: `${url.pathname}${url.search}`, method: init?.method ?? "GET" });
+        if (url.searchParams.get("start") === "2") {
+          return new Response(JSON.stringify({
+            recordsTotal: 3,
+            recordsFiltered: 3,
+            data: [{ id: 3, pharmacies_id: "55", quantity: "9" }],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
         return new Response(JSON.stringify({
           recordsTotal: 3,
           recordsFiltered: 3,
-          data: [{ id: 3, quantity: "9" }],
+          data: [{ id: 1, pharmacies_id: "55", quantity: "4" }, { id: 2, pharmacies_id: "55", quantity: "5" }],
         }), { status: 200, headers: { "content-type": "application/json" } });
-      }
-      return new Response(JSON.stringify({
-        recordsTotal: 3,
-        recordsFiltered: 3,
-        data: [{ id: 1, quantity: "4" }, { id: 2, quantity: "5" }],
-      }), { status: 200, headers: { "content-type": "application/json" } });
-    },
-  });
-  await using app = await listen(server);
+      },
+    });
+    await using app = await listen(server);
 
-  const result = await fetchJson(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/stock`, {
-    headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
-  });
+    const result = await fetchJson(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/stock`, {
+      headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+    });
 
-  assert.equal(result.status, 200);
-  assert.equal(result.body.raw_count, 3);
-  assert.deepEqual(result.body.rows.map((row) => row.id), [1, 2, 3]);
-  assert.deepEqual(requested.map((req) => req.method), ["GET", "GET"]);
-  assert.equal(requested[0].path, "/get-pharmacy-stock");
-  assert.equal(requested[1].path, "/get-pharmacy-stock?start=2&length=100");
+    assert.equal(result.status, 200);
+    assert.equal(result.body.raw_count, 3);
+    assert.deepEqual(result.body.rows.map((row) => row.id), [1, 2, 3]);
+    assert.deepEqual(requested.map((req) => req.method), ["GET", "GET"]);
+    assert.equal(requested[0].path, "/get-pharmacy-stock");
+    assert.equal(requested[1].path, "/get-pharmacy-stock?start=2&length=100");
+  } finally {
+    if (previousSource === undefined) delete process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID;
+    else process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID = previousSource;
+  }
 });
 
 test("stock endpoint rejects incomplete pagination instead of duplicating rows", async () => {
+  const previousSource = process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID;
+  process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID = "55";
   const store = new BridgeSessionStore();
   const session = store.create("pharmacy-a");
-  const server = createPhifBridgeServer({
-    secret: SECRET,
-    store,
-    fetchImpl: async () => new Response(JSON.stringify({
-      recordsTotal: 3,
-      recordsFiltered: 3,
-      data: [{ id: 1, quantity: "4" }, { id: 2, quantity: "5" }],
-    }), { status: 200, headers: { "content-type": "application/json" } }),
-  });
-  await using app = await listen(server);
+  try {
+    const server = createPhifBridgeServer({
+      secret: SECRET,
+      store,
+      fetchImpl: async () => new Response(JSON.stringify({
+        recordsTotal: 3,
+        recordsFiltered: 3,
+        data: [{ id: 1, pharmacies_id: "55", quantity: "4" }, { id: 2, pharmacies_id: "55", quantity: "5" }],
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    });
+    await using app = await listen(server);
 
-  const response = await fetch(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/stock`, {
-    headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
-  });
-  const body = await response.json();
+    const response = await fetch(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/stock`, {
+      headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+    });
+    const body = await response.json();
 
-  assert.equal(response.status, 502);
-  assert.equal(body.error, "PHIF stock request failed");
-  assert.equal(body.diagnostic.message, "PHIF stock pagination did not return all records");
+    assert.equal(response.status, 502);
+    assert.equal(body.error, "PHIF stock request failed");
+    assert.equal(body.diagnostic.message, "PHIF stock pagination did not return all records");
+  } finally {
+    if (previousSource === undefined) delete process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID;
+    else process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID = previousSource;
+  }
+});
+
+test("stock endpoint validates Tiryaq source pharmacy inside the bridge", async () => {
+  const previousSource = process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID;
+  process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID = "55";
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  try {
+    const server = createPhifBridgeServer({
+      secret: SECRET,
+      store,
+      fetchImpl: async () => new Response(JSON.stringify({
+        recordsTotal: 1,
+        recordsFiltered: 1,
+        data: [{ id: 1, pharmacies_id: "77", quantity: "4" }],
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    });
+    await using app = await listen(server);
+
+    const response = await fetch(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/stock`, {
+      headers: { "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.equal(body.error, "PHIF stock request failed");
+    assert.equal(body.diagnostic.message, "PHIF stock response source pharmacy does not match Tiryaq");
+  } finally {
+    if (previousSource === undefined) delete process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID;
+    else process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID = previousSource;
+  }
 });
 
 test("different PHIF 500 remains an upstream error", async () => {

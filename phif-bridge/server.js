@@ -104,6 +104,8 @@ async function handleApi(req, res, url, context) {
     });
     const result = await fetchCompleteStock(client);
     if (!result.ok) return json(res, result.blocked ? 403 : 502, safeStockFailure(result));
+    const sourceCheck = validateStockSourcePharmacy(result.rows);
+    if (!sourceCheck.ok) return json(res, 502, safeStockFailure(sourceCheck));
     return json(res, 200, {
       ok: true,
       rows: result.rows,
@@ -264,6 +266,49 @@ function incompleteStockPaginationFailure() {
     contentType: "application/json",
     message: "PHIF stock pagination did not return all records",
   };
+}
+
+function validateStockSourcePharmacy(rows) {
+  const expected = process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID?.trim();
+  if (!expected) {
+    return {
+      ok: false,
+      status: 500,
+      contentType: "application/json",
+      message: "PHIF_TIRYAQ_SOURCE_PHARMACY_ID is not configured in PHIF Bridge",
+    };
+  }
+  let missing = 0;
+  let mismatched = 0;
+  for (const row of rows) {
+    const source = stockSourcePharmacyId(row);
+    if (!source) missing++;
+    else if (source !== expected) mismatched++;
+  }
+  if (missing > 0) {
+    return {
+      ok: false,
+      status: 502,
+      contentType: "application/json",
+      message: "PHIF stock response contains rows without source pharmacy identity",
+    };
+  }
+  if (mismatched > 0) {
+    return {
+      ok: false,
+      status: 502,
+      contentType: "application/json",
+      message: "PHIF stock response source pharmacy does not match Tiryaq",
+    };
+  }
+  return { ok: true };
+}
+
+function stockSourcePharmacyId(row) {
+  const raw = row?.pharmacies_id ?? row?.pharmacy_id ?? row?.source_pharmacy_id;
+  if (raw === undefined || raw === null) return null;
+  const value = String(raw).trim();
+  return value || null;
 }
 
 function addUniqueStockRows(target, seen, rows) {

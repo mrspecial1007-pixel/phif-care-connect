@@ -16,7 +16,7 @@ import {
   phifMedicationIdentityKey,
 } from "@/lib/phif-invoices.functions";
 import { buildPhifHistoryRows, phifDueSummariesToTracks } from "@/lib/reads.functions";
-import { assertExpectedTiryaqStockSource, normalizePhifStockRows } from "@/lib/phif-stock.functions";
+import { normalizePhifStockRows } from "@/lib/phif-stock.functions";
 
 function readProjectFile(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -922,22 +922,6 @@ describe("PHIF sync foundation", () => {
     expect(rows[0].content_hash).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it("rejects PHIF stock responses that do not match the documented Tiryaq source pharmacy", () => {
-    const rows = normalizePhifStockRows({
-      data: [
-        { id: 10, pharmacies_id: "55", quantity: "1" },
-        { id: 11, pharmacies_id: "55", quantity: "2" },
-      ],
-    });
-
-    expect(() => assertExpectedTiryaqStockSource(rows, null)).toThrow("PHIF_TIRYAQ_SOURCE_PHARMACY_ID");
-    expect(() => assertExpectedTiryaqStockSource(rows, "77")).toThrow("does not match Tiryaq");
-    expect(() => assertExpectedTiryaqStockSource(rows, "55")).not.toThrow();
-
-    const missingSource = normalizePhifStockRows({ data: [{ id: 12, quantity: "3" }] });
-    expect(() => assertExpectedTiryaqStockSource(missingSource, "55")).toThrow("without source pharmacy identity");
-  });
-
   it("keeps PHIF stock read-only through the bridge and protects cost prices server-side", () => {
     const bridgeClient = readProjectFile("phif-bridge/phif/client.js");
     const bridgeServer = readProjectFile("phif-bridge/server.js");
@@ -947,10 +931,12 @@ describe("PHIF sync foundation", () => {
     expect(bridgeClient).toContain('/^\\/get-pharmacy-stock$/');
     expect(bridgeServer).toContain('action === "stock"');
     expect(bridgeServer).toContain('client.getJson("/get-pharmacy-stock")');
+    expect(bridgeServer).toContain("PHIF_TIRYAQ_SOURCE_PHARMACY_ID");
+    expect(bridgeServer).toContain("validateStockSourcePharmacy");
     expect(bridgeServer).not.toContain('postForm("/get-pharmacy-stock"');
     expect(stockFunctions).toContain('requireTiryaqPermission("inventory_read")');
-    expect(stockFunctions).toContain("PHIF_TIRYAQ_SOURCE_PHARMACY_ID");
-    expect(stockFunctions).toContain("assertExpectedTiryaqStockSource");
+    expect(stockFunctions).not.toContain("PHIF_TIRYAQ_SOURCE_PHARMACY_ID");
+    expect(stockFunctions).not.toContain("assertExpectedTiryaqStockSource");
     expect(stockFunctions).toContain('rpc("replace_phif_stock_snapshots"');
     expect(stockFunctions).toContain('"stock_cost_read"');
     expect(stockFunctions).toContain("const { cost_price, ...safe } = row");

@@ -140,24 +140,6 @@ function bridgeSecret() {
   return process.env.PHIF_BRIDGE_SECRET?.trim() || null;
 }
 
-function expectedTiryaqSourcePharmacyId() {
-  return process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID?.trim() || null;
-}
-
-export function assertExpectedTiryaqStockSource(rows: NormalizedPhifStockRow[], expectedSourcePharmacyId: string | null) {
-  if (!expectedSourcePharmacyId) {
-    throw new Error("PHIF_TIRYAQ_SOURCE_PHARMACY_ID is not configured");
-  }
-  const missingCount = rows.filter((row) => !row.source_pharmacy_id).length;
-  if (missingCount > 0) {
-    throw new Error("PHIF stock response contains rows without source pharmacy identity");
-  }
-  const mismatchedCount = rows.filter((row) => row.source_pharmacy_id !== expectedSourcePharmacyId).length;
-  if (mismatchedCount > 0) {
-    throw new Error("PHIF stock response source pharmacy does not match Tiryaq");
-  }
-}
-
 function publicForwardHeaders() {
   const publicBase = new URL(bridgePublicBaseUrl());
   return {
@@ -286,7 +268,6 @@ export const syncPhifStock = createServerFn({ method: "POST" }).handler(async ()
   try {
     const payload = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(bridge.bridge_session_id)}/stock`, pharmacy_id);
     const rows = normalizePhifStockRows({ data: payload.rows ?? [] });
-    assertExpectedTiryaqStockSource(rows, expectedTiryaqSourcePharmacyId());
 
     const imported = await upsertStockSnapshots(supabaseAdmin, pharmacy_id, run.id, rows);
     await supabaseAdmin
