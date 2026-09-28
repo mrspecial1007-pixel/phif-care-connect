@@ -22,6 +22,13 @@ function formatDateTime(value: string | null | undefined) {
   return new Date(value).toLocaleString("ar-LY", { dateStyle: "medium", timeStyle: "short" });
 }
 
+function formatExpiry(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("ar-LY", { month: "2-digit", year: "numeric" });
+}
+
 function money(value: unknown) {
   if (value === null || value === undefined || value === "") return "—";
   const numeric = typeof value === "number" ? value : Number(String(value).replace(/,/g, ""));
@@ -61,7 +68,7 @@ function InventoryPage() {
   const canViewCost = summary.data?.can_view_cost === true;
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-3" dir="rtl">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-bold">مخزون PHIF</h1>
@@ -69,29 +76,21 @@ function InventoryPage() {
             قراءة مخزون التأمين كما هو محفوظ في آخر Snapshot. لا يتم تعديل فواتير PHIF أو الصرف أو بيانات المستفيدين.
           </p>
         </div>
-        <Button onClick={() => sync.mutate()} disabled={sync.isPending} className="h-11">
+        <Button onClick={() => sync.mutate()} disabled={sync.isPending} className="h-10">
           <RefreshCw className="h-4 w-4 ml-2" />
           {sync.isPending ? "جاري المزامنة..." : "مزامنة المخزون"}
         </Button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <Card className="p-4">
-          <div className="text-xs text-muted-foreground">آخر مزامنة</div>
-          <div className="font-semibold mt-1">{formatDateTime(lastRun?.finished_at ?? lastRun?.started_at)}</div>
-          {lastRun?.status && <Badge variant={lastRun.status === "completed" ? "default" : "secondary"} className="mt-2">{lastRun.status}</Badge>}
-        </Card>
-        <Card className="p-4">
-          <div className="text-xs text-muted-foreground">السجلات الحالية</div>
-          <div className="text-2xl font-bold mt-1">{summary.data?.current_count ?? 0}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-xs text-muted-foreground">سجلات آخر تشغيل</div>
-          <div className="font-semibold mt-1">
-            {lastRun ? `${lastRun.imported_records} مستورد / ${lastRun.total_records} إجمالي` : "—"}
-          </div>
-          {lastRun?.error_message && <div className="text-xs text-destructive mt-2">{lastRun.error_message}</div>}
-        </Card>
+      <div className="grid grid-cols-3 gap-2">
+        <CompactStat label="الأصناف" value={summary.data?.current_count ?? 0} />
+        <CompactStat label="آخر تشغيل" value={lastRun?.status === "completed" ? "مكتمل" : (lastRun?.status ?? "—")} />
+        <CompactStat label="مستورد" value={lastRun ? `${lastRun.imported_records}/${lastRun.total_records}` : "—"} />
+      </div>
+
+      <div className="rounded-lg border bg-card p-2 text-xs text-muted-foreground">
+        آخر مزامنة: {formatDateTime(lastRun?.finished_at ?? lastRun?.started_at)}
+        {lastRun?.error_message && <span className="block pt-1 text-destructive">{lastRun.error_message}</span>}
       </div>
 
       {!canViewCost && (
@@ -101,7 +100,7 @@ function InventoryPage() {
         </Card>
       )}
 
-      <Card className="p-4 space-y-3">
+      <Card className="space-y-3 p-3">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="font-semibold flex items-center gap-2">
             <PackageSearch className="h-5 w-5 text-primary" />
@@ -111,7 +110,7 @@ function InventoryPage() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="بحث بالاسم التجاري أو العلمي أو المورد أو التركيز"
-            className="md:w-96"
+            className="h-10 md:w-96"
             dir="rtl"
           />
         </div>
@@ -120,7 +119,7 @@ function InventoryPage() {
         {!items.isLoading && (items.data ?? []).length === 0 && (
           <div className="p-6 text-center text-muted-foreground">لا توجد سجلات مخزون مطابقة</div>
         )}
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {(items.data ?? []).map((item: any) => (
             <StockCard key={item.id} item={item} onOpen={() => setSelected(item)} />
           ))}
@@ -132,50 +131,100 @@ function InventoryPage() {
   );
 }
 
+function CompactStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <Card className="px-3 py-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="mt-0.5 truncate text-sm font-bold">{value}</div>
+    </Card>
+  );
+}
+
 function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
   const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط");
   const availability = stockAvailability(item);
+  const quantityDisplay = compactQuantityDisplay(quantity);
+  const expiry = formatExpiry(item.expiry_date);
   const tone =
     availability.tone === "danger"
-      ? "border-red-200 bg-red-50/70"
+      ? "border-red-200 bg-red-50/80"
       : availability.tone === "warning"
         ? "border-amber-200 bg-amber-50/70"
-        : "border-emerald-100 bg-white";
+        : "border-slate-200 bg-white";
+  const quantityTone =
+    availability.tone === "danger"
+      ? "text-red-700"
+      : availability.tone === "warning"
+        ? "text-amber-700"
+        : "text-emerald-700";
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`text-right rounded-lg border p-3 shadow-sm transition hover:border-primary/50 hover:shadow-md ${tone}`}
+      className={`min-h-[94px] rounded-lg border px-3 py-2.5 text-right shadow-sm transition hover:border-primary/50 hover:shadow-md ${tone}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-semibold leading-6 break-words">{item.brand_name || item.active_ingredient || "صنف غير مسمى"}</div>
-          <div className="text-xs text-muted-foreground break-words">{[item.strength, item.dosage_unit].filter(Boolean).join(" · ") || "بدون تركيز"}</div>
-        </div>
-        <Badge variant={availability.tone === "danger" ? "destructive" : "secondary"}>{availability.label}</Badge>
-      </div>
-
-      <div className="mt-3 flex items-end justify-between gap-2">
-        <div>
-          <div className="text-2xl font-bold text-primary">
-            {quantity.canConvertToBoxes ? quantity.boxes?.toLocaleString("ar-LY") : quantity.originalQuantity?.toLocaleString("ar-LY")}
+      <div className="flex h-full items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="line-clamp-2 break-words text-[15px] font-semibold leading-5 text-foreground">
+            {item.brand_name || item.active_ingredient || "صنف غير مسمى"}
           </div>
-          <div className="text-xs text-muted-foreground">{quantity.canConvertToBoxes ? "علب" : (item.source_quantity_unit || "كمية")}</div>
+          <div className="mt-1 break-words text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {[item.strength, item.dosage_unit].filter(Boolean).join(" · ") || "بدون تركيز"}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {availability.status !== "available" && (
+              <Badge variant={availability.tone === "danger" ? "destructive" : "secondary"} className="h-5 px-2 text-[11px]">
+                {availability.label}
+              </Badge>
+            )}
+            {expiry && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                <CalendarDays className="h-3 w-3" />
+                {expiry}
+              </span>
+            )}
+          </div>
         </div>
-        {(quantity.remainingStrips ?? 0) > 0 || !quantity.canConvertToBoxes ? (
-          <Badge className="bg-sky-50 text-sky-700 hover:bg-sky-50">
-            {quantity.canConvertToBoxes ? `+ ${quantity.remainingStrips ?? 0} شريط` : quantity.label}
-          </Badge>
-        ) : null}
-      </div>
 
-      <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
-        <CalendarDays className="h-3.5 w-3.5" />
-        الصلاحية: {item.expiry_date || "غير متاحة"}
+        <div className="shrink-0 text-left">
+          <div className={`whitespace-nowrap text-lg font-extrabold leading-6 ${quantityTone}`}>{quantityDisplay.primary}</div>
+          {quantityDisplay.secondary && (
+            <div className="mt-1 inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">
+              {quantityDisplay.secondary}
+            </div>
+          )}
+        </div>
       </div>
     </button>
   );
+}
+
+function compactQuantityDisplay(quantity: ReturnType<typeof stockQuantityBreakdown>) {
+  if (quantity.canConvertToBoxes) {
+    const boxes = quantity.boxes ?? 0;
+    const strips = quantity.remainingStrips ?? 0;
+    if (boxes <= 0 && strips <= 0) return { primary: "نفد", secondary: null };
+    if (boxes <= 0) return { primary: stripLabel(strips), secondary: null };
+    return {
+      primary: boxLabel(boxes),
+      secondary: strips > 0 ? `+ ${stripLabel(strips)}` : null,
+    };
+  }
+  if ((quantity.originalQuantity ?? 0) <= 0) return { primary: "نفد", secondary: null };
+  return { primary: quantity.label, secondary: null };
+}
+
+function boxLabel(count: number) {
+  if (count === 1) return "1 علبة";
+  if (count === 2) return "2 علب";
+  return `${count.toLocaleString("ar-LY", { maximumFractionDigits: 0 })} علب`;
+}
+
+function stripLabel(count: number) {
+  if (count === 1) return "1 شريط";
+  if (count === 2) return "2 أشرطة";
+  return `${count.toLocaleString("ar-LY", { maximumFractionDigits: 0 })} أشرطة`;
 }
 
 function DetailRow({ label, value }: { label: string; value: any }) {
