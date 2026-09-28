@@ -231,7 +231,7 @@ export const listPhifStockItems = createServerFn({ method: "POST" })
 
     let query = supabaseAdmin
       .from("phif_stock_items")
-      .select("id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, batch_number, expiry_date, sale_price, supplier_name, source_stock_id, generic_ingredient_id, supplier_id, brand_product_id, batch_id, synced_at, cost_price")
+      .select("id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, batch_number, expiry_date, sale_price, supplier_name, company_name, source_stock_id, generic_ingredient_id, supplier_id, brand_product_id, batch_id, synced_at, cost_price")
       .eq("pharmacy_id", pharmacy_id)
       .eq("is_current", true)
       .order("brand_name", { ascending: true })

@@ -17,6 +17,12 @@ import {
 } from "@/lib/phif-invoices.functions";
 import { buildPhifHistoryRows, phifDueSummariesToTracks } from "@/lib/reads.functions";
 import { normalizePhifStockRows } from "@/lib/phif-stock.functions";
+import {
+  calculateActualGrossMargin,
+  matchActualInvoiceItemToStock,
+  stockSnapshotCandidatesForInvoice,
+  stockQuantityBreakdown,
+} from "@/lib/phif-stock.helpers";
 
 function readProjectFile(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -943,5 +949,117 @@ describe("PHIF sync foundation", () => {
     expect(stockFunctions).toContain('.from("phif_stock_items")');
     expect(route).toContain("syncPhifStock");
     expect(route).toContain("canViewCost");
+  });
+
+  it("formats PHIF stock strips as boxes without using package quantity", () => {
+    expect(stockQuantityBreakdown(3, 2).label).toBe("1 علبة + 1 شريط");
+    expect(stockQuantityBreakdown(6, 2).label).toBe("3 علب");
+    expect(stockQuantityBreakdown(1, 2).label).toBe("1 شريط");
+    expect(stockQuantityBreakdown(1, null, "شريط").label).toBe("1 شريط");
+  });
+
+  it("keeps PHIF stock cost server-side when stock_cost_read is missing", () => {
+    const source = readProjectFile("src/lib/phif-stock.functions.ts");
+    const route = readProjectFile("src/routes/management.inventory.tsx");
+
+    expect(source).toContain("const { cost_price, ...safe } = row");
+    expect(source).toContain('"stock_cost_read"');
+    expect(route).toContain("can_view_cost");
+    expect(route).toContain("canViewCost &&");
+  });
+
+  it("matches Actual invoice items by commercial identity instead of scientific name alone", () => {
+    const stock = [
+      {
+        source_stock_id: "stock-1",
+        brand_name: "FORMIN",
+        active_ingredient: "Metformin",
+        strength: "500mg",
+        cost_price: "0.200",
+        sale_price: "0.340",
+        synced_at: "2026-09-20T10:00:00Z",
+      },
+    ];
+    const actualItem = {
+      brand: "Formin",
+      active_ingredient: "Metformin",
+      strength: "500 mg",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      phif_financial_fields: { sale_price: "0.340", total_amount: "10.200" },
+      metadata: {},
+    };
+
+    expect(matchActualInvoiceItemToStock(actualItem, stock)).toMatchObject({ status: "matched" });
+    expect(calculateActualGrossMargin(actualItem, stock)).toMatchObject({
+      status: "matched",
+      invoiceValue: 10.2,
+      purchaseCost: 6,
+    });
+  });
+
+  it("marks ambiguous Actual stock matches for review instead of choosing automatically", () => {
+    const item = {
+      brand: "Karbis",
+      strength: "16 mg",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      phif_financial_fields: {},
+      metadata: {},
+    };
+    const candidates = [
+      { source_stock_id: "a", brand_name: "Karbis", strength: "16mg", cost_price: "1" },
+      { source_stock_id: "b", brand_name: "Karbis", strength: "16mg", cost_price: "2" },
+    ];
+
+    expect(matchActualInvoiceItemToStock(item, candidates)).toMatchObject({
+      status: "needs_match_review",
+      reason: "ambiguous_match",
+    });
+  });
+
+  it("does not replace invoice sale value while calculating Actual margin", () => {
+    const item = {
+      brand: "Formin",
+      strength: "500 mg",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      phif_financial_fields: { sale_price: "0.340", total_amount: "10.200" },
+      metadata: {},
+    };
+
+    expect(calculateActualGrossMargin(item, [{ source_stock_id: "old", brand_name: "Formin", strength: "500mg", cost_price: "0.200" }])).toMatchObject({
+      invoiceValue: 10.2,
+      purchaseCost: 6,
+    });
+  });
+
+  it("does not use later stock snapshots to recalculate older invoice margins", () => {
+    const snapshots = [
+      { source_stock_id: "old", brand_name: "Formin", strength: "500mg", cost_price: "0.200", synced_at: "2026-09-20T10:00:00Z" },
+      { source_stock_id: "new", brand_name: "Formin", strength: "500mg", cost_price: "0.300", synced_at: "2026-10-20T10:00:00Z" },
+    ];
+
+    expect(stockSnapshotCandidatesForInvoice({ brand: "Formin", strength: "500 mg" }, snapshots, "2026-09-25").map((row) => row.source_stock_id)).toEqual(["old"]);
+  });
+
+  it("does not mix Actual margin calculation with PHIF Supplier items", () => {
+    const result = calculateActualGrossMargin(
+      {
+        brand: "Supplier Item",
+        strength: "5 mg",
+        quantity: 30,
+        source_classification: "phif-supplier",
+        phif_financial_fields: { total_amount: "15.000" },
+        metadata: {},
+      },
+      [{ source_stock_id: "stock", brand_name: "Supplier Item", strength: "5mg", cost_price: "0.100" }],
+    );
+
+    expect(result).toMatchObject({
+      status: "phif_supplier_excluded",
+      purchaseCost: null,
+      grossMargin: null,
+    });
   });
 });

@@ -1,5 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import {
+  calculateActualGrossMargin,
+  invoiceItemValue,
+  stockSnapshotCandidatesForInvoice,
+} from "@/lib/phif-stock.helpers";
 
 const rangeSchema = z.object({
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -18,17 +23,7 @@ function moneyValue(fields: Record<string, unknown> | null | undefined, keys: st
 }
 
 function itemAmount(item: any) {
-  return moneyValue(item.phif_financial_fields, [
-    "total_amount",
-    "totalAmount",
-    "total",
-    "itemTotal",
-    "phifValue",
-    "insurance_amount",
-    "insuranceAmount",
-    "outside_insurance_amount",
-    "outsideInsuranceAmount",
-  ]);
+  return invoiceItemValue(item);
 }
 
 export const getManagementReport = createServerFn({ method: "POST" })
@@ -104,6 +99,81 @@ export const getManagementReport = createServerFn({ method: "POST" })
       phif_value: phifValue,
       total_dispensed_value: actualValue + phifValue,
       employee_breakdown_available: false,
+      details,
+    };
+  });
+
+export const getActualProfitReport = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => rangeSchema.pick({ dateFrom: true, dateTo: true }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
+
+    const { data: invoices, error } = await supabaseAdmin
+      .from("phif_invoices")
+      .select("id, invoice_number, invoice_key, dispensing_date")
+      .eq("pharmacy_id", pharmacy_id)
+      .gte("dispensing_date", data.dateFrom)
+      .lte("dispensing_date", data.dateTo)
+      .order("dispensing_date", { ascending: false });
+    if (error) throw new Error(error.message);
+
+    const ids = (invoices ?? []).map((invoice: any) => invoice.id);
+    const items: any[] = [];
+    for (let index = 0; index < ids.length; index += 500) {
+      const batch = ids.slice(index, index + 500);
+      if (batch.length === 0) continue;
+      const { data: rows, error: itemError } = await supabaseAdmin
+        .from("phif_invoice_items")
+        .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata")
+        .in("phif_invoice_id", batch)
+        .neq("source_classification", "phif-supplier");
+      if (itemError) throw new Error(itemError.message);
+      items.push(...(rows ?? []));
+    }
+
+    const { data: stockRows, error: stockError } = await supabaseAdmin
+      .from("phif_stock_items")
+      .select("id, source_stock_id, generic_ingredient_id, supplier_id, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, cost_price, sale_price, synced_at")
+      .eq("pharmacy_id", pharmacy_id)
+      .not("cost_price", "is", null)
+      .order("synced_at", { ascending: false });
+    if (stockError) throw new Error(stockError.message);
+
+    const invoiceById = new Map((invoices ?? []).map((invoice: any) => [invoice.id, invoice]));
+    const details = items.map((item) => {
+      const invoice: any = invoiceById.get(item.phif_invoice_id);
+      const candidates = stockSnapshotCandidatesForInvoice(item, stockRows ?? [], invoice?.dispensing_date);
+      const margin = calculateActualGrossMargin(item, candidates);
+      return {
+        invoice_id: item.phif_invoice_id,
+        invoice_number: invoice?.invoice_number ?? invoice?.invoice_key ?? null,
+        dispensing_date: invoice?.dispensing_date ?? null,
+        item_name: [item.brand, item.active_ingredient, item.strength].filter(Boolean).join(" · "),
+        quantity: item.quantity,
+        invoice_value: margin.invoiceValue,
+        purchase_cost: margin.purchaseCost,
+        gross_margin: margin.grossMargin,
+        match_status: margin.status,
+        match_reason: margin.reason,
+        matched_stock_id: margin.stock?.source_stock_id ?? null,
+      };
+    });
+
+    const matched = details.filter((row) => row.match_status === "matched");
+    const totalValue = details.reduce((sum, row) => sum + row.invoice_value, 0);
+    const knownCost = matched.reduce((sum, row) => sum + (row.purchase_cost ?? 0), 0);
+    const knownMargin = matched.reduce((sum, row) => sum + (row.gross_margin ?? 0), 0);
+
+    return {
+      total_actual_items: details.length,
+      total_actual_value: totalValue,
+      matched_item_count: matched.length,
+      review_item_count: details.length - matched.length,
+      known_purchase_cost: knownCost,
+      known_gross_margin: knownMargin,
+      coverage_ratio: details.length ? matched.length / details.length : 0,
       details,
     };
   });

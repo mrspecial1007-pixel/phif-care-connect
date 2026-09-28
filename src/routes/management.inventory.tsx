@@ -1,14 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Gate } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getPhifStockSummary, listPhifStockItems, syncPhifStock } from "@/lib/phif-stock.functions";
-import { PackageSearch, RefreshCw, ShieldAlert } from "lucide-react";
-import { useState } from "react";
+import { stockAvailability, stockQuantityBreakdown } from "@/lib/phif-stock.helpers";
+import { CalendarDays, PackageSearch, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/management/inventory")({
@@ -20,9 +22,17 @@ function formatDateTime(value: string | null | undefined) {
   return new Date(value).toLocaleString("ar-LY", { dateStyle: "medium", timeStyle: "short" });
 }
 
+function money(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+  const numeric = typeof value === "number" ? value : Number(String(value).replace(/,/g, ""));
+  if (!Number.isFinite(numeric)) return String(value);
+  return numeric.toLocaleString("ar-LY", { maximumFractionDigits: 3 });
+}
+
 function InventoryPage() {
   const qc = useQueryClient();
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<any | null>(null);
   const summaryFn = useServerFn(getPhifStockSummary);
   const listFn = useServerFn(listPhifStockItems);
   const syncFn = useServerFn(syncPhifStock);
@@ -33,7 +43,7 @@ function InventoryPage() {
   });
   const items = useQuery({
     queryKey: ["phif_stock_items", query],
-    queryFn: () => listFn({ data: { query, limit: 100 } }),
+    queryFn: () => listFn({ data: { query, limit: 120 } }),
   });
   const sync = useMutation({
     mutationFn: () => syncFn(),
@@ -51,12 +61,12 @@ function InventoryPage() {
   const canViewCost = summary.data?.can_view_cost === true;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" dir="rtl">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-bold">مخزون PHIF</h1>
           <p className="text-sm text-muted-foreground">
-            مزامنة قراءة فقط لمخزون التأمين. لا يتم تعديل فواتير PHIF أو الصرف أو مخزون الصيدلية المحلي.
+            قراءة مخزون التأمين كما هو محفوظ في آخر Snapshot. لا يتم تعديل فواتير PHIF أو الصرف أو بيانات المستفيدين.
           </p>
         </div>
         <Button onClick={() => sync.mutate()} disabled={sync.isPending} className="h-11">
@@ -87,7 +97,7 @@ function InventoryPage() {
       {!canViewCost && (
         <Card className="p-3 flex items-center gap-2 text-sm text-muted-foreground">
           <ShieldAlert className="h-4 w-4 text-amber-600" />
-          أسعار التكلفة مخفية عن هذه الجلسة. تظهر فقط لمن يملك صلاحية إدارية صريحة.
+          أسعار الشراء مخفية من الخادم لهذه الجلسة، ولا تظهر إلا لمن يملك صلاحية stock_cost_read.
         </Card>
       )}
 
@@ -95,7 +105,7 @@ function InventoryPage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="font-semibold flex items-center gap-2">
             <PackageSearch className="h-5 w-5 text-primary" />
-            السجلات الحالية
+            الأصناف الحالية
           </div>
           <Input
             value={query}
@@ -106,56 +116,134 @@ function InventoryPage() {
           />
         </div>
 
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead className="bg-muted/60 text-muted-foreground">
-              <tr>
-                <th className="p-3 text-right">الصنف</th>
-                <th className="p-3 text-right">الكمية</th>
-                <th className="p-3 text-right">التشغيلة والانتهاء</th>
-                <th className="p-3 text-right">المورد</th>
-                <th className="p-3 text-right">المعرّفات</th>
-                {canViewCost && <th className="p-3 text-right">التكلفة</th>}
-                <th className="p-3 text-right">سعر البيع</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {items.isLoading && (
-                <tr><td colSpan={canViewCost ? 7 : 6} className="p-4 text-center text-muted-foreground">جاري التحميل...</td></tr>
-              )}
-              {(items.data ?? []).map((item: any) => (
-                <tr key={item.id} className="align-top">
-                  <td className="p-3">
-                    <div className="font-semibold">{item.brand_name || item.active_ingredient || "صنف غير مسمى"}</div>
-                    <div className="text-xs text-muted-foreground">{[item.active_ingredient, item.strength, item.dosage_unit].filter(Boolean).join(" · ") || "—"}</div>
-                  </td>
-                  <td className="p-3 whitespace-nowrap">
-                    {item.stock_quantity ?? "—"} {item.source_quantity_unit ?? ""}
-                    <div className="text-xs text-muted-foreground">
-                      عبوة {item.package_quantity ?? "—"} · شرائط {item.strips_quantity ?? "—"}
-                    </div>
-                  </td>
-                  <td className="p-3 whitespace-nowrap">
-                    <div>{item.batch_number || "—"}</div>
-                    <div className="text-xs text-muted-foreground">{item.expiry_date || "بدون تاريخ"}</div>
-                  </td>
-                  <td className="p-3">{item.supplier_name || "—"}</td>
-                  <td className="p-3 text-xs text-muted-foreground">
-                    <div>stock: {item.source_stock_id}</div>
-                    <div>brand: {item.brand_product_id || "—"}</div>
-                    <div>batch: {item.batch_id || "—"}</div>
-                  </td>
-                  {canViewCost && <td className="p-3 whitespace-nowrap">{item.cost_price ?? "—"}</td>}
-                  <td className="p-3 whitespace-nowrap">{item.sale_price ?? "—"}</td>
-                </tr>
-              ))}
-              {!items.isLoading && (items.data ?? []).length === 0 && (
-                <tr><td colSpan={canViewCost ? 7 : 6} className="p-4 text-center text-muted-foreground">لا توجد سجلات مخزون مطابقة</td></tr>
-              )}
-            </tbody>
-          </table>
+        {items.isLoading && <div className="p-4 text-center text-muted-foreground">جاري التحميل...</div>}
+        {!items.isLoading && (items.data ?? []).length === 0 && (
+          <div className="p-6 text-center text-muted-foreground">لا توجد سجلات مخزون مطابقة</div>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {(items.data ?? []).map((item: any) => (
+            <StockCard key={item.id} item={item} onOpen={() => setSelected(item)} />
+          ))}
         </div>
       </Card>
+
+      <StockDetailsSheet item={selected} canViewCost={canViewCost} onClose={() => setSelected(null)} />
     </div>
+  );
+}
+
+function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
+  const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط");
+  const availability = stockAvailability(item);
+  const tone =
+    availability.tone === "danger"
+      ? "border-red-200 bg-red-50/70"
+      : availability.tone === "warning"
+        ? "border-amber-200 bg-amber-50/70"
+        : "border-emerald-100 bg-white";
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`text-right rounded-lg border p-3 shadow-sm transition hover:border-primary/50 hover:shadow-md ${tone}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-semibold leading-6 break-words">{item.brand_name || item.active_ingredient || "صنف غير مسمى"}</div>
+          <div className="text-xs text-muted-foreground break-words">{[item.strength, item.dosage_unit].filter(Boolean).join(" · ") || "بدون تركيز"}</div>
+        </div>
+        <Badge variant={availability.tone === "danger" ? "destructive" : "secondary"}>{availability.label}</Badge>
+      </div>
+
+      <div className="mt-3 flex items-end justify-between gap-2">
+        <div>
+          <div className="text-2xl font-bold text-primary">
+            {quantity.canConvertToBoxes ? quantity.boxes?.toLocaleString("ar-LY") : quantity.originalQuantity?.toLocaleString("ar-LY")}
+          </div>
+          <div className="text-xs text-muted-foreground">{quantity.canConvertToBoxes ? "علب" : (item.source_quantity_unit || "كمية")}</div>
+        </div>
+        {(quantity.remainingStrips ?? 0) > 0 || !quantity.canConvertToBoxes ? (
+          <Badge className="bg-sky-50 text-sky-700 hover:bg-sky-50">
+            {quantity.canConvertToBoxes ? `+ ${quantity.remainingStrips ?? 0} شريط` : quantity.label}
+          </Badge>
+        ) : null}
+      </div>
+
+      <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
+        <CalendarDays className="h-3.5 w-3.5" />
+        الصلاحية: {item.expiry_date || "غير متاحة"}
+      </div>
+    </button>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="rounded-md bg-muted/40 p-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="text-sm font-medium break-words">{value ?? "—"}</div>
+    </div>
+  );
+}
+
+function StockDetailsSheet({ item, canViewCost, onClose }: { item: any | null; canViewCost: boolean; onClose: () => void }) {
+  const quantity = item ? stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط") : null;
+  const cost = Number(item?.cost_price ?? NaN);
+  const sale = Number(item?.sale_price ?? NaN);
+  const spread = Number.isFinite(cost) && Number.isFinite(sale) ? sale - cost : null;
+
+  return (
+    <Sheet open={Boolean(item)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent side="bottom" className="max-h-[88vh] overflow-y-auto rounded-t-2xl px-4 pb-6 pt-5 sm:mx-auto sm:max-w-2xl" dir="rtl">
+        {item && quantity && (
+          <>
+            <SheetHeader className="text-right">
+              <SheetTitle>{item.brand_name || item.active_ingredient || "تفاصيل الصنف"}</SheetTitle>
+            </SheetHeader>
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                <DetailRow label="الاسم التجاري" value={item.brand_name} />
+                <DetailRow label="التركيز" value={item.strength} />
+                <DetailRow label="الوحدة" value={item.dosage_unit || item.source_quantity_unit} />
+                <DetailRow label="إجمالي الأشرطة الحالية" value={item.stock_quantity} />
+                <DetailRow label="الأشرطة داخل العلبة" value={item.strips_quantity} />
+                <DetailRow label="الأقراص داخل العبوة" value={item.package_quantity} />
+                <DetailRow label="عدد العلب" value={quantity.canConvertToBoxes ? quantity.boxes : "غير محسوب"} />
+                <DetailRow label="باقي الأشرطة" value={quantity.canConvertToBoxes ? quantity.remainingStrips : "غير محسوب"} />
+                <DetailRow label="المورد" value={item.supplier_name} />
+                <DetailRow label="الشركة المصنعة" value={item.company_name} />
+                <DetailRow label="رقم التشغيلة" value={item.batch_number} />
+                <DetailRow label="تاريخ الصلاحية" value={item.expiry_date} />
+                <DetailRow label="آخر تحديث للسجل" value={formatDateTime(item.synced_at)} />
+                <DetailRow label="آخر وقت مزامنة" value={formatDateTime(item.synced_at)} />
+              </div>
+
+              <Card className="p-3">
+                <div className="mb-2 font-semibold">بيانات Batch</div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <DetailRow label="معرف المخزون" value={item.source_stock_id} />
+                  <DetailRow label="معرف العلامة" value={item.brand_product_id} />
+                  <DetailRow label="معرف المورد" value={item.supplier_id} />
+                  <DetailRow label="معرف المادة" value={item.generic_ingredient_id} />
+                </div>
+              </Card>
+
+              {canViewCost && (
+                <Card className="p-3">
+                  <div className="mb-2 font-semibold">الأسعار المسجلة</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <DetailRow label="سعر الشراء" value={money(item.cost_price)} />
+                    <DetailRow label="سعر البيع" value={money(item.sale_price)} />
+                    <DetailRow label="فرق السعر" value={spread === null ? "—" : money(spread)} />
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">تعرض الأسعار كما جاءت من PHIF كسعر وحدة مسجل، ولا يتم افتراض سعر العلبة أو الشريط.</div>
+                </Card>
+              )}
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
