@@ -1,4 +1,4 @@
-import { invoiceItemValue } from "@/lib/phif-stock.helpers";
+import { invoiceItemValue, stockQuantityBreakdown } from "@/lib/phif-stock.helpers";
 
 export type ReportSource = "all" | "actual" | "phif";
 export type DrugGrouping = "scientific" | "brand";
@@ -35,6 +35,13 @@ export type ReportStock = {
   stock_quantity?: number | string | null;
   source_quantity_unit?: string | null;
   synced_at?: string | null;
+  cost_price?: number | string | null;
+  sale_price?: number | string | null;
+  strips_quantity?: number | string | null;
+  package_quantity?: number | string | null;
+  brand_product_id?: string | null;
+  supplier_id?: string | null;
+  generic_ingredient_id?: string | null;
 };
 
 type BuildReportInput = {
@@ -105,6 +112,29 @@ function drugKey(item: ReportItem, groupBy: DrugGrouping) {
     normalizeText(unit),
     itemSource(item),
   ].join("|");
+}
+
+export function reportDrugIdentityKey(item: {
+  active_ingredient?: string | null;
+  strength?: string | null;
+  brand?: string | null;
+  metadata?: Record<string, unknown> | null;
+}, groupBy: DrugGrouping = "scientific") {
+  return drugKey({ ...item, phif_invoice_id: "identity" }, groupBy);
+}
+
+export function reportItemSource(item: ReportItem): "actual" | "phif" {
+  return itemSource(item);
+}
+
+export function reportNumberValue(value: unknown) {
+  return numberValue(value);
+}
+
+export function reportItemQuantityLabel(item: ReportItem, stock?: ReportStock | null) {
+  const strips = stock?.strips_quantity ?? item.metadata?.strips_quantity ?? item.metadata?.stripsQuantity;
+  const unit = String(stock?.source_quantity_unit ?? item.metadata?.quantity_unit ?? "شريط");
+  return stockQuantityBreakdown(item.quantity, strips, unit).label;
 }
 
 function fullMonthRange(dateFrom: string, dateTo: string) {
@@ -219,6 +249,8 @@ export function buildMonthlyReport(input: BuildReportInput) {
       unique_patients: new Set<string>(),
       dispense_count: 0,
       total_value: 0,
+      sample: item,
+      formatted_quantity: null as string | null,
       products: new Map<string, { brand: string; quantity: number; value: number }>(),
     };
     group.quantity += quantity;
@@ -308,6 +340,7 @@ export function buildMonthlyReport(input: BuildReportInput) {
     unique_patient_count: group.unique_patients.size,
     dispense_count: group.dispense_count,
     total_value: group.total_value,
+    formatted_quantity: reportItemQuantityLabel({ phif_invoice_id: "summary", quantity: group.quantity, metadata: group.sample?.metadata ?? {} } as ReportItem),
     products: [...group.products.values()],
   })).sort((a, b) => {
     if (input.sortBy === "beneficiaries") return b.unique_patient_count - a.unique_patient_count;

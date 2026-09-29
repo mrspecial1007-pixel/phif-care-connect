@@ -8,6 +8,10 @@ import {
 import {
   buildMonthlyReport,
   officialReportPayload,
+  reportDrugIdentityKey,
+  reportItemQuantityLabel,
+  reportItemSource,
+  reportNumberValue,
   type DrugGrouping,
   type ReportInvoice,
   type ReportItem,
@@ -26,6 +30,22 @@ const monthlyReportSchema = rangeSchema.extend({
   groupBy: z.enum(["scientific", "brand"]).default("scientific"),
   sortBy: z.enum(["quantity", "beneficiaries", "dispenses", "value"]).default("quantity"),
   topLimit: z.union([z.literal("all"), z.number().int().min(10).max(500)]).default(20),
+});
+
+const itemSearchSchema = z.object({
+  search: z.string().trim().min(2).max(120),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+const itemTrackingSchema = itemSearchSchema.extend({
+  identityKey: z.string().min(1).max(300),
+  groupBy: z.enum(["scientific", "brand"]).default("scientific"),
+});
+
+const supplierSaleOverrideSchema = z.object({
+  itemId: z.string().uuid(),
+  salePrice: z.number().min(0).max(1_000_000),
 });
 
 function moneyValue(fields: Record<string, unknown> | null | undefined, keys: string[]) {
@@ -125,6 +145,105 @@ async function loadCurrentStockForReport(supabaseAdmin: any, pharmacyId: string)
     .limit(1000);
   if (error) throw new Error(error.message);
   return (rows ?? []) as ReportStock[];
+}
+
+async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
+  const { data: rows, error } = await supabaseAdmin
+    .from("phif_stock_items")
+    .select("id, source_stock_id, generic_ingredient_id, supplier_id, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, cost_price, sale_price, synced_at")
+    .eq("pharmacy_id", pharmacyId)
+    .order("synced_at", { ascending: false })
+    .limit(5000);
+  if (error) throw new Error(error.message);
+  return rows ?? [];
+}
+
+function internalSaleOverride(item: any) {
+  return reportNumberValue(
+    item.phif_financial_fields?.internal_sale_price_override
+      ?? item.phif_financial_fields?.internalSalePriceOverride
+      ?? item.metadata?.internal_sale_price_override,
+  );
+}
+
+function invoiceItemName(item: any) {
+  return [item.brand, item.active_ingredient, item.strength].filter(Boolean).join(" · ") || "صنف غير محدد";
+}
+
+function profitForItem(item: any, invoice: any, stocks: any[]) {
+  const source = reportItemSource(item);
+  const invoiceValue = invoiceItemValue(item);
+  if (source === "phif") {
+    const override = internalSaleOverride(item);
+    const quantity = reportNumberValue(item.quantity);
+    const revenue = override > 0 && quantity > 0 ? override * quantity : null;
+    return {
+      source,
+      invoiceValue,
+      revenue: revenue ?? invoiceValue,
+      purchaseCost: revenue === null ? null : invoiceValue,
+      grossMargin: revenue === null ? null : revenue - invoiceValue,
+      unitSalePrice: override > 0 ? override : null,
+      status: revenue === null ? "needs_sale_price" : "matched",
+      reason: revenue === null ? "phif_supplier_sale_price_missing" : "phif_supplier_internal_sale_price",
+      stock: null,
+      invoice,
+    };
+  }
+  const candidates = stockSnapshotCandidatesForInvoice(item, stocks, invoice?.dispensing_date);
+  const margin = calculateActualGrossMargin(item, candidates);
+  return {
+    source,
+    invoiceValue: margin.invoiceValue,
+    revenue: margin.invoiceValue,
+    purchaseCost: margin.purchaseCost,
+    grossMargin: margin.grossMargin,
+    unitSalePrice: null,
+    status: margin.status,
+    reason: margin.reason,
+    stock: margin.stock,
+    invoice,
+  };
+}
+
+async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { dateFrom: string; dateTo: string; source?: "all" | "actual" | "phif" }) {
+  const dataset = await loadReportDataset(supabaseAdmin, pharmacyId, data.dateFrom, data.dateTo);
+  const stocks = await loadStockWithCosts(supabaseAdmin, pharmacyId);
+  const invoiceById = new Map(dataset.invoices.map((invoice) => [invoice.id, invoice]));
+  const rows = dataset.items
+    .filter((item) => {
+      if (data.source === "actual") return reportItemSource(item) === "actual";
+      if (data.source === "phif") return reportItemSource(item) === "phif";
+      return true;
+    })
+    .map((item) => {
+      const invoice: any = invoiceById.get(item.phif_invoice_id);
+      const profit = profitForItem(item, invoice, stocks);
+      return {
+        item_id: item.id,
+        invoice_id: item.phif_invoice_id,
+        invoice_number: invoice?.invoice_number ?? invoice?.invoice_key ?? null,
+        invoice_key: invoice?.invoice_key ?? null,
+        beneficiary_name: invoice?.beneficiary_name ?? null,
+        insurance_card_number: invoice?.insurance_card_number ?? null,
+        dispensing_date: invoice?.dispensing_date ?? null,
+        item_name: invoiceItemName(item),
+        active_ingredient: item.active_ingredient ?? null,
+        strength: item.strength ?? null,
+        brand: item.brand ?? null,
+        quantity: item.quantity,
+        quantity_label: reportItemQuantityLabel(item, profit.stock),
+        source: profit.source,
+        invoice_value: profit.invoiceValue,
+        revenue: profit.revenue,
+        purchase_cost: profit.purchaseCost,
+        gross_margin: profit.grossMargin,
+        unit_sale_price: profit.unitSalePrice,
+        match_status: profit.status,
+        match_reason: profit.reason,
+      };
+    });
+  return { invoices: dataset.invoices, items: dataset.items, rows, stocks };
 }
 
 async function buildManagementMonthlyReport(data: z.infer<typeof monthlyReportSchema>, permission: "reports_read" | "reports_export") {
@@ -311,4 +430,213 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
       coverage_ratio: details.length ? matched.length / details.length : 0,
       details,
     };
+  });
+
+export const searchReportItems = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => itemSearchSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { pharmacy_id } = await requireTiryaqPermission("reports_read");
+    const dataset = await loadReportDataset(supabaseAdmin, pharmacy_id, data.dateFrom, data.dateTo);
+    const query = data.search.toLowerCase();
+    const grouped = new Map<string, any>();
+    for (const item of dataset.items) {
+      const text = [item.brand, item.active_ingredient, item.strength].filter(Boolean).join(" ").toLowerCase();
+      if (!text.includes(query)) continue;
+      const identityKey = reportDrugIdentityKey(item, "scientific");
+      const row = grouped.get(identityKey) ?? {
+        identity_key: identityKey,
+        brand: item.brand ?? null,
+        active_ingredient: item.active_ingredient ?? null,
+        strength: item.strength ?? null,
+        source: reportItemSource(item),
+        occurrence_count: 0,
+      };
+      row.occurrence_count += 1;
+      grouped.set(identityKey, row);
+    }
+    return [...grouped.values()].sort((a, b) => b.occurrence_count - a.occurrence_count).slice(0, 20);
+  });
+
+export const getReportItemTracking = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => itemTrackingSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
+    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, { dateFrom: data.dateFrom, dateTo: data.dateTo, source: "all" });
+    const movements = rows.filter((row) => {
+      const key = reportDrugIdentityKey({
+        active_ingredient: row.active_ingredient,
+        strength: row.strength,
+        brand: row.brand,
+        metadata: {},
+      }, data.groupBy);
+      return key === data.identityKey;
+    });
+    const beneficiaryCards = new Set(movements.map((row) => row.insurance_card_number).filter(Boolean));
+    const knownCostRows = movements.filter((row) => row.purchase_cost !== null);
+    const knownProfitRows = movements.filter((row) => row.gross_margin !== null);
+    const first = movements[0] ?? null;
+    return {
+      item: first ? {
+        identity_key: data.identityKey,
+        brand: first.brand,
+        active_ingredient: first.active_ingredient,
+        strength: first.strength,
+        source: first.source,
+      } : null,
+      summary: {
+        total_quantity: movements.reduce((sum, row) => sum + reportNumberValue(row.quantity), 0),
+        dispense_count: movements.length,
+        unique_patient_count: beneficiaryCards.size,
+        total_revenue: movements.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+        known_cost: knownCostRows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
+        known_profit: knownProfitRows.reduce((sum, row) => sum + reportNumberValue(row.gross_margin), 0),
+        coverage_ratio: movements.length ? knownProfitRows.length / movements.length : 0,
+      },
+      movements,
+    };
+  });
+
+export const getProfitAnalysisReport = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => rangeSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
+    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data);
+    const invoiceMap = new Map<string, any>();
+    const beneficiaryMap = new Map<string, any>();
+    const itemMap = new Map<string, any>();
+    for (const row of rows) {
+      const invoice = invoiceMap.get(row.invoice_id) ?? {
+        invoice_id: row.invoice_id,
+        invoice_number: row.invoice_number,
+        invoice_key: row.invoice_key,
+        beneficiary_name: row.beneficiary_name,
+        insurance_card_number: row.insurance_card_number,
+        dispensing_date: row.dispensing_date,
+        revenue: 0,
+        known_cost: 0,
+        known_profit: 0,
+        item_count: 0,
+        items: [],
+      };
+      invoice.revenue += reportNumberValue(row.revenue);
+      invoice.known_cost += reportNumberValue(row.purchase_cost);
+      invoice.known_profit += reportNumberValue(row.gross_margin);
+      invoice.item_count += 1;
+      invoice.items.push(row);
+      invoiceMap.set(row.invoice_id, invoice);
+
+      const beneficiaryKey = row.insurance_card_number ?? row.beneficiary_name ?? "unknown";
+      const beneficiary = beneficiaryMap.get(beneficiaryKey) ?? {
+        key: beneficiaryKey,
+        beneficiary_name: row.beneficiary_name,
+        insurance_card_number: row.insurance_card_number,
+        revenue: 0,
+        known_cost: 0,
+        known_profit: 0,
+        invoice_ids: new Set<string>(),
+        item_count: 0,
+      };
+      beneficiary.revenue += reportNumberValue(row.revenue);
+      beneficiary.known_cost += reportNumberValue(row.purchase_cost);
+      beneficiary.known_profit += reportNumberValue(row.gross_margin);
+      beneficiary.item_count += 1;
+      beneficiary.invoice_ids.add(row.invoice_id);
+      beneficiaryMap.set(beneficiaryKey, beneficiary);
+
+      const itemKey = reportDrugIdentityKey(row, "scientific");
+      const item = itemMap.get(itemKey) ?? {
+        key: itemKey,
+        item_name: row.item_name,
+        source: row.source,
+        revenue: 0,
+        known_cost: 0,
+        known_profit: 0,
+        quantity: 0,
+        dispense_count: 0,
+      };
+      item.revenue += reportNumberValue(row.revenue);
+      item.known_cost += reportNumberValue(row.purchase_cost);
+      item.known_profit += reportNumberValue(row.gross_margin);
+      item.quantity += reportNumberValue(row.quantity);
+      item.dispense_count += 1;
+      itemMap.set(itemKey, item);
+    }
+    const knownRows = rows.filter((row) => row.gross_margin !== null);
+    const beneficiaries = [...beneficiaryMap.values()].map((row) => ({
+      ...row,
+      invoice_count: row.invoice_ids.size,
+      invoice_ids: undefined,
+    }));
+    return {
+      summary: {
+        total_revenue: rows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+        known_cost: rows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
+        known_profit: rows.reduce((sum, row) => sum + reportNumberValue(row.gross_margin), 0),
+        invoice_count: invoiceMap.size,
+        unique_patient_count: beneficiaryMap.size,
+        item_count: rows.length,
+        coverage_ratio: rows.length ? knownRows.length / rows.length : 0,
+      },
+      source_split: {
+        actual: summarizeProfitRows(rows.filter((row) => row.source === "actual")),
+        phif: summarizeProfitRows(rows.filter((row) => row.source === "phif")),
+      },
+      top_profit_items: [...itemMap.values()].sort((a, b) => b.known_profit - a.known_profit).slice(0, 20),
+      top_revenue_beneficiaries: beneficiaries.sort((a, b) => b.revenue - a.revenue).slice(0, 20),
+      top_profit_beneficiaries: [...beneficiaries].sort((a, b) => b.known_profit - a.known_profit).slice(0, 20),
+      invoices: [...invoiceMap.values()].sort((a, b) => String(b.dispensing_date ?? "").localeCompare(String(a.dispensing_date ?? ""))),
+    };
+  });
+
+function summarizeProfitRows(rows: any[]) {
+  return {
+    revenue: rows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+    known_cost: rows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
+    known_profit: rows.reduce((sum, row) => sum + reportNumberValue(row.gross_margin), 0),
+    item_count: rows.length,
+    invoice_count: new Set(rows.map((row) => row.invoice_id)).size,
+    patient_count: new Set(rows.map((row) => row.insurance_card_number ?? row.beneficiary_name).filter(Boolean)).size,
+  };
+}
+
+export const savePhifSupplierSalePrice = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => supplierSaleOverrideSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
+    const { data: item, error: itemError } = await supabaseAdmin
+      .from("phif_invoice_items")
+      .select("id, phif_invoice_id, source_classification, phif_financial_fields")
+      .eq("id", data.itemId)
+      .maybeSingle();
+    if (itemError) throw new Error(itemError.message);
+    if (!item) throw new Error("Invoice item not found");
+    if (item.source_classification !== "phif-supplier") {
+      throw new Error("Internal sale price override is only available for PHIF Supplier items");
+    }
+    const { data: invoice, error: invoiceError } = await supabaseAdmin
+      .from("phif_invoices")
+      .select("id, pharmacy_id")
+      .eq("id", item.phif_invoice_id)
+      .maybeSingle();
+    if (invoiceError) throw new Error(invoiceError.message);
+    if (!invoice || invoice.pharmacy_id !== pharmacy_id) throw new Error("Invoice item not found");
+    const fields = {
+      ...(item.phif_financial_fields ?? {}),
+      internal_sale_price_override: data.salePrice,
+      internal_sale_price_updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabaseAdmin
+      .from("phif_invoice_items")
+      .update({ phif_financial_fields: fields })
+      .eq("id", data.itemId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

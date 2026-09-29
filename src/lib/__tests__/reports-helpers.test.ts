@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildMonthlyReport, officialReportPayload, type ReportInvoice, type ReportItem } from "@/lib/reports.helpers";
 
 const invoices: ReportInvoice[] = [
@@ -149,5 +151,24 @@ describe("monthly PHIF reports", () => {
     const serialized = JSON.stringify(payload);
     expect(serialized).not.toMatch(/cost_price|purchaseCost|grossMargin|profit|margin|bridge_session|snapshot/i);
     expect(serialized).toContain("0061600113888");
+  });
+
+  it("uses stock-style quantity labels in report rows when possible", () => {
+    const result = report();
+    const amlodipine = result.top_drugs.find((row) => row.active_ingredient === "AMLODIPINE");
+    expect(amlodipine?.formatted_quantity).toContain("60");
+  });
+
+  it("keeps report implementation scoped to management reports and guarded by cost permission", () => {
+    const management = readFileSync(join(process.cwd(), "src/lib/management.functions.ts"), "utf8");
+    const route = readFileSync(join(process.cwd(), "src/routes/management.reports.tsx"), "utf8");
+    expect(management).toContain("getReportItemTracking");
+    expect(management).toContain("getProfitAnalysisReport");
+    expect(management).toContain("savePhifSupplierSalePrice");
+    expect(management).toContain('requireTiryaqPermission("stock_cost_read")');
+    expect(management).toContain("internal_sale_price_override");
+    expect(route).toContain("التقرير الشامل");
+    expect(route).toContain("تتبع صنف");
+    expect(route).toContain("تحليل الأرباح");
   });
 });
