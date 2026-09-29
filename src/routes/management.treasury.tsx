@@ -110,37 +110,31 @@ function ActualProfitSection({ data, isLoading }: { data: any; isLoading: boolea
         <Stat label="هامش معروف" value={`${money(data?.known_gross_margin)} د.ل`} />
         <Stat label="نسبة التغطية" value={`${Math.round((data?.coverage_ratio ?? 0) * 100)}%`} />
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead className="bg-muted/60 text-muted-foreground">
-            <tr>
-              <th className="p-3 text-right">الفاتورة</th>
-              <th className="p-3 text-right">التاريخ</th>
-              <th className="p-3 text-right">الصنف</th>
-              <th className="p-3 text-right">الكمية</th>
-              <th className="p-3 text-right">قيمة الفاتورة</th>
-              <th className="p-3 text-right">تكلفة الشراء</th>
-              <th className="p-3 text-right">الربح</th>
-              <th className="p-3 text-right">الحالة</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {isLoading && <tr><td colSpan={8} className="p-4 text-center text-muted-foreground">جاري التحميل...</td></tr>}
-            {(data?.details ?? []).map((row: any, index: number) => (
-              <tr key={`${row.invoice_id}-${index}`}>
-                <td className="p-3">{row.invoice_number || "—"}</td>
-                <td className="p-3">{row.dispensing_date || "—"}</td>
-                <td className="p-3 max-w-[260px] break-words">{row.item_name || "—"}</td>
-                <td className="p-3">{row.quantity ?? "—"}</td>
-                <td className="p-3">{money(row.invoice_value)}</td>
-                <td className="p-3">{row.purchase_cost === null ? "—" : money(row.purchase_cost)}</td>
-                <td className="p-3">{row.gross_margin === null ? "—" : money(row.gross_margin)}</td>
-                <td className="p-3">{statusLabel(row.match_status, row.match_reason)}</td>
-              </tr>
-            ))}
-            {!isLoading && (data?.details ?? []).length === 0 && <tr><td colSpan={8} className="p-4 text-center text-muted-foreground">لا توجد أصناف Actual في الفترة</td></tr>}
-          </tbody>
-        </table>
+      <div className="grid gap-2 p-4">
+        {isLoading && <div className="p-4 text-center text-muted-foreground">جاري التحميل...</div>}
+        {(data?.details ?? []).map((row: any, index: number) => (
+          <Card key={`${row.invoice_id}-${index}`} className="p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-semibold break-words">{row.item_name || "—"}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {row.invoice_number || "—"} · {row.dispensing_date || "—"} · {row.quantity ?? "—"}
+                </div>
+              </div>
+              <div className="shrink-0 text-left text-xs text-muted-foreground">
+                {statusLabel(row.match_status, row.match_reason)}
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+              <Stat label="قيمة الفاتورة" value={`${money(row.invoice_value)} د.ل`} />
+              <Stat label="تكلفة الشراء" value={row.purchase_cost === null ? "—" : `${money(row.purchase_cost)} د.ل`} />
+              <Stat label="الربح" value={row.gross_margin === null ? "—" : `${money(row.gross_margin)} د.ل`} />
+            </div>
+          </Card>
+        ))}
+        {!isLoading && (data?.details ?? []).length === 0 && (
+          <div className="p-4 text-center text-muted-foreground">لا توجد أصناف Actual في الفترة</div>
+        )}
       </div>
     </Card>
   );

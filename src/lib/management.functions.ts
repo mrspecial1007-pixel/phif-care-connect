@@ -43,9 +43,9 @@ const itemTrackingSchema = itemSearchSchema.extend({
   groupBy: z.enum(["scientific", "brand"]).default("scientific"),
 });
 
-const supplierSaleOverrideSchema = z.object({
+const supplierPurchaseOverrideSchema = z.object({
   itemId: z.string().uuid(),
-  salePrice: z.number().min(0).max(1_000_000),
+  purchasePrice: z.number().min(0).max(1_000_000),
 });
 
 function moneyValue(fields: Record<string, unknown> | null | undefined, keys: string[]) {
@@ -158,10 +158,13 @@ async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
   return rows ?? [];
 }
 
-function internalSaleOverride(item: any) {
+function internalPurchaseOverride(item: any) {
   return reportNumberValue(
-    item.phif_financial_fields?.internal_sale_price_override
+    item.phif_financial_fields?.internal_purchase_price
+      ?? item.phif_financial_fields?.internalPurchasePrice
+      ?? item.phif_financial_fields?.internal_sale_price_override
       ?? item.phif_financial_fields?.internalSalePriceOverride
+      ?? item.metadata?.internal_purchase_price
       ?? item.metadata?.internal_sale_price_override,
   );
 }
@@ -174,18 +177,18 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
   const source = reportItemSource(item);
   const invoiceValue = invoiceItemValue(item);
   if (source === "phif") {
-    const override = internalSaleOverride(item);
+    const override = internalPurchaseOverride(item);
     const quantity = reportNumberValue(item.quantity);
-    const revenue = override > 0 && quantity > 0 ? override * quantity : null;
+    const purchaseCost = override > 0 && quantity > 0 ? override * quantity : null;
     return {
       source,
       invoiceValue,
-      revenue: revenue ?? invoiceValue,
-      purchaseCost: revenue === null ? null : invoiceValue,
-      grossMargin: revenue === null ? null : revenue - invoiceValue,
-      unitSalePrice: override > 0 ? override : null,
-      status: revenue === null ? "needs_sale_price" : "matched",
-      reason: revenue === null ? "phif_supplier_sale_price_missing" : "phif_supplier_internal_sale_price",
+      revenue: invoiceValue,
+      purchaseCost,
+      grossMargin: purchaseCost === null ? null : invoiceValue - purchaseCost,
+      unitPurchasePrice: override > 0 ? override : null,
+      status: purchaseCost === null ? "needs_purchase_price" : "matched",
+      reason: purchaseCost === null ? "phif_supplier_purchase_price_missing" : "phif_supplier_internal_purchase_price",
       stock: null,
       invoice,
     };
@@ -198,7 +201,7 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
     revenue: margin.invoiceValue,
     purchaseCost: margin.purchaseCost,
     grossMargin: margin.grossMargin,
-    unitSalePrice: null,
+    unitPurchasePrice: null,
     status: margin.status,
     reason: margin.reason,
     stock: margin.stock,
@@ -238,7 +241,7 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         revenue: profit.revenue,
         purchase_cost: profit.purchaseCost,
         gross_margin: profit.grossMargin,
-        unit_sale_price: profit.unitSalePrice,
+        unit_purchase_price: profit.unitPurchasePrice,
         match_status: profit.status,
         match_reason: profit.reason,
       };
@@ -605,8 +608,8 @@ function summarizeProfitRows(rows: any[]) {
   };
 }
 
-export const savePhifSupplierSalePrice = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => supplierSaleOverrideSchema.parse(d))
+export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => supplierPurchaseOverrideSchema.parse(d))
   .handler(async ({ data }) => {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -619,7 +622,7 @@ export const savePhifSupplierSalePrice = createServerFn({ method: "POST" })
     if (itemError) throw new Error(itemError.message);
     if (!item) throw new Error("Invoice item not found");
     if (item.source_classification !== "phif-supplier") {
-      throw new Error("Internal sale price override is only available for PHIF Supplier items");
+      throw new Error("Internal purchase price is only available for PHIF Supplier items");
     }
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from("phif_invoices")
@@ -630,8 +633,8 @@ export const savePhifSupplierSalePrice = createServerFn({ method: "POST" })
     if (!invoice || invoice.pharmacy_id !== pharmacy_id) throw new Error("Invoice item not found");
     const fields = {
       ...(item.phif_financial_fields ?? {}),
-      internal_sale_price_override: data.salePrice,
-      internal_sale_price_updated_at: new Date().toISOString(),
+      internal_purchase_price: data.purchasePrice,
+      internal_purchase_price_updated_at: new Date().toISOString(),
     };
     const { error } = await supabaseAdmin
       .from("phif_invoice_items")

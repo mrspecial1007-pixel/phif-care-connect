@@ -159,16 +159,28 @@ describe("monthly PHIF reports", () => {
     expect(amlodipine?.formatted_quantity).toContain("60");
   });
 
-  it("keeps report implementation scoped to management reports and guarded by cost permission", () => {
+  it("keeps report routes independent and guarded by cost permission", () => {
     const management = readFileSync(join(process.cwd(), "src/lib/management.functions.ts"), "utf8");
-    const route = readFileSync(join(process.cwd(), "src/routes/management.reports.tsx"), "utf8");
+    const landing = readFileSync(join(process.cwd(), "src/routes/management.reports.tsx"), "utf8");
+    const summary = readFileSync(join(process.cwd(), "src/routes/management.reports.summary.tsx"), "utf8");
+    const itemTracking = readFileSync(join(process.cwd(), "src/routes/management.reports.item-tracking.tsx"), "utf8");
+    const profit = readFileSync(join(process.cwd(), "src/routes/management.reports.profit-analysis.tsx"), "utf8");
+    const views = readFileSync(join(process.cwd(), "src/components/management/ReportsViews.tsx"), "utf8");
     expect(management).toContain("getReportItemTracking");
     expect(management).toContain("getProfitAnalysisReport");
-    expect(management).toContain("savePhifSupplierSalePrice");
+    expect(management).toContain("savePhifSupplierPurchasePrice");
     expect(management).toContain('requireTiryaqPermission("stock_cost_read")');
-    expect(management).toContain("internal_sale_price_override");
-    expect(route).toContain("التقرير الشامل");
-    expect(route).toContain("تتبع صنف");
-    expect(route).toContain("تحليل الأرباح");
+    expect(management).toContain("internal_purchase_price");
+    expect(landing).toContain('createFileRoute("/management/reports")');
+    expect(landing).toContain("/management/reports/summary");
+    expect(landing).toContain("/management/reports/item-tracking");
+    expect(landing).toContain("/management/reports/profit-analysis");
+    expect(landing).not.toContain("getMonthlyManagementReport");
+    expect(summary).toContain('createFileRoute("/management/reports/summary")');
+    expect(itemTracking).toContain('createFileRoute("/management/reports/item-tracking")');
+    expect(profit).toContain('createFileRoute("/management/reports/profit-analysis")');
+    expect(views).toContain("ReportsSummaryPage");
+    expect(views).toContain("ReportsItemTrackingPage");
+    expect(views).toContain("ReportsProfitAnalysisPage");
   });
 });

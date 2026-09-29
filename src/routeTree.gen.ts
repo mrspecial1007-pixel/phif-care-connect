@@ -27,6 +27,9 @@ import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as ManagementTreasuryRouteImport } from './routes/management.treasury'
 import { Route as ManagementReportsRouteImport } from './routes/management.reports'
 import { Route as ManagementInventoryRouteImport } from './routes/management.inventory'
+import { Route as ManagementReportsSummaryRouteImport } from './routes/management.reports.summary'
+import { Route as ManagementReportsProfitAnalysisRouteImport } from './routes/management.reports.profit-analysis'
+import { Route as ManagementReportsItemTrackingRouteImport } from './routes/management.reports.item-tracking'
 import { Route as ApiPublicSchedulerRouteImport } from './routes/api/public/scheduler'
 import { Route as ApiPublicGatewayStatusRouteImport } from './routes/api/public/gateway/status'
 import { Route as ApiPublicGatewayRegisterRouteImport } from './routes/api/public/gateway/register'
@@ -122,6 +125,24 @@ const ManagementInventoryRoute = ManagementInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => ManagementRoute,
 } as any)
+const ManagementReportsSummaryRoute =
+  ManagementReportsSummaryRouteImport.update({
+    id: '/summary',
+    path: '/summary',
+    getParentRoute: () => ManagementReportsRoute,
+  } as any)
+const ManagementReportsProfitAnalysisRoute =
+  ManagementReportsProfitAnalysisRouteImport.update({
+    id: '/profit-analysis',
+    path: '/profit-analysis',
+    getParentRoute: () => ManagementReportsRoute,
+  } as any)
+const ManagementReportsItemTrackingRoute =
+  ManagementReportsItemTrackingRouteImport.update({
+    id: '/item-tracking',
+    path: '/item-tracking',
+    getParentRoute: () => ManagementReportsRoute,
+  } as any)
 const ApiPublicSchedulerRoute = ApiPublicSchedulerRouteImport.update({
   id: '/api/public/scheduler',
   path: '/api/public/scheduler',
@@ -155,7 +176,7 @@ export interface FileRoutesByFullPath {
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
   '/management/inventory': typeof ManagementInventoryRoute
-  '/management/reports': typeof ManagementReportsRoute
+  '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
@@ -164,6 +185,9 @@ export interface FileRoutesByFullPath {
   '/patients/': typeof PatientsIndexRoute
   '/phif-invoices/': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/management/reports/item-tracking': typeof ManagementReportsItemTrackingRoute
+  '/management/reports/profit-analysis': typeof ManagementReportsProfitAnalysisRoute
+  '/management/reports/summary': typeof ManagementReportsSummaryRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
   '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
@@ -179,7 +203,7 @@ export interface FileRoutesByTo {
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
   '/management/inventory': typeof ManagementInventoryRoute
-  '/management/reports': typeof ManagementReportsRoute
+  '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
@@ -188,6 +212,9 @@ export interface FileRoutesByTo {
   '/patients': typeof PatientsIndexRoute
   '/phif-invoices': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/management/reports/item-tracking': typeof ManagementReportsItemTrackingRoute
+  '/management/reports/profit-analysis': typeof ManagementReportsProfitAnalysisRoute
+  '/management/reports/summary': typeof ManagementReportsSummaryRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
   '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
@@ -204,7 +231,7 @@ export interface FileRoutesById {
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
   '/management/inventory': typeof ManagementInventoryRoute
-  '/management/reports': typeof ManagementReportsRoute
+  '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
   '/phif-invoices/$id': typeof PhifInvoicesIdRoute
@@ -213,6 +240,9 @@ export interface FileRoutesById {
   '/patients/': typeof PatientsIndexRoute
   '/phif-invoices/': typeof PhifInvoicesIndexRoute
   '/api/public/scheduler': typeof ApiPublicSchedulerRoute
+  '/management/reports/item-tracking': typeof ManagementReportsItemTrackingRoute
+  '/management/reports/profit-analysis': typeof ManagementReportsProfitAnalysisRoute
+  '/management/reports/summary': typeof ManagementReportsSummaryRoute
   '/api/public/gateway/jobs': typeof ApiPublicGatewayJobsRoute
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
   '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
@@ -239,6 +269,9 @@ export interface FileRouteTypes {
     | '/patients/'
     | '/phif-invoices/'
     | '/api/public/scheduler'
+    | '/management/reports/item-tracking'
+    | '/management/reports/profit-analysis'
+    | '/management/reports/summary'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
     | '/api/public/gateway/status'
@@ -263,6 +296,9 @@ export interface FileRouteTypes {
     | '/patients'
     | '/phif-invoices'
     | '/api/public/scheduler'
+    | '/management/reports/item-tracking'
+    | '/management/reports/profit-analysis'
+    | '/management/reports/summary'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
     | '/api/public/gateway/status'
@@ -287,6 +323,9 @@ export interface FileRouteTypes {
     | '/patients/'
     | '/phif-invoices/'
     | '/api/public/scheduler'
+    | '/management/reports/item-tracking'
+    | '/management/reports/profit-analysis'
+    | '/management/reports/summary'
     | '/api/public/gateway/jobs'
     | '/api/public/gateway/register'
     | '/api/public/gateway/status'
@@ -440,6 +479,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagementInventoryRouteImport
       parentRoute: typeof ManagementRoute
     }
+    '/management/reports/summary': {
+      id: '/management/reports/summary'
+      path: '/summary'
+      fullPath: '/management/reports/summary'
+      preLoaderRoute: typeof ManagementReportsSummaryRouteImport
+      parentRoute: typeof ManagementReportsRoute
+    }
+    '/management/reports/profit-analysis': {
+      id: '/management/reports/profit-analysis'
+      path: '/profit-analysis'
+      fullPath: '/management/reports/profit-analysis'
+      preLoaderRoute: typeof ManagementReportsProfitAnalysisRouteImport
+      parentRoute: typeof ManagementReportsRoute
+    }
+    '/management/reports/item-tracking': {
+      id: '/management/reports/item-tracking'
+      path: '/item-tracking'
+      fullPath: '/management/reports/item-tracking'
+      preLoaderRoute: typeof ManagementReportsItemTrackingRouteImport
+      parentRoute: typeof ManagementReportsRoute
+    }
     '/api/public/scheduler': {
       id: '/api/public/scheduler'
       path: '/api/public/scheduler'
@@ -471,15 +531,30 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ManagementReportsRouteChildren {
+  ManagementReportsItemTrackingRoute: typeof ManagementReportsItemTrackingRoute
+  ManagementReportsProfitAnalysisRoute: typeof ManagementReportsProfitAnalysisRoute
+  ManagementReportsSummaryRoute: typeof ManagementReportsSummaryRoute
+}
+
+const ManagementReportsRouteChildren: ManagementReportsRouteChildren = {
+  ManagementReportsItemTrackingRoute: ManagementReportsItemTrackingRoute,
+  ManagementReportsProfitAnalysisRoute: ManagementReportsProfitAnalysisRoute,
+  ManagementReportsSummaryRoute: ManagementReportsSummaryRoute,
+}
+
+const ManagementReportsRouteWithChildren =
+  ManagementReportsRoute._addFileChildren(ManagementReportsRouteChildren)
+
 interface ManagementRouteChildren {
   ManagementInventoryRoute: typeof ManagementInventoryRoute
-  ManagementReportsRoute: typeof ManagementReportsRoute
+  ManagementReportsRoute: typeof ManagementReportsRouteWithChildren
   ManagementTreasuryRoute: typeof ManagementTreasuryRoute
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
   ManagementInventoryRoute: ManagementInventoryRoute,
-  ManagementReportsRoute: ManagementReportsRoute,
+  ManagementReportsRoute: ManagementReportsRouteWithChildren,
   ManagementTreasuryRoute: ManagementTreasuryRoute,
 }
 

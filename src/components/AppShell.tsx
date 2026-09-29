@@ -60,7 +60,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
       <header className="sticky top-0 z-30 border-b bg-card/80 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="mx-auto flex max-w-[1200px] items-center gap-3 px-3 py-3 sm:px-4">
           <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
             <Pill className="h-5 w-5" />
           </div>
@@ -98,7 +98,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-4 w-full box-border">{children}</main>
+      <main className="mx-auto w-full max-w-[1200px] box-border px-3 py-4 sm:px-4">{children}</main>
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t bg-card">
         <div className="grid grid-cols-6">
