@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { BarChart3, LineChart, TrendingUp } from "lucide-react";
@@ -33,6 +33,10 @@ const reportCards = [
 ] as const;
 
 function ReportsLandingPage() {
+  const location = useLocation();
+
+  if (location.pathname !== "/management/reports") return <Outlet />;
+
   return (
     <div className="space-y-4" dir="rtl">
       <div>

@@ -176,6 +176,7 @@ describe("monthly PHIF reports", () => {
     expect(landing).toContain("/management/reports/item-tracking");
     expect(landing).toContain("/management/reports/profit-analysis");
     expect(landing).not.toContain("getMonthlyManagementReport");
+    expect(landing).toContain("<Outlet />");
     expect(summary).toContain('createFileRoute("/management/reports/summary")');
     expect(itemTracking).toContain('createFileRoute("/management/reports/item-tracking")');
     expect(profit).toContain('createFileRoute("/management/reports/profit-analysis")');
