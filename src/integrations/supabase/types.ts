@@ -163,6 +163,13 @@ export type Database = {
             foreignKeyName: "communication_logs_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "communication_logs_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "v_patient_status"
             referencedColumns: ["id"]
           },
@@ -239,6 +246,13 @@ export type Database = {
             foreignKeyName: "dispensing_cycles_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "dispensing_cycles_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "v_patient_status"
             referencedColumns: ["id"]
           },
@@ -292,6 +306,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispensing_due_tracks_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "dispensing_due_tracks_patient_id_fkey"
@@ -401,11 +422,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "dispensing_transactions_cycle_id_fkey"
+            columns: ["cycle_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["current_cycle_id"]
+          },
+          {
             foreignKeyName: "dispensing_transactions_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispensing_transactions_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "dispensing_transactions_patient_id_fkey"
@@ -605,6 +640,145 @@ export type Database = {
         }
         Relationships: []
       }
+      patient_insurance_cards: {
+        Row: {
+          card_number: string
+          created_at: string
+          id: string
+          linked_at: string
+          patient_id: string
+          retired_at: string | null
+          source: string
+          status: string
+        }
+        Insert: {
+          card_number: string
+          created_at?: string
+          id?: string
+          linked_at?: string
+          patient_id: string
+          retired_at?: string | null
+          source?: string
+          status?: string
+        }
+        Update: {
+          card_number?: string
+          created_at?: string
+          id?: string
+          linked_at?: string
+          patient_id?: string
+          retired_at?: string | null
+          source?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_insurance_cards_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_insurance_cards_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_insurance_cards_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_insurance_cards_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+        ]
+      }
+      patient_pharmacy_access: {
+        Row: {
+          created_at: string
+          id: string
+          patient_id: string
+          pharmacy_id: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          patient_id: string
+          pharmacy_id: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          patient_id?: string
+          pharmacy_id?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_pharmacy_access_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_pharmacy_access_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_pharmacy_access_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_pharmacy_access_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_pharmacy_access_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_pharmacy_access_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_pharmacy_access_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           address: string | null
@@ -684,6 +858,13 @@ export type Database = {
             foreignKeyName: "patients_possible_duplicate_of_fkey"
             columns: ["possible_duplicate_of"]
             isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patients_possible_duplicate_of_fkey"
+            columns: ["possible_duplicate_of"]
+            isOneToOne: false
             referencedRelation: "v_patient_status"
             referencedColumns: ["id"]
           },
@@ -701,6 +882,7 @@ export type Database = {
           address: string | null
           created_at: string
           id: string
+          login_email: string | null
           name: string
           phone: string | null
           pin_hash: string
@@ -709,6 +891,7 @@ export type Database = {
           address?: string | null
           created_at?: string
           id?: string
+          login_email?: string | null
           name: string
           phone?: string | null
           pin_hash: string
@@ -717,11 +900,545 @@ export type Database = {
           address?: string | null
           created_at?: string
           id?: string
+          login_email?: string | null
           name?: string
           phone?: string | null
           pin_hash?: string
         }
         Relationships: []
+      }
+      pharmacy_users: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+          is_active: boolean
+          last_login_at: string | null
+          login_identifier: string
+          password_hash: string
+          permissions: Json
+          pharmacy_id: string
+          role: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          id?: string
+          is_active?: boolean
+          last_login_at?: string | null
+          login_identifier: string
+          password_hash: string
+          permissions?: Json
+          pharmacy_id: string
+          role?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+          is_active?: boolean
+          last_login_at?: string | null
+          login_identifier?: string
+          password_hash?: string
+          permissions?: Json
+          pharmacy_id?: string
+          role?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pharmacy_users_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pharmacy_users_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pharmacy_users_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_bridge_sessions: {
+        Row: {
+          bridge_session_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          last_checked_at: string | null
+          pharmacy_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          bridge_session_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          last_checked_at?: string | null
+          pharmacy_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          bridge_session_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          last_checked_at?: string | null
+          pharmacy_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_bridge_sessions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_bridge_sessions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_bridge_sessions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_invoice_items: {
+        Row: {
+          active_ingredient: string | null
+          brand: string | null
+          created_at: string
+          id: string
+          metadata: Json
+          phif_financial_fields: Json
+          phif_invoice_id: string
+          phif_item_id: string | null
+          quantity: number | null
+          source_classification: string | null
+          strength: string | null
+          supplier: string | null
+        }
+        Insert: {
+          active_ingredient?: string | null
+          brand?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          phif_financial_fields?: Json
+          phif_invoice_id: string
+          phif_item_id?: string | null
+          quantity?: number | null
+          source_classification?: string | null
+          strength?: string | null
+          supplier?: string | null
+        }
+        Update: {
+          active_ingredient?: string | null
+          brand?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          phif_financial_fields?: Json
+          phif_invoice_id?: string
+          phif_item_id?: string | null
+          quantity?: number | null
+          source_classification?: string | null
+          strength?: string | null
+          supplier?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_invoice_items_phif_invoice_id_fkey"
+            columns: ["phif_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "phif_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_invoices: {
+        Row: {
+          beneficiary_name: string | null
+          created_at: string
+          dispensing_date: string | null
+          dispensing_time: string | null
+          id: string
+          insurance_card_number: string | null
+          invoice_key: string
+          invoice_number: string | null
+          metadata: Json
+          patient_id: string | null
+          pharmacy_id: string
+          review_note: string | null
+          review_status: string
+          reviewed_at: string | null
+          status: string | null
+          sync_run_id: string | null
+          synced_at: string
+        }
+        Insert: {
+          beneficiary_name?: string | null
+          created_at?: string
+          dispensing_date?: string | null
+          dispensing_time?: string | null
+          id?: string
+          insurance_card_number?: string | null
+          invoice_key: string
+          invoice_number?: string | null
+          metadata?: Json
+          patient_id?: string | null
+          pharmacy_id: string
+          review_note?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          status?: string | null
+          sync_run_id?: string | null
+          synced_at?: string
+        }
+        Update: {
+          beneficiary_name?: string | null
+          created_at?: string
+          dispensing_date?: string | null
+          dispensing_time?: string | null
+          id?: string
+          insurance_card_number?: string | null
+          invoice_key?: string
+          invoice_number?: string | null
+          metadata?: Json
+          patient_id?: string | null
+          pharmacy_id?: string
+          review_note?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          status?: string | null
+          sync_run_id?: string | null
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_invoices_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_invoices_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "phif_invoices_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_invoices_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "phif_invoices_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_invoices_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_invoices_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_invoices_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "phif_sync_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_stock_items: {
+        Row: {
+          active_ingredient: string | null
+          batch_id: string | null
+          batch_number: string | null
+          brand_name: string | null
+          brand_product_id: string | null
+          company_name: string | null
+          content_hash: string
+          cost_price: number | null
+          created_at: string
+          dosage_unit: string | null
+          expiry_date: string | null
+          factory_price: number | null
+          generic_ingredient_id: string | null
+          id: string
+          is_current: boolean
+          package_quantity: number | null
+          pharmacy_id: string
+          raw_metadata: Json
+          sale_price: number | null
+          source_pharmacy_id: string | null
+          source_quantity_unit: string | null
+          source_stock_id: string
+          stock_quantity: number | null
+          strength: string | null
+          strips_quantity: number | null
+          supplier_id: string | null
+          supplier_name: string | null
+          sync_run_id: string | null
+          synced_at: string
+        }
+        Insert: {
+          active_ingredient?: string | null
+          batch_id?: string | null
+          batch_number?: string | null
+          brand_name?: string | null
+          brand_product_id?: string | null
+          company_name?: string | null
+          content_hash: string
+          cost_price?: number | null
+          created_at?: string
+          dosage_unit?: string | null
+          expiry_date?: string | null
+          factory_price?: number | null
+          generic_ingredient_id?: string | null
+          id?: string
+          is_current?: boolean
+          package_quantity?: number | null
+          pharmacy_id: string
+          raw_metadata?: Json
+          sale_price?: number | null
+          source_pharmacy_id?: string | null
+          source_quantity_unit?: string | null
+          source_stock_id: string
+          stock_quantity?: number | null
+          strength?: string | null
+          strips_quantity?: number | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          sync_run_id?: string | null
+          synced_at?: string
+        }
+        Update: {
+          active_ingredient?: string | null
+          batch_id?: string | null
+          batch_number?: string | null
+          brand_name?: string | null
+          brand_product_id?: string | null
+          company_name?: string | null
+          content_hash?: string
+          cost_price?: number | null
+          created_at?: string
+          dosage_unit?: string | null
+          expiry_date?: string | null
+          factory_price?: number | null
+          generic_ingredient_id?: string | null
+          id?: string
+          is_current?: boolean
+          package_quantity?: number | null
+          pharmacy_id?: string
+          raw_metadata?: Json
+          sale_price?: number | null
+          source_pharmacy_id?: string | null
+          source_quantity_unit?: string | null
+          source_stock_id?: string
+          stock_quantity?: number | null
+          strength?: string | null
+          strips_quantity?: number | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          sync_run_id?: string | null
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_stock_items_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_stock_items_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_stock_items_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_stock_items_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "phif_stock_sync_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_stock_sync_runs: {
+        Row: {
+          created_at: string
+          error_count: number
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          imported_records: number
+          pharmacy_id: string
+          started_at: string
+          status: string
+          total_records: number
+        }
+        Insert: {
+          created_at?: string
+          error_count?: number
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          imported_records?: number
+          pharmacy_id: string
+          started_at?: string
+          status?: string
+          total_records?: number
+        }
+        Update: {
+          created_at?: string
+          error_count?: number
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          imported_records?: number
+          pharmacy_id?: string
+          started_at?: string
+          status?: string
+          total_records?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_stock_sync_runs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_stock_sync_runs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_stock_sync_runs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_sync_runs: {
+        Row: {
+          created_at: string
+          duplicate_count: number
+          failed_count: number
+          finished_at: string | null
+          id: string
+          new_count: number
+          pharmacy_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          duplicate_count?: number
+          failed_count?: number
+          finished_at?: string | null
+          id?: string
+          new_count?: number
+          pharmacy_id: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          duplicate_count?: number
+          failed_count?: number
+          finished_at?: string | null
+          id?: string
+          new_count?: number
+          pharmacy_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_sync_runs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_sync_runs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_sync_runs_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       prescription_items: {
         Row: {
@@ -854,6 +1571,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "prescriptions_patient_id_fkey"
@@ -1040,6 +1764,13 @@ export type Database = {
             foreignKeyName: "sms_messages_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "sms_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "v_patient_status"
             referencedColumns: ["id"]
           },
@@ -1139,13 +1870,101 @@ export type Database = {
           },
         ]
       }
+      user_operation_log: {
+        Row: {
+          action: string
+          created_at: string
+          entity: string
+          entity_id: string | null
+          id: string
+          metadata: Json
+          pharmacy_id: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          entity: string
+          entity_id?: string | null
+          id?: string
+          metadata?: Json
+          pharmacy_id: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          entity?: string
+          entity_id?: string | null
+          id?: string
+          metadata?: Json
+          pharmacy_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_operation_log_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_operation_log_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_operation_log_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_operation_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacy_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
+      v_patient_pharmacy_access_unassigned: {
+        Row: {
+          created_at: string | null
+          insurance_card_number: string | null
+          patient_id: string | null
+          patient_name: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          insurance_card_number?: string | null
+          patient_id?: string | null
+          patient_name?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          insurance_card_number?: string | null
+          patient_id?: string | null
+          patient_name?: string | null
+        }
+        Relationships: []
+      }
       v_patient_status: {
         Row: {
           active_tracks_count: number | null
           address: string | null
           birth_date: string | null
+          current_cycle_id: string | null
+          current_cycle_started_at: string | null
+          current_cycle_status:
+            | Database["public"]["Enums"]["cycle_status"]
+            | null
           follow_up_suspended_at: string | null
           follow_up_suspension_reason: string | null
           gender: string | null
@@ -1154,6 +1973,7 @@ export type Database = {
           is_archived: boolean | null
           is_favorite: boolean | null
           is_follow_up_suspended: boolean | null
+          is_shared: boolean | null
           last_dispensing_date: string | null
           last_pharmacy_id: string | null
           last_pharmacy_name: string | null
@@ -1163,61 +1983,35 @@ export type Database = {
           patient_id: string | null
           patient_name: string | null
           patient_name_normalized: string | null
+          pharmacy_count: number | null
           phone: string | null
           remaining_days: number | null
+          review_status: Database["public"]["Enums"]["review_status"] | null
           tracks: Json | null
         }
-        Insert: {
-          active_tracks_count?: never
-          address?: string | null
-          birth_date?: string | null
-          follow_up_suspended_at?: string | null
-          follow_up_suspension_reason?: string | null
-          gender?: string | null
-          id?: string | null
-          insurance_card_number?: string | null
-          is_archived?: boolean | null
-          is_favorite?: boolean | null
-          is_follow_up_suspended?: boolean | null
-          last_dispensing_date?: never
-          last_pharmacy_id?: never
-          last_pharmacy_name?: never
-          national_id?: string | null
-          next_due_date?: never
-          notes?: string | null
-          patient_id?: string | null
-          patient_name?: string | null
-          patient_name_normalized?: string | null
-          phone?: string | null
-          remaining_days?: never
-          tracks?: never
-        }
-        Update: {
-          active_tracks_count?: never
-          address?: string | null
-          birth_date?: string | null
-          follow_up_suspended_at?: string | null
-          follow_up_suspension_reason?: string | null
-          gender?: string | null
-          id?: string | null
-          insurance_card_number?: string | null
-          is_archived?: boolean | null
-          is_favorite?: boolean | null
-          is_follow_up_suspended?: boolean | null
-          last_dispensing_date?: never
-          last_pharmacy_id?: never
-          last_pharmacy_name?: never
-          national_id?: string | null
-          next_due_date?: never
-          notes?: string | null
-          patient_id?: string | null
-          patient_name?: string | null
-          patient_name_normalized?: string | null
-          phone?: string | null
-          remaining_days?: never
-          tracks?: never
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
+            columns: ["last_pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
+            columns: ["last_pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispensing_transactions_pharmacy_id_fkey"
+            columns: ["last_pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       v_pharmacies: {
         Row: {
@@ -1257,6 +2051,10 @@ export type Database = {
       register_gateway_device_with_code: {
         Args: { _code_hash: string; _device_name: string; _fcm_token?: string }
         Returns: Json
+      }
+      replace_phif_stock_snapshots: {
+        Args: { p_items: Json; p_pharmacy_id: string; p_sync_run_id: string }
+        Returns: number
       }
     }
     Enums: {
