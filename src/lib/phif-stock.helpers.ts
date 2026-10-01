@@ -24,6 +24,7 @@ type StockLike = {
   supplier_id?: string | null;
   generic_ingredient_id?: string | null;
   synced_at?: string | null;
+  supplier_name?: string | null;
 };
 
 type InvoiceItemLike = {
@@ -169,6 +170,27 @@ function idsMatchOrMissing(a: unknown, b: unknown) {
   return !left || !right || left === right;
 }
 
+function normalizedUnit(value: unknown) {
+  const unit = normalizeText(value);
+  const aliases: Record<string, string> = {
+    tab: "tabs", tablet: "tabs", tablets: "tabs", tabs: "tabs", "قرص": "tabs", "أقراص": "tabs",
+    cap: "caps", capsule: "caps", capsules: "caps", caps: "caps", "كبسولة": "caps",
+    pen: "pen", pens: "pen", "قلم": "pen", inj: "inj", injection: "inj", injections: "inj", "حقنة": "inj",
+    vial: "vial", vials: "vial", amp: "amp", ampoule: "amp", strip: "strip", strips: "strip", "شريط": "strip",
+  };
+  return aliases[unit] ?? unit;
+}
+
+function invoiceUnit(item: InvoiceItemLike) {
+  return pickString(item.metadata, ["unit", "dosage_unit", "quantity_unit", "quantityUnit", "dosage_form", "dosageForm"])
+    ?? pickString(item.phif_financial_fields, ["unit", "quantity_unit", "dosage_unit"]);
+}
+
+function sameStockIdentity(a: StockLike, b: StockLike) {
+  return ["source_stock_id", "brand_product_id", "supplier_id", "generic_ingredient_id", "brand_name", "strength", "dosage_unit", "cost_price", "package_quantity", "strips_quantity"]
+    .every((key) => normalizeText(a[key as keyof StockLike]) === normalizeText(b[key as keyof StockLike]));
+}
+
 export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates: StockLike[]): ActualMatchResult {
   if (item.source_classification === "phif-supplier") {
     return { status: "needs_match_review", reason: "not_actual" };
@@ -178,6 +200,8 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   const strength = normalizeStrength(item.strength);
   const brandProductId = pickString(item.metadata, ["supplier_brand_name_id", "brand_product_id", "brand_id"]);
   const supplierId = pickString(item.metadata, ["supplier_id", "medical_suppliers_id"]);
+  const genericId = pickString(item.metadata, ["generic_ingredient_id", "generic_id"]);
+  const supplier = normalizeText((item as InvoiceItemLike & { supplier?: string | null }).supplier);
   const packageQuantity = pickString(item.metadata, ["package_quantity", "packageQuantity"]);
   const stripsQuantity = pickString(item.metadata, ["strips_quantity", "stripsQuantity"]);
 
@@ -186,6 +210,8 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   const matches = candidates.filter((stock) => {
     if (!idsMatchOrMissing(brandProductId, stock.brand_product_id)) return false;
     if (!idsMatchOrMissing(supplierId, stock.supplier_id)) return false;
+    if (!idsMatchOrMissing(genericId, stock.generic_ingredient_id)) return false;
+    if (supplier && stock.supplier_name && normalizeText(stock.supplier_name) !== supplier) return false;
     if (!idsMatchOrMissing(packageQuantity, stock.package_quantity)) return false;
     if (!idsMatchOrMissing(stripsQuantity, stock.strips_quantity)) return false;
     if (brand && normalizeText(stock.brand_name) !== brand) return false;
@@ -193,7 +219,9 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
     return Boolean(brandProductId || brand);
   });
 
-  if (matches.length === 1) return { status: "matched", stock: matches[0], reason: "commercial_identity" };
+  // Repeated immutable snapshots of the same stock product are not competing products.
+  const distinct = matches.filter((stock, index) => !matches.slice(0, index).some((other) => sameStockIdentity(stock, other)));
+  if (distinct.length === 1) return { status: "matched", stock: matches[0], reason: "commercial_identity" };
   if (matches.length > 1) return { status: "needs_match_review", reason: "ambiguous_match", candidates: matches };
   return { status: "needs_match_review", reason: "no_match" };
 }
@@ -227,7 +255,10 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   const unitPrice = invoiceUnitPrice(item);
   const costPrice = toNumber(match.stock.cost_price);
   const unitMatchesInvoice = quantity !== null && unitPrice > 0 && Math.abs(quantity * unitPrice - invoiceValue) < 0.01;
-  if (quantity === null || costPrice === null || invoiceValue <= 0 || !unitMatchesInvoice) {
+  const itemUnit = invoiceUnit(item);
+  const stockUnit = match.stock.dosage_unit;
+  const unitsAgree = Boolean(itemUnit && stockUnit && normalizedUnit(itemUnit) === normalizedUnit(stockUnit));
+  if (quantity === null || costPrice === null || invoiceValue <= 0 || !unitMatchesInvoice || !unitsAgree) {
     return {
       status: "pricing_unit_unverified",
       invoiceValue,
