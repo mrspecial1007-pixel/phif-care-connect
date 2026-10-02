@@ -1,789 +1,159 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import {
-  getMonthlyManagementReport,
-  getOfficialMonthlyReportExport,
-  getProfitAnalysisReport,
-  getReportItemTracking,
-  savePhifSupplierPurchasePrice,
-  searchReportItems,
-} from "@/lib/management.functions";
+import { ReportBackLink } from "./ReportBackLink";
+import { InvoiceSummaryCard, formatMoney, formatReportDate } from "./InvoiceSummaryCard";
+import { getMonthlyManagementReport, getOfficialMonthlyReportExport, getProfitAnalysisReport, getReportItemTracking, savePhifSupplierPurchasePrice, searchReportItems } from "@/lib/management.functions";
+import { toast } from "sonner";
 
-type SourceFilter = "all" | "actual" | "phif";
-type GroupBy = "scientific" | "brand";
-type SortBy = "quantity" | "beneficiaries" | "dispenses" | "value";
-type Preset = "today" | "yesterday" | "week" | "this_month" | "previous_month" | "month" | "custom";
-type ReportMode = "overview" | "item" | "profit";
+const dateString = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const monthRange = (month: string) => { const [y, m] = month.split("-").map(Number); return { dateFrom: dateString(new Date(y, m - 1, 1)), dateTo: dateString(new Date(y, m, 0)) }; };
+const thisMonth = () => dateString(new Date()).slice(0, 7);
+const sourceLabel = (s: string) => s === "actual" ? "Actual" : s === "phif" ? "PHIF Supplier" : "كل المصادر";
+const percent = (v: number) => `${Math.round(v * 100)}%`;
+const number = (v: number) => Number(v ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const statusLabel = (row: any) => row.match_status === "matched" ? "مكتملة" : row.match_status === "needs_purchase_price" ? "تحتاج أسعار" : row.match_status === "pricing_unit_unverified" ? "وحدة التكلفة تحتاج مراجعة" : "تحتاج مطابقة Actual";
+const sheetClass = "max-h-[90vh] overflow-y-auto rounded-t-lg px-4 pb-8 pt-5 sm:mx-auto sm:max-w-2xl";
+
+function PeriodSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return <Select value={value} onValueChange={onChange}><SelectTrigger aria-label="الفترة" className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>
+    <SelectItem value="this_month">هذا الشهر</SelectItem><SelectItem value="previous_month">الشهر السابق</SelectItem><SelectItem value="today">اليوم</SelectItem><SelectItem value="week">آخر 7 أيام</SelectItem><SelectItem value="month">شهر محدد</SelectItem><SelectItem value="custom">نطاق مخصص</SelectItem>
+  </SelectContent></Select>;
+}
+function SourceSelect({ value, onChange }: { value: string; onChange: (v: "all" | "actual" | "phif") => void }) {
+  return <Select value={value} onValueChange={onChange}><SelectTrigger aria-label="المصدر" className="min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">كل المصادر</SelectItem><SelectItem value="actual">Actual</SelectItem><SelectItem value="phif">PHIF Supplier</SelectItem></SelectContent></Select>;
+}
+function usePeriod() {
+  const [period, setPeriod] = useState("this_month");
+  const [month, setMonth] = useState(thisMonth);
+  const [range, setRange] = useState(() => monthRange(thisMonth()));
+  function change(v: string) {
+    setPeriod(v);
+    const now = new Date();
+    if (v === "custom") return;
+    if (v === "today") setRange({ dateFrom: dateString(now), dateTo: dateString(now) });
+    else if (v === "week") { const start = new Date(now); start.setDate(now.getDate() - 6); setRange({ dateFrom: dateString(start), dateTo: dateString(now) }); }
+    else if (v === "previous_month") { const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1); const m = dateString(prev).slice(0, 7); setMonth(m); setRange(monthRange(m)); }
+    else setRange(monthRange(v === "month" ? month : thisMonth()));
+  }
+  function changeMonth(m: string) { setMonth(m); setPeriod("month"); if (/^\d{4}-\d{2}$/.test(m)) setRange(monthRange(m)); }
+  return { period, change, month, changeMonth, range, setRange, setPeriod };
+}
+function Heading({ title, description }: { title: string; description?: string }) {
+  return <header className="space-y-1"><ReportBackLink to="/management/reports" label="مركز التقارير" /><h1 className="text-xl font-bold">{title}</h1>{description && <p className="text-sm text-muted-foreground">{description}</p>}</header>;
+}
+function Metric({ label, value, onClick, tone }: { label: string; value: string | number; onClick?: () => void; tone?: string }) {
+  const inner = <><span className="block text-xs text-muted-foreground">{label}</span><strong className={`mt-1 block break-words text-base ${tone ?? ""}`}>{value}</strong></>;
+  return onClick ? <Button variant="outline" onClick={onClick} className="h-auto min-h-20 w-full min-w-0 flex-col items-start whitespace-normal p-3 text-right">{inner}</Button> : <div className="min-w-0 border-b p-3">{inner}</div>;
+}
+function Section({ title, children }: { title: string; children: React.ReactNode }) { return <section className="space-y-2"><h2 className="text-base font-bold">{title}</h2>{children}</section>; }
+function MoneyMetrics({ data }: { data: any }) { return <div className="grid grid-cols-2 gap-x-2 border-y sm:grid-cols-4"><Metric label="إجمالي الإيراد" value={formatMoney(data.total_revenue)} /><Metric label="إجمالي التكلفة المعروفة" value={data.matched_count ? formatMoney(data.known_cost) : "غير مكتمل"} /><Metric label="إجمالي الربح المعروف" value={data.matched_count ? formatMoney(data.known_profit) : "غير مكتمل"} tone="text-emerald-700" /><Metric label="تغطية التكلفة" value={data.item_count && !data.matched_count ? "غير مكتمل" : percent(data.coverage_ratio)} /><Metric label="الفواتير" value={data.invoice_count} /><Metric label="المستفيدون" value={data.unique_patient_count} /><Metric label="البنود المكتملة" value={data.matched_count} /><Metric label="تحتاج مراجعة" value={data.review_count} tone="text-amber-700" /></div>; }
 
 export function ReportsSummaryPage() {
-  return <ReportsPage initialMode="overview" />;
-}
-
-export function ReportsItemTrackingPage() {
-  return <ReportsPage initialMode="item" />;
-}
-
-export function ReportsProfitAnalysisPage() {
-  return <ReportsPage initialMode="profit" />;
-}
-
-function iso(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function monthBounds(value: string) {
-  const [year, month] = value.split("-").map(Number);
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end = new Date(Date.UTC(year, month, 0));
-  return { from: iso(start), to: iso(end) };
-}
-
-function currentMonthValue() {
-  return iso(new Date()).slice(0, 7);
-}
-
-function defaultRange() {
-  return monthBounds(currentMonthValue());
-}
-
-function money(value: unknown) {
-  const numeric = typeof value === "number" ? value : Number(value ?? 0);
-  return numeric.toLocaleString("ar-LY", { maximumFractionDigits: 3 });
-}
-
-function numberText(value: unknown) {
-  const numeric = typeof value === "number" ? value : Number(value ?? 0);
-  return numeric.toLocaleString("ar-LY", { maximumFractionDigits: 2 });
-}
-
-function pct(value: unknown) {
-  const numeric = typeof value === "number" ? value : Number(value ?? 0);
-  return `${(numeric * 100).toLocaleString("ar-LY", { maximumFractionDigits: 1 })}%`;
-}
-
-function sourceLabel(value: string) {
-  if (value === "phif") return "PHIF Supplier";
-  if (value === "actual") return "Actual Supplier";
-  return "كل المصادر";
-}
-
-function statusLabel(status: string, reason?: string) {
-  if (status === "matched") return "محسوب";
-  if (status === "needs_purchase_price") return "يحتاج سعر شراء";
-  if (status === "pricing_unit_unverified") return "وحدة السعر غير مؤكدة";
-  if (reason === "ambiguous_match") return "مطابقة متعددة";
-  if (reason === "unsafe_identity") return "هوية غير كافية";
-  return "يحتاج مراجعة";
-}
-
-function ReportsPage({ initialMode }: { initialMode: ReportMode }) {
-  const queryClient = useQueryClient();
-  const monthlyFn = useServerFn(getMonthlyManagementReport);
-  const exportFn = useServerFn(getOfficialMonthlyReportExport);
-  const searchFn = useServerFn(searchReportItems);
-  const trackingFn = useServerFn(getReportItemTracking);
-  const profitFn = useServerFn(getProfitAnalysisReport);
-  const savePurchasePriceFn = useServerFn(savePhifSupplierPurchasePrice);
-  const initial = defaultRange();
-  const [mode] = useState<ReportMode>(initialMode);
-  const [preset, setPreset] = useState<Preset>("this_month");
-  const [month, setMonth] = useState(currentMonthValue());
-  const [dateFrom, setDateFrom] = useState(initial.from);
-  const [dateTo, setDateTo] = useState(initial.to);
-  const [source, setSource] = useState<SourceFilter>("all");
-  const [groupBy, setGroupBy] = useState<GroupBy>("scientific");
-  const [sortBy, setSortBy] = useState<SortBy>("quantity");
+  const period = usePeriod();
+  const [source, setSource] = useState<"all" | "actual" | "phif">("all");
+  const [groupBy, setGroupBy] = useState<"scientific" | "brand">("scientific");
+  const [sortBy, setSortBy] = useState<"quantity" | "beneficiaries" | "dispenses" | "value">("quantity");
   const [topLimit, setTopLimit] = useState<"10" | "20" | "50" | "all">("20");
-  const [printMode, setPrintMode] = useState(false);
-  const [itemSearch, setItemSearch] = useState("");
-  const [selectedItem, setSelectedItem] = useState<any | null>(null);
-  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
-  const [selectedBeneficiary, setSelectedBeneficiary] = useState<any | null>(null);
-  const [purchasePriceDraft, setPurchasePriceDraft] = useState<Record<string, string>>({});
-  const filters = useMemo(() => ({
-    dateFrom,
-    dateTo,
-    source,
-    groupBy,
-    sortBy,
-    topLimit: topLimit === "all" ? "all" as const : Number(topLimit),
-  }), [dateFrom, dateTo, source, groupBy, sortBy, topLimit]);
-
-  const monthly = useQuery({
-    queryKey: ["management_monthly_report", filters],
-    queryFn: () => monthlyFn({ data: filters }),
-  });
-  const suggestions = useQuery({
-    queryKey: ["report_item_search", itemSearch, dateFrom, dateTo],
-    queryFn: () => searchFn({ data: { search: itemSearch, dateFrom, dateTo } }),
-    enabled: itemSearch.trim().length >= 2,
-  });
-  const tracking = useQuery({
-    queryKey: ["report_item_tracking", selectedItem?.identity_key, dateFrom, dateTo, groupBy],
-    queryFn: () => trackingFn({ data: { search: itemSearch || "aa", identityKey: selectedItem.identity_key, dateFrom, dateTo, groupBy } }),
-    enabled: Boolean(selectedItem),
-  });
-  const profit = useQuery({
-    queryKey: ["management_profit_analysis", dateFrom, dateTo, source],
-    queryFn: () => profitFn({ data: { dateFrom, dateTo, source } }),
-    enabled: mode === "profit",
-    retry: false,
-  });
-  const savePurchase = useMutation({
-    mutationFn: (input: { itemId: string; purchasePrice: number }) => savePurchasePriceFn({ data: input }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["management_profit_analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["report_item_tracking"] });
-    },
-  });
-
-  const report = monthly.data;
-  const maxDaily = Math.max(...(report?.daily ?? []).map((row: any) => row.invoice_count), 1);
-
-  function applyPreset(value: Preset) {
-    setPreset(value);
-    const now = new Date();
-    if (value === "custom") return;
-    if (value === "today" || value === "yesterday") {
-      const dayValue = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      if (value === "yesterday") dayValue.setUTCDate(dayValue.getUTCDate() - 1);
-      const day = iso(dayValue);
-      setDateFrom(day);
-      setDateTo(day);
-      return;
-    }
-    if (value === "week") {
-      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      const start = new Date(end);
-      start.setUTCDate(end.getUTCDate() - 6);
-      setDateFrom(iso(start));
-      setDateTo(iso(end));
-      return;
-    }
-    if (value === "previous_month") {
-      const previous = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-      const valueMonth = iso(previous).slice(0, 7);
-      setMonth(valueMonth);
-      const range = monthBounds(valueMonth);
-      setDateFrom(range.from);
-      setDateTo(range.to);
-      return;
-    }
-    const selectedMonth = value === "month" ? month : currentMonthValue();
-    const range = monthBounds(selectedMonth);
-    setMonth(selectedMonth);
-    setDateFrom(range.from);
-    setDateTo(range.to);
-  }
-
-  function updateMonth(value: string) {
-    setMonth(value);
-    setPreset("month");
-    const range = monthBounds(value);
-    setDateFrom(range.from);
-    setDateTo(range.to);
-  }
-
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const reportFn = useServerFn(getMonthlyManagementReport);
+  const exportFn = useServerFn(getOfficialMonthlyReportExport);
+  const filters = { ...period.range, source, groupBy, sortBy, topLimit: topLimit === "all" ? "all" as const : Number(topLimit) };
+  const report = useQuery({ queryKey: ["management_monthly_report", filters], queryFn: () => reportFn({ data: filters }) });
   async function exportExcel() {
-    const payload: any = await exportFn({ data: filters });
-    const XLSX = await import("xlsx");
-    const workbook = XLSX.utils.book_new();
-    const addSheet = (name: string, rows: Record<string, unknown>[]) => {
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows.length ? rows : [{ ملاحظة: "لا توجد بيانات" }]), name);
-    };
-    addSheet("الملخص", [
-      { البند: "عدد الفواتير", القيمة: payload.summary.invoice_count },
-      { البند: "المستفيدون الفريدون", القيمة: payload.summary.unique_patient_count },
-      { البند: "عدد الأصناف", القيمة: payload.summary.item_count },
-      { البند: "إجمالي قيمة الصرف", القيمة: payload.summary.total_dispensed_value },
-    ]);
-    addSheet("المستفيدون", payload.beneficiary_stats.beneficiaries.map((row: any) => ({
-      "رقم البطاقة": row.card,
-      "اسم المستفيد": row.name,
-      "عدد الفواتير": row.invoice_count,
-      "عدد الأصناف": row.item_count,
-      "آخر صرف": row.last_dispensing_date,
-      "مستفيد جديد": row.is_new === true ? "نعم" : row.is_new === false ? "لا" : "غير محدد",
-    })));
-    addSheet("الأصناف الأكثر صرفًا", payload.top_drugs.map((row: any) => ({
-      "الاسم العلمي": row.active_ingredient,
-      "التركيز": row.strength,
-      "الشكل": row.dosage_form,
-      "المصدر": sourceLabel(row.source),
-      "الكمية": row.formatted_quantity ?? row.quantity,
-      "عدد المستفيدين": row.unique_patient_count,
-      "عدد مرات الصرف": row.dispense_count,
-      "القيمة": row.total_value,
-    })));
-    addSheet("اليومي", payload.daily);
-    addSheet("Actual vs PHIF", [
-      { المصدر: "Actual Supplier", الأصناف: payload.source_split.actual.item_count, المستفيدون: payload.source_split.actual.patient_count, القيمة: payload.source_split.actual.value },
-      { المصدر: "PHIF Supplier", الأصناف: payload.source_split.phif.item_count, المستفيدون: payload.source_split.phif.patient_count, القيمة: payload.source_split.phif.value },
-    ]);
-    addSheet("الجودة", [payload.quality]);
-    addSheet("تقدير الاحتياج", payload.stock_consumption);
-    XLSX.writeFile(workbook, `phif-monthly-report-${dateFrom}-${dateTo}.xlsx`);
+    try {
+      const payload: any = await exportFn({ data: filters });
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+      const add = (name: string, rows: any[]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ ملاحظة: "لا توجد بيانات" }]), name);
+      add("الملخص", [{ البند: "الفواتير", القيمة: payload.summary.invoice_count }, { البند: "المستفيدون", القيمة: payload.summary.unique_patient_count }, { البند: "قيمة الصرف", القيمة: payload.summary.total_dispensed_value }]);
+      add("المستفيدون", payload.beneficiary_stats.beneficiaries.map((r: any) => ({ الاسم: r.name, البطاقة: r.card, الفواتير: r.invoice_count, القيمة: r.total_value })));
+      add("الأصناف", payload.top_drugs.map((r: any) => ({ العلمي: r.active_ingredient, التجاري: r.brand, التركيز: r.strength, المصدر: sourceLabel(r.source), الكمية: r.quantity, القيمة: r.total_value })));
+      add("اليومي", payload.daily);
+      add("الجودة", [payload.quality]);
+      XLSX.writeFile(wb, `phif-report-${period.range.dateFrom}-${period.range.dateTo}.xlsx`);
+    } catch (error) { toast.error((error as Error).message); }
   }
-
-  function printOfficialReport() {
-    setPrintMode(true);
-    window.setTimeout(() => {
-      window.print();
-      setPrintMode(false);
-    }, 50);
-  }
-
-  function saveSupplierPurchasePrice(row: any) {
-    const raw = purchasePriceDraft[row.item_id];
-    const purchasePrice = Number(raw);
-    if (!Number.isFinite(purchasePrice) || purchasePrice < 0) return;
-    savePurchase.mutate({ itemId: row.item_id, purchasePrice });
-  }
-
-  return (
-    <div className="space-y-4 print:bg-white" dir="rtl">
-      <div className="print:hidden">
-        <h1 className="text-xl font-bold">
-          {mode === "overview" ? "??????? ??????" : mode === "item" ? "???? ???" : "????? ???????"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          ?????? ??????? ??????? ?? ?????? PHIF ????????. ??????? ?????? ?? ???? ??????? ?? ???????.
-        </p>
-      </div>
-      <Card className="p-3 print:hidden">
-        <div className="grid gap-3 md:grid-cols-4">
-          <Select value={preset} onValueChange={(value: Preset) => applyPreset(value)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">اليوم</SelectItem>
-              <SelectItem value="yesterday">أمس</SelectItem>
-              <SelectItem value="week">آخر 7 أيام</SelectItem>
-              <SelectItem value="this_month">هذا الشهر</SelectItem>
-              <SelectItem value="previous_month">الشهر السابق</SelectItem>
-              <SelectItem value="month">شهر محدد</SelectItem>
-              <SelectItem value="custom">نطاق مخصص</SelectItem>
-            </SelectContent>
-          </Select>
-          <Input type="month" value={month} onChange={(event) => updateMonth(event.target.value)} />
-          <Input type="date" value={dateFrom} onChange={(event) => { setPreset("custom"); setDateFrom(event.target.value); }} />
-          <Input type="date" value={dateTo} onChange={(event) => { setPreset("custom"); setDateTo(event.target.value); }} />
-          <Select value={source} onValueChange={(value: SourceFilter) => setSource(value)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل المصادر</SelectItem>
-              <SelectItem value="actual">Actual</SelectItem>
-              <SelectItem value="phif">PHIF Supplier</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={groupBy} onValueChange={(value: GroupBy) => setGroupBy(value)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="scientific">حسب الاسم العلمي</SelectItem>
-              <SelectItem value="brand">حسب الاسم التجاري</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={sortBy} onValueChange={(value: SortBy) => setSortBy(value)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="quantity">الأعلى كمية</SelectItem>
-              <SelectItem value="beneficiaries">الأكثر مستفيدين</SelectItem>
-              <SelectItem value="dispenses">الأكثر صرفًا</SelectItem>
-              <SelectItem value="value">الأعلى قيمة</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={topLimit} onValueChange={(value: typeof topLimit) => setTopLimit(value)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="10">Top 10</SelectItem>
-              <SelectItem value="20">Top 20</SelectItem>
-              <SelectItem value="50">Top 50</SelectItem>
-              <SelectItem value="all">كل الأصناف</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => monthly.refetch()} disabled={monthly.isLoading}>تحديث</Button>
-          <Button variant="outline" onClick={exportExcel} disabled={!report || monthly.isLoading}>تصدير Excel رسمي</Button>
-          <Button variant="outline" onClick={printOfficialReport} disabled={!report || monthly.isLoading}>طباعة التقرير الرسمي</Button>
-          <Button variant="secondary" asChild>
-            <Link to="/management/treasury">الخزينة</Link>
-          </Button>
-        </div>
-      </Card>
-
-      {monthly.error && <Card className="p-4 text-destructive print:hidden">تعذر تحميل التقرير: {(monthly.error as Error).message}</Card>}
-      {monthly.isLoading && <Card className="p-4 print:hidden">جاري تحميل البيانات...</Card>}
-
-      {mode === "overview" && report && (
-        <OverviewReport report={report} maxDaily={maxDaily} />
-      )}
-
-      {mode === "item" && (
-        <ItemTrackingReport
-          itemSearch={itemSearch}
-          setItemSearch={setItemSearch}
-          suggestions={suggestions.data ?? []}
-          selectedItem={selectedItem}
-          setSelectedItem={setSelectedItem}
-          tracking={tracking}
-        />
-      )}
-
-      {mode === "profit" && (
-        <ProfitReport
-          profit={profit}
-          selectedInvoice={selectedInvoice}
-          setSelectedInvoice={setSelectedInvoice}
-          selectedBeneficiary={selectedBeneficiary}
-          setSelectedBeneficiary={setSelectedBeneficiary}
-          purchasePriceDraft={purchasePriceDraft}
-          setPurchasePriceDraft={setPurchasePriceDraft}
-          saveSupplierPurchasePrice={saveSupplierPurchasePrice}
-          saving={savePurchase.isPending}
-        />
-      )}
-
-      {report && (
-        <div className={printMode ? "block" : "hidden print:block"}>
-          <OfficialReport report={report} />
-        </div>
-      )}
+  return <div className="space-y-5" dir="rtl">
+    <Heading title="التقرير الشامل" description="تحليل الصرف والمستفيدين والأصناف" />
+    <div className="space-y-3 border-b pb-4 print:hidden"><h2 className="font-semibold">الفترة والتصفية</h2><div className="grid grid-cols-2 gap-2"><label className="min-w-0 text-xs text-muted-foreground">الفترة<PeriodSelect value={period.period} onChange={period.change} /></label><label className="min-w-0 text-xs text-muted-foreground">المصدر<SourceSelect value={source} onChange={setSource} /></label></div>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setFiltersOpen(true)}>تغيير الفلاتر</Button><Button variant="outline" onClick={() => report.refetch()}>تحديث</Button><Button variant="outline" disabled={!report.data} onClick={exportExcel}>تصدير Excel رسمي</Button><Button variant="outline" disabled={!report.data} onClick={() => window.print()}>طباعة التقرير الرسمي</Button></div>
     </div>
-  );
+    <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetContent side="bottom" className={sheetClass} dir="rtl"><SheetHeader className="text-right"><SheetTitle>الفترة والتصفية</SheetTitle></SheetHeader><div className="mt-5 grid grid-cols-2 gap-3">
+      <label className="text-xs">شهر محدد<Input type="month" value={period.month} onChange={e => period.changeMonth(e.target.value)} /></label>
+      <label className="text-xs">المصدر<SourceSelect value={source} onChange={setSource} /></label>
+      <label className="text-xs">من تاريخ<Input type="date" value={period.range.dateFrom} onChange={e => { period.setPeriod("custom"); period.setRange(r => ({ ...r, dateFrom: e.target.value })); }} /></label>
+      <label className="text-xs">إلى تاريخ<Input type="date" value={period.range.dateTo} onChange={e => { period.setPeriod("custom"); period.setRange(r => ({ ...r, dateTo: e.target.value })); }} /></label>
+      <label className="text-xs">طريقة التجميع<Select value={groupBy} onValueChange={v => setGroupBy(v as typeof groupBy)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="scientific">الاسم العلمي</SelectItem><SelectItem value="brand">الاسم التجاري</SelectItem></SelectContent></Select></label>
+      <label className="text-xs">الترتيب<Select value={sortBy} onValueChange={v => setSortBy(v as typeof sortBy)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="quantity">الكمية</SelectItem><SelectItem value="beneficiaries">المستفيدون</SelectItem><SelectItem value="dispenses">مرات الصرف</SelectItem><SelectItem value="value">القيمة</SelectItem></SelectContent></Select></label>
+      <label className="text-xs">أعلى الأصناف<Select value={topLimit} onValueChange={v => setTopLimit(v as typeof topLimit)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="10">10</SelectItem><SelectItem value="20">20</SelectItem><SelectItem value="50">50</SelectItem><SelectItem value="all">الكل</SelectItem></SelectContent></Select></label>
+    </div><Button className="mt-4 w-full" onClick={() => setFiltersOpen(false)}>عرض النتائج</Button></SheetContent></Sheet>
+    {report.isLoading && <p>جاري تحميل التقرير...</p>}{report.error && <p className="text-destructive">تعذر تحميل التقرير: {(report.error as Error).message}</p>}
+    {report.data && <><div className="grid grid-cols-2 gap-x-2 border-y sm:grid-cols-4"><Metric label="إجمالي الصرف" value={formatMoney(report.data.summary.total_dispensed_value)} /><Metric label="الفواتير" value={report.data.summary.invoice_count} /><Metric label="المستفيدون" value={report.data.summary.unique_patient_count} /><Metric label="الأصناف" value={report.data.summary.item_count} /></div>
+      <Section title="المصادر"><div className="grid gap-2 sm:grid-cols-2">{(["actual", "phif"] as const).map(s => <Card key={s} className="p-3"><strong>{sourceLabel(s)}</strong><p>{report.data.source_split[s].item_count} صنف · {formatMoney(report.data.source_split[s].value)}</p></Card>)}</div></Section>
+      <Section title="الأدوية الأكثر صرفًا"><div className="grid gap-2 sm:grid-cols-2">{report.data.top_drugs.map((r: any) => <Card key={r.key} className="p-3"><strong>{[r.active_ingredient || r.brand, r.strength].filter(Boolean).join(" · ")}</strong><p className="text-xs text-muted-foreground">{sourceLabel(r.source)} · {r.formatted_quantity ?? r.quantity} · {formatMoney(r.total_value)}</p></Card>)}</div></Section>
+      <Section title="التقرير اليومي">{report.data.daily.map((r: any) => <div key={r.date} className="flex justify-between border-b py-2 text-sm"><span>{formatReportDate(r.date)}</span><span>{r.invoice_count} فاتورة · {formatMoney(r.total_value)}</span></div>)}</Section>
+      <Section title="جودة البيانات"><p className="text-sm text-muted-foreground">{report.data.quality.missing_generic} بدون اسم علمي · {report.data.quality.missing_unit} بدون وحدة · {report.data.quality.incomplete_invoices} فواتير ناقصة</p></Section>
+      <div className="hidden print:block"><h2>التقرير الرسمي · {formatReportDate(period.range.dateFrom)} — {formatReportDate(period.range.dateTo)}</h2><p>إجمالي قيمة الصرف: {formatMoney(report.data.summary.total_dispensed_value)}</p>{report.data.official_notes.map((n: string) => <p key={n}>{n}</p>)}</div>
+    </>}
+  </div>;
 }
 
-
-function OverviewReport({ report, maxDaily }: { report: any; maxDaily: number }) {
-  return (
-    <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 print:hidden">
-        <Stat label="إجمالي الصرف" value={`${money(report.summary.total_dispensed_value)} د.ل`} />
-        <Stat label="قيمة Actual" value={`${money(report.summary.actual_value)} د.ل`} />
-        <Stat label="قيمة PHIF Supplier" value={`${money(report.summary.phif_value)} د.ل`} />
-        <Stat label="الفواتير" value={report.summary.invoice_count} />
-        <Stat label="المستفيدون" value={report.summary.unique_patient_count} />
-        <Stat label="الأصناف" value={report.summary.item_count} />
-        <Stat label="الأدوية الفريدة" value={report.summary.distinct_drug_count} />
-        <Stat label="متوسط الأصناف/فاتورة" value={numberText(report.summary.average_items_per_invoice)} />
-      </div>
-
-      <Section title="Actual Supplier vs PHIF Supplier">
-        <div className="grid gap-3 md:grid-cols-2">
-          <SourceCard label="Actual Supplier" row={report.source_split.actual} />
-          <SourceCard label="PHIF Supplier" row={report.source_split.phif} />
-        </div>
-      </Section>
-
-      <Section title="الأدوية الأكثر صرفًا">
-        <div className="space-y-2">
-          {report.top_drugs.map((row: any) => (
-            <DrugCard key={row.key} row={row} />
-          ))}
-          {report.top_drugs.length === 0 && <EmptyState text="لا توجد أصناف في الفترة المحددة." />}
-        </div>
-      </Section>
-
-      <Section title="أعلى المستفيدين إيرادًا">
-        <div className="grid gap-2 md:grid-cols-2">
-          {report.beneficiary_stats.beneficiaries.slice(0, 10).map((row: any) => (
-            <Card key={row.card} className="p-3">
-              <div className="font-semibold">{row.name ?? "غير محدد"}</div>
-              <div className="font-mono text-xs text-muted-foreground">{row.card}</div>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                <Mini label="الفواتير" value={row.invoice_count} />
-                <Mini label="الأصناف" value={row.item_count} />
-                <Mini label="الإيراد" value={`${money(row.total_value)} د.ل`} />
-              </div>
-            </Card>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="التقرير اليومي">
-        <div className="space-y-2">
-          {report.daily.map((row: any) => (
-            <div key={row.date} className="grid grid-cols-[92px_1fr_64px] items-center gap-2 text-sm">
-              <span className="font-mono">{row.date}</span>
-              <div className="h-3 overflow-hidden rounded bg-muted">
-                <div className="h-full rounded bg-primary" style={{ width: `${Math.max(5, (row.invoice_count / maxDaily) * 100)}%` }} />
-              </div>
-              <span className="text-left">{row.invoice_count} فاتورة</span>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="جودة البيانات والمطابقة">
-        <div className="grid gap-2 md:grid-cols-3">
-          <Mini label="بدون اسم علمي" value={report.quality.missing_generic} />
-          <Mini label="بدون تركيز" value={report.quality.missing_strength} />
-          <Mini label="بدون وحدة" value={report.quality.missing_unit} />
-          <Mini label="فواتير ناقصة" value={report.quality.incomplete_invoices} />
-          <Mini label="Actual يحتاج مطابقة" value={report.quality.unmatched_actual_items} />
-          <Mini label="مصدر يحتاج مراجعة" value={report.quality.source_review_items} />
-        </div>
-      </Section>
-    </>
-  );
+function ItemFinancials({ row }: { row: any }) {
+  return <div className="grid grid-cols-3 gap-2 border-t pt-2 text-xs"><div>قيمة الصرف<strong className="block break-words">{formatMoney(row.invoice_value)}</strong></div><div>التكلفة<strong className="block break-words">{formatMoney(row.purchase_cost)}</strong></div><div>الربح<strong className="block break-words text-emerald-700">{formatMoney(row.gross_margin)}</strong></div></div>;
 }
-
-function ItemTrackingReport({ itemSearch, setItemSearch, suggestions, selectedItem, setSelectedItem, tracking }: any) {
+function Movement({ row }: { row: any }) { return <div className="space-y-2 border-b py-3 text-sm"><div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"><div className="min-w-0"><strong>{row.beneficiary_name || "غير محدد"}</strong><p className="text-xs text-muted-foreground">{row.insurance_card_number || "بدون بطاقة"} · {row.invoice_number || row.invoice_key}</p></div><span className="shrink-0">{formatReportDate(row.dispensing_date)}</span></div><p className="text-xs text-muted-foreground">{row.quantity_label ?? row.quantity} · {sourceLabel(row.source)} · {statusLabel(row)}</p><ItemFinancials row={row} /></div>; }
+export function ReportsItemTrackingPage() {
+  const period = usePeriod();
+  const params = useSearch({ from: "/management/reports/item-tracking", strict: false }) as { item?: string };
+  const [search, setSearch] = useState(""); const [selected, setSelected] = useState<any>(null);
+  const [sheet, setSheet] = useState<"movements" | "beneficiaries" | null>(null);
+  const searchFn = useServerFn(searchReportItems); const trackingFn = useServerFn(getReportItemTracking);
+  const suggestions = useQuery({ queryKey: ["report_item_search", search, period.range], queryFn: () => searchFn({ data: { search, ...period.range } }), enabled: search.trim().length >= 2 });
+  const identityKey = selected?.identity_key ?? params.item;
+  const tracking = useQuery({ queryKey: ["report_item_tracking", identityKey, period.range], queryFn: () => trackingFn({ data: { identityKey: identityKey ?? "", search: search || "aa", groupBy: "scientific", ...period.range } }), enabled: Boolean(identityKey), retry: false });
   const data = tracking.data;
-  return (
-    <div className="space-y-3">
-      <Card className="p-3">
-        <label className="text-xs text-muted-foreground">ابحث باسم الصنف التجاري أو العلمي</label>
-        <Input value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} placeholder="اكتب حرفين على الأقل..." className="mt-2" />
-        {itemSearch.trim().length >= 2 && suggestions.length > 0 && (
-          <div className="mt-2 grid gap-2">
-            {suggestions.map((row: any) => (
-              <button key={row.identity_key} type="button" onClick={() => setSelectedItem(row)} className="rounded-md border p-3 text-right hover:bg-accent">
-                <div className="font-semibold">{[row.brand, row.active_ingredient, row.strength].filter(Boolean).join(" · ")}</div>
-                <div className="text-xs text-muted-foreground">{sourceLabel(row.source)} · {row.occurrence_count} حركة</div>
-              </button>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {!selectedItem && <EmptyState text="اختر صنفًا من نتائج البحث لعرض تقرير التتبع." />}
-      {tracking.isLoading && <Card className="p-4">جاري تحميل تتبع الصنف...</Card>}
-      {data?.item && (
-        <>
-          <Card className="p-4">
-            <div className="text-xs text-muted-foreground">{sourceLabel(data.item.source)}</div>
-            <h2 className="text-lg font-bold">{[data.item.brand, data.item.active_ingredient, data.item.strength].filter(Boolean).join(" · ")}</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-              <Mini label="إجمالي الكمية" value={numberText(data.summary.total_quantity)} />
-              <Mini label="مرات الصرف" value={data.summary.dispense_count} />
-              <Mini label="المستفيدون" value={data.summary.unique_patient_count} />
-              <Mini label="الإيراد" value={`${money(data.summary.total_revenue)} د.ل`} />
-              <Mini label="تكلفة معروفة" value={`${money(data.summary.known_cost)} د.ل`} />
-              <Mini label="ربح معروف" value={`${money(data.summary.known_profit)} د.ل`} />
-              <Mini label="التغطية" value={pct(data.summary.coverage_ratio)} />
-            </div>
-          </Card>
-          <Section title="حركات الصرف">
-            <MovementCards rows={data.movements} />
-          </Section>
-        </>
-      )}
-    </div>
-  );
+  return <div className="space-y-5" dir="rtl"><Heading title="تتبع صنف" description="ابحث عن صنف لمراجعة حركته ومستخدميه ومخزونه" />
+    <div><Input aria-label="ابحث عن صنف" className="h-12 text-base" placeholder="الاسم التجاري أو العلمي أو التركيز" value={search} onChange={e => { setSearch(e.target.value); setSelected(null); }} />{search.trim().length >= 2 && !selected && <div className="mt-2 max-h-56 overflow-y-auto border">{suggestions.data?.map((r: any) => <Button key={r.identity_key} variant="ghost" className="h-auto w-full justify-start whitespace-normal border-b p-3 text-right" onClick={() => { setSelected(r); setSearch([r.brand, r.active_ingredient, r.strength].filter(Boolean).join(" · ")); }}>{[r.brand, r.active_ingredient, r.strength].filter(Boolean).join(" · ")} · {r.occurrence_count} حركة</Button>)}{suggestions.data?.length === 0 && <p className="p-3 text-sm">لا توجد نتائج</p>}</div>}</div>
+    {tracking.isLoading && <p>جاري تحميل تتبع الصنف...</p>}{tracking.error && <p className="text-destructive">{(tracking.error as Error).message}</p>}
+    {data?.item && <><div className="border-b pb-3"><h2 className="text-lg font-bold">{data.item.brand || data.item.active_ingredient}</h2><p className="text-sm text-muted-foreground">{data.item.active_ingredient} · {data.item.strength} · {data.item.unit || "وحدة غير محددة"}</p><p className="text-xs text-muted-foreground">المورد: {data.item.supplier || "غير محدد"} · المخزون: {data.item.stock_quantity ?? "غير متوفر"} · آخر مزامنة: {formatReportDate(data.item.stock_synced_at)}</p></div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3"><Metric label="مرات الصرف" value={data.summary.dispense_count} onClick={() => setSheet("movements")} /><Metric label="المستفيدون" value={data.summary.unique_patient_count} onClick={() => setSheet("beneficiaries")} /><Metric label="الكمية المصروفة" value={number(data.summary.total_quantity)} /><Metric label="الإيراد" value={formatMoney(data.summary.total_revenue)} /><Metric label="التكلفة المعروفة" value={data.summary.coverage_ratio ? formatMoney(data.summary.known_cost) : "غير مكتمل"} /><Metric label="الربح المعروف" value={data.summary.coverage_ratio ? formatMoney(data.summary.known_profit) : "غير مكتمل"} /></div>
+      {data.summary.coverage_ratio < 1 && <p className="text-sm text-amber-700">{data.movements.length - Math.round(data.summary.coverage_ratio * data.movements.length)} حركة تحتاج مراجعة</p>}
+      <Sheet open={Boolean(sheet)} onOpenChange={open => !open && setSheet(null)}><SheetContent side="bottom" className={sheetClass} dir="rtl"><SheetHeader className="text-right"><SheetTitle>{sheet === "movements" ? "حركات الصرف" : "المستفيدون"}</SheetTitle></SheetHeader>{sheet === "movements" ? data.movements.map((r: any) => <Movement key={r.item_id} row={r} />) : data.beneficiaries.map((r: any) => <div key={r.card ?? r.name} className="border-b py-3"><strong>{r.name}</strong><p className="text-xs text-muted-foreground">{r.card}</p></div>)}</SheetContent></Sheet>
+    </>}
+  </div>;
 }
 
-function ProfitReport({ profit, selectedInvoice, setSelectedInvoice, selectedBeneficiary, setSelectedBeneficiary, purchasePriceDraft, setPurchasePriceDraft, saveSupplierPurchasePrice, saving }: any) {
-  const data = profit.data;
-  if (profit.error) {
-    return <Card className="p-4 text-destructive">تحليل الأرباح يتطلب صلاحية قراءة التكلفة: {(profit.error as Error).message}</Card>;
-  }
-  if (profit.isLoading) return <Card className="p-4">جاري تحميل تحليل الأرباح...</Card>;
-  if (!data) return <EmptyState text="لا توجد بيانات تحليل أرباح." />;
-  return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="إجمالي الإيراد" value={`${money(data.summary.total_revenue)} د.ل`} />
-        <Stat label="تكلفة معروفة" value={`${money(data.summary.known_cost)} د.ل`} />
-        <Stat label="ربح معروف" value={`${money(data.summary.known_profit)} د.ل`} />
-        <Stat label="نسبة التغطية" value={pct(data.summary.coverage_ratio)} />
-        <Stat label="الفواتير" value={data.summary.invoice_count} />
-        <Stat label="المستفيدون" value={data.summary.unique_patient_count} />
-        <Stat label="الأصناف" value={data.summary.item_count} />
-      </div>
-      <Section title="Actual / PHIF Supplier">
-        <div className="grid gap-3 md:grid-cols-2">
-          <ProfitSourceCard label="Actual Supplier" row={data.source_split.actual} />
-          <ProfitSourceCard label="PHIF Supplier" row={data.source_split.phif} />
-        </div>
-      </Section>
-      <Section title="أعلى الأصناف ربحًا">
-        <div className="grid gap-2">
-          {data.top_profit_items.map((row: any) => (
-            <Card key={row.key} className="p-3">
-              <div className="font-semibold">{row.item_name}</div>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                <Mini label="الإيراد" value={`${money(row.revenue)} د.ل`} />
-                <Mini label="الربح" value={`${money(row.known_profit)} د.ل`} />
-                <Mini label="الكمية" value={numberText(row.quantity)} />
-              </div>
-            </Card>
-          ))}
-        </div>
-      </Section>
-      <Section title="أعلى المستفيدين">
-        <div className="grid gap-2 md:grid-cols-2">
-          {data.top_revenue_beneficiaries.map((row: any) => (
-            <button key={row.key} type="button" onClick={() => setSelectedBeneficiary(row)} className="rounded-lg border p-3 text-right hover:bg-accent">
-              <div className="font-semibold">{row.beneficiary_name ?? "غير محدد"}</div>
-              <div className="font-mono text-xs text-muted-foreground">{row.insurance_card_number ?? "بدون بطاقة"}</div>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                <Mini label="الإيراد" value={`${money(row.revenue)} د.ل`} />
-                <Mini label="الربح" value={`${money(row.known_profit)} د.ل`} />
-                <Mini label="الفواتير" value={row.invoice_count} />
-              </div>
-            </button>
-          ))}
-        </div>
-      </Section>
-      <Section title="الفواتير والحركات">
-        <div className="grid gap-2">
-          {data.invoices.map((invoice: any) => (
-            <button key={invoice.invoice_id} type="button" onClick={() => setSelectedInvoice(invoice)} className="rounded-lg border p-3 text-right hover:bg-accent">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-semibold">{invoice.invoice_number ?? invoice.invoice_key}</div>
-                  <div className="text-xs text-muted-foreground">{invoice.beneficiary_name ?? "غير محدد"} · {invoice.dispensing_date ?? "بدون تاريخ"}</div>
-                </div>
-                <div className="text-left text-xs">
-                  <div>{invoice.item_count} صنف</div>
-                  <div>{money(invoice.revenue)} د.ل</div>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </Section>
-      <InvoiceSheet
-        invoice={selectedInvoice}
-        onClose={() => setSelectedInvoice(null)}
-        purchasePriceDraft={purchasePriceDraft}
-        setPurchasePriceDraft={setPurchasePriceDraft}
-        saveSupplierPurchasePrice={saveSupplierPurchasePrice}
-        saving={saving}
-      />
-      <BeneficiarySheet beneficiary={selectedBeneficiary} invoices={data.invoices} onClose={() => setSelectedBeneficiary(null)} />
-    </div>
-  );
+function InvoiceDetails({ invoice, close, save, draft, setDraft, saving }: any) {
+  return <Sheet open={Boolean(invoice)} onOpenChange={open => !open && close()}><SheetContent side="bottom" className={sheetClass} dir="rtl"><SheetHeader className="text-right"><SheetTitle>تفاصيل الفاتورة {invoice?.invoice_number ?? invoice?.invoice_key}</SheetTitle></SheetHeader>{invoice && <div className="mt-4 space-y-3"><p className="text-sm">{invoice.beneficiary_name} · {formatReportDate(invoice.dispensing_date)}</p>{invoice.items.map((r: any) => <div className="space-y-2 border-b pb-4" key={r.item_id}><strong>{r.brand || r.item_name}</strong><p className="text-xs text-muted-foreground">{r.active_ingredient} · {r.strength} · {sourceLabel(r.source)} · الكمية {r.quantity_label ?? r.quantity}</p><ItemFinancials row={r} /><p className="text-xs text-amber-700">{statusLabel(r)}</p>{r.source === "phif" && <div className="space-y-1"><label htmlFor={`price-${r.item_id}`} className="text-xs">سعر شراء الوحدة {r.unit ? `· سعر شراء ${r.unit}` : "· وحدة غير محددة"}</label><div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"><Input id={`price-${r.item_id}`} inputMode="decimal" disabled={!r.unit} placeholder="سعر شراء الوحدة" value={draft[r.item_id] ?? r.unit_purchase_price ?? ""} onChange={e => setDraft((d: any) => ({ ...d, [r.item_id]: e.target.value }))} /><Button disabled={saving || !r.unit} onClick={() => save(r)}>{r.unit_purchase_price === null ? "حفظ" : "تعديل"}</Button></div>{!r.unit && <p className="text-xs text-amber-700">وحدة التكلفة تحتاج مراجعة</p>}</div>}</div>)}<div className="grid grid-cols-3 gap-2 border-t pt-4 text-xs"><Metric label="إجمالي الفاتورة" value={formatMoney(invoice.revenue)} /><Metric label="إجمالي التكلفة" value={invoice.matched_count === invoice.item_count ? formatMoney(invoice.known_cost) : "غير مكتمل"} /><Metric label="إجمالي الربح" value={invoice.matched_count === invoice.item_count ? formatMoney(invoice.known_profit) : "غير مكتمل"} /></div></div>}</SheetContent></Sheet>;
 }
-
-function MovementCards({ rows }: { rows: any[] }) {
-  return (
-    <div className="grid gap-2">
-      {rows.map((row) => (
-        <Card key={`${row.invoice_id}-${row.item_id}`} className="p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="font-semibold">{row.beneficiary_name ?? "غير محدد"}</div>
-              <div className="font-mono text-xs text-muted-foreground">{row.insurance_card_number ?? "بدون بطاقة"}</div>
-              <div className="mt-1 text-xs text-muted-foreground">{row.invoice_number ?? row.invoice_key} · {row.dispensing_date}</div>
-            </div>
-            <div className="text-left text-xs">
-              <div>{row.quantity_label ?? row.quantity}</div>
-              <div>{sourceLabel(row.source)}</div>
-            </div>
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-            <Mini label="السعر" value={`${money(row.invoice_value)} د.ل`} />
-            <Mini label="التكلفة" value={row.purchase_cost === null ? "غير معروفة" : `${money(row.purchase_cost)} د.ل`} />
-            <Mini label="الربح" value={row.gross_margin === null ? "غير محسوب" : `${money(row.gross_margin)} د.ل`} />
-          </div>
-        </Card>
-      ))}
-      {rows.length === 0 && <EmptyState text="لا توجد حركات لهذا الصنف ضمن الفترة." />}
-    </div>
-  );
-}
-
-function InvoiceSheet({ invoice, onClose, purchasePriceDraft, setPurchasePriceDraft, saveSupplierPurchasePrice, saving }: any) {
-  return (
-    <Sheet open={Boolean(invoice)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-2xl px-4 pb-6 pt-5 sm:mx-auto sm:max-w-3xl" dir="rtl">
-        {invoice && (
-          <>
-            <SheetHeader className="text-right">
-              <SheetTitle>تفاصيل الفاتورة {invoice.invoice_number ?? invoice.invoice_key}</SheetTitle>
-            </SheetHeader>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <Mini label="الإجمالي" value={`${money(invoice.revenue)} د.ل`} />
-              <Mini label="التكلفة" value={`${money(invoice.known_cost)} د.ل`} />
-              <Mini label="الربح" value={`${money(invoice.known_profit)} د.ل`} />
-            </div>
-            <div className="mt-4 space-y-2">
-              {invoice.items.map((item: any) => (
-                <Card key={item.item_id} className="p-3">
-                  <div className="font-semibold">{item.item_name}</div>
-                  <div className="text-xs text-muted-foreground">{sourceLabel(item.source)} · {item.quantity_label ?? item.quantity}</div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                    <Mini label="القيمة" value={`${money(item.invoice_value)} د.ل`} />
-                    <Mini label="التكلفة" value={item.purchase_cost === null ? "غير معروفة" : `${money(item.purchase_cost)} د.ل`} />
-                    <Mini label="الربح" value={item.gross_margin === null ? "غير محسوب" : `${money(item.gross_margin)} د.ل`} />
-                  </div>
-                  {item.source === "phif" && (
-                    <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-                      <Input
-                        inputMode="decimal"
-                        placeholder="سعر شراء الوحدة"
-                        value={purchasePriceDraft[item.item_id] ?? item.unit_purchase_price ?? ""}
-                        onChange={(event) => setPurchasePriceDraft((current: any) => ({ ...current, [item.item_id]: event.target.value }))}
-                      />
-                      <Button size="sm" onClick={() => saveSupplierPurchasePrice(item)} disabled={saving}>حفظ</Button>
-                    </div>
-                  )}
-                  <div className="mt-2 text-xs text-muted-foreground">{statusLabel(item.match_status, item.match_reason)}</div>
-                </Card>
-              ))}
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function BeneficiarySheet({ beneficiary, invoices, onClose }: any) {
-  const related = beneficiary
-    ? invoices.filter((invoice: any) => invoice.insurance_card_number === beneficiary.insurance_card_number || invoice.beneficiary_name === beneficiary.beneficiary_name)
-    : [];
-  return (
-    <Sheet open={Boolean(beneficiary)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-2xl px-4 pb-6 pt-5 sm:mx-auto sm:max-w-3xl" dir="rtl">
-        {beneficiary && (
-          <>
-            <SheetHeader className="text-right">
-              <SheetTitle>{beneficiary.beneficiary_name ?? "مستفيد غير محدد"}</SheetTitle>
-            </SheetHeader>
-            <div className="mt-3 font-mono text-sm text-muted-foreground">{beneficiary.insurance_card_number ?? "بدون بطاقة"}</div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <Mini label="الإيراد" value={`${money(beneficiary.revenue)} د.ل`} />
-              <Mini label="الربح" value={`${money(beneficiary.known_profit)} د.ل`} />
-              <Mini label="الفواتير" value={beneficiary.invoice_count} />
-            </div>
-            <div className="mt-4 space-y-2">
-              {related.map((invoice: any) => (
-                <Card key={invoice.invoice_id} className="p-3">
-                  <div className="font-semibold">{invoice.invoice_number ?? invoice.invoice_key}</div>
-                  <div className="text-xs text-muted-foreground">{invoice.dispensing_date} · {invoice.item_count} صنف</div>
-                  <div className="mt-2 text-sm">{money(invoice.revenue)} د.ل · ربح {money(invoice.known_profit)} د.ل</div>
-                </Card>
-              ))}
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function DrugCard({ row }: { row: any }) {
-  return (
-    <Card className="p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-semibold">{[row.active_ingredient ?? row.brand ?? "غير محدد", row.strength, row.dosage_form].filter(Boolean).join(" · ")}</div>
-          {row.brand && <div className="text-xs text-muted-foreground">{row.brand}</div>}
-        </div>
-        <div className="text-left text-xs">
-          <div>{sourceLabel(row.source)}</div>
-          <div>{row.formatted_quantity ?? numberText(row.quantity)}</div>
-        </div>
-      </div>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-        <Mini label="المستفيدون" value={row.unique_patient_count} />
-        <Mini label="مرات الصرف" value={row.dispense_count} />
-        <Mini label="القيمة" value={`${money(row.total_value)} د.ل`} />
-      </div>
-    </Card>
-  );
-}
-
-function ProfitSourceCard({ label, row }: { label: string; row: any }) {
-  return (
-    <Card className="p-3">
-      <div className="font-semibold">{label}</div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-        <Mini label="الإيراد" value={`${money(row.revenue)} د.ل`} />
-        <Mini label="التكلفة" value={`${money(row.known_cost)} د.ل`} />
-        <Mini label="الربح" value={`${money(row.known_profit)} د.ل`} />
-        <Mini label="الأصناف" value={row.item_count} />
-      </div>
-    </Card>
-  );
-}
-
-function SourceCard({ label, row }: { label: string; row: any }) {
-  return (
-    <Card className="p-3">
-      <div className="font-semibold">{label}</div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-        <Mini label="الأصناف" value={row.item_count} />
-        <Mini label="الأدوية" value={row.drug_count} />
-        <Mini label="المستفيدون" value={row.patient_count} />
-        <Mini label="المساهمة" value={pct(row.contribution)} />
-        <Mini label="الكمية" value={numberText(row.quantity)} />
-        <Mini label="القيمة" value={`${money(row.value)} د.ل`} />
-      </div>
-    </Card>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <Card className="p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-lg font-bold">{value}</div>
-    </Card>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-md border bg-background p-2">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Card className="p-4 print:hidden">
-      <h2 className="mb-3 text-base font-bold">{title}</h2>
-      {children}
-    </Card>
-  );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <Card className="p-4 text-center text-sm text-muted-foreground">{text}</Card>;
-}
-
-function OfficialReport({ report }: { report: any }) {
-  return (
-    <div dir="rtl" className="mx-auto hidden max-w-4xl space-y-4 bg-white p-8 text-black print:block">
-      <div className="border-b pb-4 text-center">
-        <h1 className="text-xl font-bold">التقرير الشهري الرسمي لصيدلية الترياق الشافي</h1>
-        <p className="text-sm">الفترة: {report.period.dateFrom} إلى {report.period.dateTo}</p>
-      </div>
-      <div className="grid grid-cols-4 gap-3 text-center text-sm">
-        <Mini label="الفواتير" value={report.summary.invoice_count} />
-        <Mini label="المستفيدون" value={report.summary.unique_patient_count} />
-        <Mini label="الأصناف" value={report.summary.item_count} />
-        <Mini label="القيمة الإجمالية" value={`${money(report.summary.total_dispensed_value)} د.ل`} />
-      </div>
-      <table className="w-full border-collapse text-sm">
-        <thead><tr>{["الصنف", "المصدر", "الكمية", "المستفيدون", "القيمة"].map((header) => <th key={header} className="border p-2 text-right">{header}</th>)}</tr></thead>
-        <tbody>
-          {report.top_drugs.slice(0, 25).map((row: any) => (
-            <tr key={row.key}>
-              <td className="border p-2">{[row.active_ingredient ?? row.brand ?? "غير محدد", row.strength, row.dosage_form].filter(Boolean).join(" · ")}</td>
-              <td className="border p-2">{sourceLabel(row.source)}</td>
-              <td className="border p-2">{row.formatted_quantity ?? numberText(row.quantity)}</td>
-              <td className="border p-2">{row.unique_patient_count}</td>
-              <td className="border p-2">{money(row.total_value)} د.ل</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <ul className="list-inside list-disc text-sm">
-        {report.official_notes.map((note: string) => <li key={note}>{note}</li>)}
-      </ul>
-    </div>
-  );
+export function ReportsProfitAnalysisPage() {
+  const period = usePeriod(); const [source, setSource] = useState<"all" | "actual" | "phif">("all");
+  const [invoiceId, setInvoiceId] = useState<string | null>(null); const [beneficiary, setBeneficiary] = useState<any>(null); const [draft, setDraft] = useState<Record<string, string>>({});
+  const navigate = useNavigate(); const qc = useQueryClient(); const profitFn = useServerFn(getProfitAnalysisReport); const saveFn = useServerFn(savePhifSupplierPurchasePrice);
+  const profit = useQuery({ queryKey: ["management_profit_analysis", period.range, source], queryFn: () => profitFn({ data: { ...period.range, source } }), retry: false });
+  const mutation = useMutation({ mutationFn: (input: { itemId: string; purchasePrice: number }) => saveFn({ data: input }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["management_profit_analysis"] }); qc.invalidateQueries({ queryKey: ["report_item_tracking"] }); toast.success("تم حفظ سعر الشراء"); }, onError: e => toast.error(e.message) });
+  const data = profit.data; const invoice = data?.invoices.find((i: any) => i.invoice_id === invoiceId);
+  function save(r: any) { const value = Number(draft[r.item_id] ?? r.unit_purchase_price); if (!Number.isFinite(value) || value < 0) { toast.error("أدخل سعر شراء صحيحًا"); return; } mutation.mutate({ itemId: r.item_id, purchasePrice: value }); }
+  const jump = (key: string) => navigate({ to: "/management/reports/item-tracking", search: { item: key } as any });
+  const beneficiaries = (title: string, rows: any[]) => <Section title={title}><div className="grid gap-2 sm:grid-cols-2">{rows.map((r: any) => <Button key={r.key} variant="outline" className="h-auto min-w-0 flex-col items-start whitespace-normal p-3 text-right" onClick={() => setBeneficiary(r)}><strong>{r.beneficiary_name || "غير محدد"}</strong><span className="text-xs">{r.invoice_count} فاتورة · إيراد {formatMoney(r.revenue)} · ربح {r.known_profit || r.matched_count ? formatMoney(r.known_profit) : "غير مكتمل"}</span></Button>)}</div></Section>;
+  const items = (title: string, rows: any[]) => <Section title={title}><div className="grid gap-2 sm:grid-cols-2">{rows.map((r: any) => <Button key={r.key} variant="outline" className="h-auto min-w-0 flex-col items-start whitespace-normal p-3 text-right" onClick={() => jump(r.key)}><strong>{r.item_name}</strong><span className="text-xs">{r.dispense_count} حركة · {formatMoney(r.revenue)} · ربح {r.matched_count ? formatMoney(r.known_profit) : "غير مكتمل"}</span></Button>)}</div></Section>;
+  return <div className="space-y-5" dir="rtl"><Heading title="تحليل الأرباح" description="تحليل الإيراد والتكلفة والربحية للفواتير والأصناف" />
+    {data && <MoneyMetrics data={data.summary} />}
+    <div className="grid grid-cols-2 gap-2 border-b pb-4"><label className="min-w-0 text-xs text-muted-foreground">الفترة<PeriodSelect value={period.period} onChange={period.change} /></label><label className="min-w-0 text-xs text-muted-foreground">المصدر<SourceSelect value={source} onChange={setSource} /></label>{(period.period === "month" || period.period === "custom") && <><label className="text-xs">الشهر<Input type="month" value={period.month} onChange={e => period.changeMonth(e.target.value)} /></label>{period.period === "custom" && <><Input aria-label="من تاريخ" type="date" value={period.range.dateFrom} onChange={e => period.setRange(r => ({ ...r, dateFrom: e.target.value }))} /><Input aria-label="إلى تاريخ" type="date" value={period.range.dateTo} onChange={e => period.setRange(r => ({ ...r, dateTo: e.target.value }))} /></>}</>}</div>
+    {profit.isLoading && <p>جاري تحميل تحليل الأرباح...</p>}{profit.error && <p className="text-destructive">تحليل الأرباح يتطلب صلاحية قراءة التكلفة: {(profit.error as Error).message}</p>}
+    {data && <><Section title="المصادر"><div className="grid gap-2 sm:grid-cols-2">{(["actual", "phif"] as const).map(s => <Card key={s} className="p-3"><strong>{sourceLabel(s)}</strong><p className="text-sm">{data.source_split[s].item_count} صنف · إيراد {formatMoney(data.source_split[s].revenue)}</p><p className="text-xs text-muted-foreground">تكلفة معروفة {formatMoney(data.source_split[s].known_cost)} · ربح معروف {formatMoney(data.source_split[s].known_profit)}</p></Card>)}</div></Section>
+      {beneficiaries("أعلى المستفيدين إيرادًا", data.top_revenue_beneficiaries)}{beneficiaries("أعلى المستفيدين ربحًا", data.top_profit_beneficiaries)}
+      {items("أعلى الأصناف إيرادًا", data.top_revenue_items)}{items("أعلى الأصناف ربحًا", data.top_profit_items)}{items("أكثر الأصناف صرفًا", data.top_dispensed_items)}
+      <Section title="الفواتير"><div className="grid gap-2 sm:grid-cols-2">{data.invoices.map((i: any) => <InvoiceSummaryCard key={i.invoice_id} name={i.beneficiary_name} number={i.invoice_number || i.invoice_key} date={i.dispensing_date} count={i.item_count} revenue={i.revenue} cost={i.matched_count === i.item_count ? i.known_cost : null} profit={i.matched_count === i.item_count ? i.known_profit : null} status={i.needs_match_count ? "تحتاج مطابقة Actual" : i.needs_price_count ? "تحتاج أسعار" : "مكتملة"} onClick={() => setInvoiceId(i.invoice_id)} />)}</div></Section>
+      <InvoiceDetails invoice={invoice} close={() => setInvoiceId(null)} save={save} draft={draft} setDraft={setDraft} saving={mutation.isPending} />
+      <Sheet open={Boolean(beneficiary)} onOpenChange={open => !open && setBeneficiary(null)}><SheetContent side="bottom" className={sheetClass} dir="rtl"><SheetHeader className="text-right"><SheetTitle>{beneficiary?.beneficiary_name}</SheetTitle></SheetHeader><p className="my-3">الإيراد {formatMoney(beneficiary?.revenue)} · الربح المعروف {formatMoney(beneficiary?.known_profit)}</p>{data.invoices.filter((i: any) => i.insurance_card_number === beneficiary?.insurance_card_number && beneficiary?.insurance_card_number || i.beneficiary_name === beneficiary?.beneficiary_name).map((i: any) => <InvoiceSummaryCard key={i.invoice_id} name={i.beneficiary_name} number={i.invoice_number || i.invoice_key} date={i.dispensing_date} count={i.item_count} revenue={i.revenue} cost={i.matched_count === i.item_count ? i.known_cost : null} profit={i.matched_count === i.item_count ? i.known_profit : null} onClick={() => { setBeneficiary(null); setInvoiceId(i.invoice_id); }} />)}</SheetContent></Sheet>
+    </>}
+  </div>;
 }
