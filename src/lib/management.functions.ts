@@ -150,7 +150,7 @@ async function loadCurrentStockForReport(supabaseAdmin: any, pharmacyId: string)
 async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
   const { data: rows, error } = await supabaseAdmin
     .from("phif_stock_items")
-    .select("id, source_stock_id, generic_ingredient_id, supplier_id, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, cost_price, sale_price, synced_at")
+    .select("id, source_stock_id, generic_ingredient_id, supplier_id, supplier_name, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, cost_price, sale_price, synced_at")
     .eq("pharmacy_id", pharmacyId)
     .order("synced_at", { ascending: false })
     .limit(5000);
@@ -158,15 +158,20 @@ async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
   return rows ?? [];
 }
 
-function internalPurchaseOverride(item: any) {
-  return reportNumberValue(
-    item.phif_financial_fields?.internal_purchase_price
+function internalPurchaseOverride(item: any): number | null {
+  const raw = item.phif_financial_fields?.internal_purchase_price
       ?? item.phif_financial_fields?.internalPurchasePrice
       ?? item.phif_financial_fields?.internal_sale_price_override
       ?? item.phif_financial_fields?.internalSalePriceOverride
       ?? item.metadata?.internal_purchase_price
-      ?? item.metadata?.internal_sale_price_override,
-  );
+      ?? item.metadata?.internal_sale_price_override;
+  if (raw === null || raw === undefined || raw === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function itemUnit(item: any) {
+  return String(item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.phif_financial_fields?.unit ?? "").trim() || null;
 }
 
 function invoiceItemName(item: any) {
@@ -179,16 +184,17 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
   if (source === "phif") {
     const override = internalPurchaseOverride(item);
     const quantity = reportNumberValue(item.quantity);
-    const purchaseCost = override > 0 && quantity > 0 ? override * quantity : null;
+    const unit = itemUnit(item);
+    const purchaseCost = override !== null && quantity > 0 && unit ? override * quantity : null;
     return {
       source,
       invoiceValue,
       revenue: invoiceValue,
       purchaseCost,
       grossMargin: purchaseCost === null ? null : invoiceValue - purchaseCost,
-      unitPurchasePrice: override > 0 ? override : null,
-      status: purchaseCost === null ? "needs_purchase_price" : "matched",
-      reason: purchaseCost === null ? "phif_supplier_purchase_price_missing" : "phif_supplier_internal_purchase_price",
+      unitPurchasePrice: override,
+      status: purchaseCost === null ? (override !== null && !unit ? "pricing_unit_unverified" : "needs_purchase_price") : "matched",
+      reason: purchaseCost === null ? (!unit ? "pricing_unit_unverified" : "phif_supplier_purchase_price_missing") : "phif_supplier_internal_purchase_price",
       stock: null,
       invoice,
     };
@@ -221,7 +227,7 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
     })
     .map((item) => {
       const invoice: any = invoiceById.get(item.phif_invoice_id);
-      const profit = profitForItem(item, invoice, stocks);
+       const profit = profitForItem(item, invoice, stocks);
       return {
         item_id: item.id,
         invoice_id: item.phif_invoice_id,
@@ -236,8 +242,12 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         brand: item.brand ?? null,
         quantity: item.quantity,
         quantity_label: reportItemQuantityLabel(item, profit.stock),
+         unit: itemUnit(item) ?? profit.stock?.dosage_unit ?? null,
+         supplier: item.supplier ?? profit.stock?.supplier_name ?? null,
+         stock_quantity: profit.stock?.stock_quantity ?? null,
+         stock_synced_at: profit.stock?.synced_at ?? null,
         source: profit.source,
-        invoice_value: profit.invoiceValue,
+         invoice_value: profit.invoiceValue,
         revenue: profit.revenue,
         purchase_cost: profit.purchaseCost,
         gross_margin: profit.grossMargin,
@@ -478,7 +488,7 @@ export const getReportItemTracking = createServerFn({ method: "POST" })
       }, data.groupBy);
       return key === data.identityKey;
     });
-    const beneficiaryCards = new Set(movements.map((row) => row.insurance_card_number).filter(Boolean));
+     const beneficiaryCards = new Set(movements.map((row) => row.insurance_card_number ?? row.beneficiary_name).filter(Boolean));
     const knownCostRows = movements.filter((row) => row.purchase_cost !== null);
     const knownProfitRows = movements.filter((row) => row.gross_margin !== null);
     const first = movements[0] ?? null;
@@ -489,6 +499,10 @@ export const getReportItemTracking = createServerFn({ method: "POST" })
         active_ingredient: first.active_ingredient,
         strength: first.strength,
         source: first.source,
+         unit: first.unit,
+         supplier: first.supplier,
+         stock_quantity: first.stock_quantity,
+         stock_synced_at: first.stock_synced_at,
       } : null,
       summary: {
         total_quantity: movements.reduce((sum, row) => sum + reportNumberValue(row.quantity), 0),
@@ -500,6 +514,7 @@ export const getReportItemTracking = createServerFn({ method: "POST" })
         coverage_ratio: movements.length ? knownProfitRows.length / movements.length : 0,
       },
       movements,
+       beneficiaries: [...new Map(movements.map((row) => [row.insurance_card_number ?? row.beneficiary_name, { name: row.beneficiary_name, card: row.insurance_card_number }])).values()],
     };
   });
 
@@ -525,12 +540,18 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
         known_cost: 0,
         known_profit: 0,
         item_count: 0,
+         matched_count: 0,
+         needs_price_count: 0,
+         needs_match_count: 0,
         items: [],
       };
       invoice.revenue += reportNumberValue(row.revenue);
       invoice.known_cost += reportNumberValue(row.purchase_cost);
       invoice.known_profit += reportNumberValue(row.gross_margin);
       invoice.item_count += 1;
+       if (row.gross_margin !== null) invoice.matched_count += 1;
+       else if (row.source === "phif" && row.match_status === "needs_purchase_price") invoice.needs_price_count += 1;
+       else invoice.needs_match_count += 1;
       invoice.items.push(row);
       invoiceMap.set(row.invoice_id, invoice);
 
@@ -556,18 +577,23 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
       const item = itemMap.get(itemKey) ?? {
         key: itemKey,
         item_name: row.item_name,
+         brand: row.brand,
+         active_ingredient: row.active_ingredient,
+         strength: row.strength,
         source: row.source,
         revenue: 0,
         known_cost: 0,
         known_profit: 0,
         quantity: 0,
         dispense_count: 0,
+         matched_count: 0,
       };
       item.revenue += reportNumberValue(row.revenue);
       item.known_cost += reportNumberValue(row.purchase_cost);
       item.known_profit += reportNumberValue(row.gross_margin);
       item.quantity += reportNumberValue(row.quantity);
       item.dispense_count += 1;
+       if (row.gross_margin !== null) item.matched_count += 1;
       itemMap.set(itemKey, item);
     }
     const knownRows = rows.filter((row) => row.gross_margin !== null);
@@ -584,6 +610,8 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
         invoice_count: invoiceMap.size,
         unique_patient_count: beneficiaryMap.size,
         item_count: rows.length,
+         matched_count: knownRows.length,
+         review_count: rows.length - knownRows.length,
         coverage_ratio: rows.length ? knownRows.length / rows.length : 0,
       },
       source_split: {
@@ -591,6 +619,8 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
         phif: summarizeProfitRows(rows.filter((row) => row.source === "phif")),
       },
       top_profit_items: [...itemMap.values()].sort((a, b) => b.known_profit - a.known_profit).slice(0, 20),
+       top_revenue_items: [...itemMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 20),
+       top_dispensed_items: [...itemMap.values()].sort((a, b) => b.dispense_count - a.dispense_count).slice(0, 20),
       top_revenue_beneficiaries: beneficiaries.sort((a, b) => b.revenue - a.revenue).slice(0, 20),
       top_profit_beneficiaries: [...beneficiaries].sort((a, b) => b.known_profit - a.known_profit).slice(0, 20),
       invoices: [...invoiceMap.values()].sort((a, b) => String(b.dispensing_date ?? "").localeCompare(String(a.dispensing_date ?? ""))),
@@ -616,7 +646,7 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
     const { data: item, error: itemError } = await supabaseAdmin
       .from("phif_invoice_items")
-      .select("id, phif_invoice_id, source_classification, phif_financial_fields")
+      .select("id, phif_invoice_id, source_classification, phif_financial_fields, metadata, quantity")
       .eq("id", data.itemId)
       .maybeSingle();
     if (itemError) throw new Error(itemError.message);
@@ -624,6 +654,7 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     if (item.source_classification !== "phif-supplier") {
       throw new Error("Internal purchase price is only available for PHIF Supplier items");
     }
+    if (!itemUnit(item) || reportNumberValue(item.quantity) <= 0) throw new Error("وحدة الصنف أو كميته غير واضحة؛ لا يمكن حساب تكلفة الشراء");
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from("phif_invoices")
       .select("id, pharmacy_id")

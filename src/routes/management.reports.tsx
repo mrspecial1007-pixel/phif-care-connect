@@ -1,14 +1,11 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
-import { Gate } from "@/components/AppShell";
+import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { Card } from "@/components/ui/card";
 import { BarChart3, LineChart, TrendingUp } from "lucide-react";
 
 export const Route = createFileRoute("/management/reports")({
-  component: () => (
-    <Gate>
-      <ReportsLandingPage />
-    </Gate>
-  ),
+  component: ReportsLandingPage,
+  head: () => ({ meta: [{ title: "مركز التقارير — PHIF Tracker" }, { name: "description", content: "مركز تقارير الصرف والأصناف والأرباح" }, { property: "og:title", content: "مركز التقارير — PHIF Tracker" }, { property: "og:description", content: "تقارير الصرف والأصناف والأرباح للصيدلية" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });
 
 const reportCards = [
@@ -40,10 +37,8 @@ function ReportsLandingPage() {
   return (
     <div className="space-y-4" dir="rtl">
       <div>
+        <ReportBackLink to="/management" label="الإدارة" />
         <h1 className="text-xl font-bold">مركز التقارير</h1>
-        <p className="text-sm text-muted-foreground">
-          اختر التقرير المطلوب. كل تقرير يفتح صفحة مستقلة مخصصة له.
-        </p>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Gate } from "@/components/AppShell";
+import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,8 @@ import { CalendarDays, PackageSearch, RefreshCw, ShieldAlert } from "lucide-reac
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/management/inventory")({
-  component: () => <Gate><InventoryPage /></Gate>,
+  component: InventoryPage,
+  head: () => ({ meta: [{ title: "مخزون PHIF — PHIF Tracker" }, { name: "description", content: "المخزون الحالي لصيدلية التأمين" }, { property: "og:title", content: "مخزون PHIF — PHIF Tracker" }, { property: "og:description", content: "المخزون الحالي لصيدلية التأمين" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });
 
 function formatDateTime(value: string | null | undefined) {
@@ -69,6 +70,7 @@ function InventoryPage() {
 
   return (
     <div className="space-y-3" dir="rtl">
+      <ReportBackLink to="/management" label="الإدارة" />
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-bold">مخزون PHIF</h1>
@@ -100,7 +102,7 @@ function InventoryPage() {
         </Card>
       )}
 
-      <Card className="space-y-3 p-3">
+      <div className="space-y-3">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="font-semibold flex items-center gap-2">
             <PackageSearch className="h-5 w-5 text-primary" />
@@ -124,7 +126,7 @@ function InventoryPage() {
             <StockCard key={item.id} item={item} onOpen={() => setSelected(item)} />
           ))}
         </div>
-      </Card>
+      </div>
 
       <StockDetailsSheet item={selected} canViewCost={canViewCost} onClose={() => setSelected(null)} />
     </div>

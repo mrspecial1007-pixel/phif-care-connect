@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Gate } from "@/components/AppShell";
+import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,7 +13,8 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/settings/users")({
-  component: () => <Gate><UsersSettingsPage /></Gate>,
+  component: UsersSettingsPage,
+  head: () => ({ meta: [{ title: "إدارة الموظفين — PHIF Tracker" }, { name: "description", content: "الموظفون والصلاحيات" }, { property: "og:title", content: "إدارة الموظفين — PHIF Tracker" }, { property: "og:description", content: "الموظفون والصلاحيات" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });
 
 type DraftUser = {

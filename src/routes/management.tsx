@@ -5,6 +5,7 @@ import { BarChart3, BriefcaseBusiness, PackageSearch } from "lucide-react";
 
 export const Route = createFileRoute("/management")({
   component: () => <Gate><ManagementPage /></Gate>,
+  head: () => ({ meta: [{ title: "الإدارة — PHIF Tracker" }, { name: "description", content: "إدارة المخزون والخزينة والتقارير" }, { property: "og:title", content: "الإدارة — PHIF Tracker" }, { property: "og:description", content: "إدارة المخزون والخزينة والتقارير" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });
 
 function ManagementPage() {

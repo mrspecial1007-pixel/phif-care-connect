@@ -187,7 +187,7 @@ function invoiceUnit(item: InvoiceItemLike) {
 }
 
 function sameStockIdentity(a: StockLike, b: StockLike) {
-  return ["source_stock_id", "brand_product_id", "supplier_id", "generic_ingredient_id", "brand_name", "strength", "dosage_unit", "cost_price", "package_quantity", "strips_quantity"]
+  return ["brand_product_id", "supplier_id", "generic_ingredient_id", "brand_name", "strength", "dosage_unit", "cost_price", "package_quantity", "strips_quantity"]
     .every((key) => normalizeText(a[key as keyof StockLike]) === normalizeText(b[key as keyof StockLike]));
 }
 
@@ -254,10 +254,17 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   const quantity = toNumber(item.quantity);
   const unitPrice = invoiceUnitPrice(item);
   const costPrice = toNumber(match.stock.cost_price);
-  const unitMatchesInvoice = quantity !== null && unitPrice > 0 && Math.abs(quantity * unitPrice - invoiceValue) < 0.01;
+  const invoiceUnitPrice = quantity && quantity > 0 ? invoiceValue / quantity : 0;
+  const unitMatchesInvoice = quantity !== null && quantity > 0 && (unitPrice <= 0 || Math.abs(quantity * unitPrice - invoiceValue) < 0.01);
   const itemUnit = invoiceUnit(item);
   const stockUnit = match.stock.dosage_unit;
-  const unitsAgree = Boolean(itemUnit && stockUnit && normalizedUnit(itemUnit) === normalizedUnit(stockUnit));
+  // Some archived invoices contain no unit field. In that case require the recorded
+  // invoice per-unit sale price to reconcile with the stock's per-unit sale price.
+  // This is evidence of the pricing unit, never a replacement for invoice revenue.
+  const stockSale = toNumber(match.stock.sale_price);
+  const unitsAgree = itemUnit && stockUnit
+    ? normalizedUnit(itemUnit) === normalizedUnit(stockUnit)
+    : !itemUnit && Boolean(stockUnit && stockSale !== null && invoiceUnitPrice > 0 && Math.abs(stockSale - invoiceUnitPrice) < 0.001);
   if (quantity === null || costPrice === null || invoiceValue <= 0 || !unitMatchesInvoice || !unitsAgree) {
     return {
       status: "pricing_unit_unverified",
@@ -287,5 +294,7 @@ export function stockSnapshotCandidatesForInvoice(item: InvoiceItemLike, stocks:
     const synced = new Date(stock.synced_at).getTime();
     return Number.isFinite(synced) && synced <= invoiceTime;
   });
-  return eligible.length > 0 ? eligible : [];
+  // A current snapshot cannot establish an invoice-date cost. Keep historical
+  // invoices unmatched rather than silently passing a later cost as historical.
+  return eligible;
 }

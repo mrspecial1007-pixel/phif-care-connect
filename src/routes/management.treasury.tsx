@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Gate } from "@/components/AppShell";
+import { ReportBackLink } from "@/components/management/ReportBackLink";
+import { InvoiceSummaryCard, formatMoney } from "@/components/management/InvoiceSummaryCard";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,7 +10,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/management/treasury")({
-  component: () => <Gate><TreasuryPage /></Gate>,
+  component: TreasuryPage,
+  head: () => ({ meta: [{ title: "خزينة الصرف — PHIF Tracker" }, { name: "description", content: "قيمة الفواتير والأصناف المصروفة" }, { property: "og:title", content: "خزينة الصرف — PHIF Tracker" }, { property: "og:description", content: "قيمة الفواتير والأصناف المصروفة" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });
 
 function today() {
@@ -41,6 +43,7 @@ function TreasuryPage() {
 
   return (
     <div className="space-y-4" dir="rtl">
+      <ReportBackLink to="/management" label="الإدارة" />
       <div>
         <h1 className="text-xl font-bold">خزينة الصرف</h1>
         <p className="text-sm text-muted-foreground">هذه الصفحة تعرض قيمة الأدوية المصروفة، ولا تعرض رصيدًا نقديًا فعليًا.</p>
