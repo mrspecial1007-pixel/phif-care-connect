@@ -187,7 +187,7 @@ function invoiceUnit(item: InvoiceItemLike) {
 }
 
 function sameStockIdentity(a: StockLike, b: StockLike) {
-  return ["source_stock_id", "brand_product_id", "supplier_id", "generic_ingredient_id", "brand_name", "strength", "dosage_unit", "cost_price", "package_quantity", "strips_quantity"]
+  return ["brand_product_id", "supplier_id", "generic_ingredient_id", "brand_name", "strength", "dosage_unit", "cost_price", "package_quantity", "strips_quantity"]
     .every((key) => normalizeText(a[key as keyof StockLike]) === normalizeText(b[key as keyof StockLike]));
 }
 
@@ -254,7 +254,8 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   const quantity = toNumber(item.quantity);
   const unitPrice = invoiceUnitPrice(item);
   const costPrice = toNumber(match.stock.cost_price);
-  const unitMatchesInvoice = quantity !== null && unitPrice > 0 && Math.abs(quantity * unitPrice - invoiceValue) < 0.01;
+  const invoiceUnitPrice = quantity && quantity > 0 ? invoiceValue / quantity : 0;
+  const unitMatchesInvoice = quantity !== null && quantity > 0 && (unitPrice <= 0 || Math.abs(quantity * unitPrice - invoiceValue) < 0.01);
   const itemUnit = invoiceUnit(item);
   const stockUnit = match.stock.dosage_unit;
   // Some archived invoices contain no unit field. In that case require the recorded
@@ -263,7 +264,7 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   const stockSale = toNumber(match.stock.sale_price);
   const unitsAgree = itemUnit && stockUnit
     ? normalizedUnit(itemUnit) === normalizedUnit(stockUnit)
-    : !itemUnit && Boolean(stockUnit && stockSale !== null && unitPrice > 0 && Math.abs(stockSale - unitPrice) < 0.001);
+    : !itemUnit && Boolean(stockUnit && stockSale !== null && invoiceUnitPrice > 0 && Math.abs(stockSale - invoiceUnitPrice) < 0.001);
   if (quantity === null || costPrice === null || invoiceValue <= 0 || !unitMatchesInvoice || !unitsAgree) {
     return {
       status: "pricing_unit_unverified",
