@@ -27,6 +27,7 @@ import { ar } from "date-fns/locale";
 
 export const Route = createFileRoute("/settings")({
   component: () => <Gate><SettingsPage /></Gate>,
+  head: () => ({ meta: [{ title: "الإعدادات — PHIF Tracker" }, { name: "description", content: "إعدادات الصيدلية والموظفين" }, { property: "og:title", content: "الإعدادات — PHIF Tracker" }, { property: "og:description", content: "إعدادات الصيدلية والموظفين" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });
 
 function SettingsPage() {

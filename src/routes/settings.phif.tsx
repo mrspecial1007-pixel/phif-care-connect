@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Gate } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { ArrowRight, ReceiptText, RefreshCw, Wrench } from "lucide-react";
 
 export const Route = createFileRoute("/settings/phif")({
-  component: () => <Gate><PhifSettingsPage /></Gate>,
+  component: PhifSettingsPage,
+  head: () => ({ meta: [{ title: "إعدادات PHIF — PHIF Tracker" }, { name: "description", content: "فواتير ومزامنة PHIF" }, { property: "og:title", content: "إعدادات PHIF — PHIF Tracker" }, { property: "og:description", content: "فواتير ومزامنة PHIF" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });
 
 function PhifSettingsPage() {
