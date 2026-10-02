@@ -257,7 +257,13 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   const unitMatchesInvoice = quantity !== null && unitPrice > 0 && Math.abs(quantity * unitPrice - invoiceValue) < 0.01;
   const itemUnit = invoiceUnit(item);
   const stockUnit = match.stock.dosage_unit;
-  const unitsAgree = Boolean(itemUnit && stockUnit && normalizedUnit(itemUnit) === normalizedUnit(stockUnit));
+  // Some archived invoices contain no unit field. In that case require the recorded
+  // invoice per-unit sale price to reconcile with the stock's per-unit sale price.
+  // This is evidence of the pricing unit, never a replacement for invoice revenue.
+  const stockSale = toNumber(match.stock.sale_price);
+  const unitsAgree = itemUnit && stockUnit
+    ? normalizedUnit(itemUnit) === normalizedUnit(stockUnit)
+    : !itemUnit && Boolean(stockUnit && stockSale !== null && unitPrice > 0 && Math.abs(stockSale - unitPrice) < 0.001);
   if (quantity === null || costPrice === null || invoiceValue <= 0 || !unitMatchesInvoice || !unitsAgree) {
     return {
       status: "pricing_unit_unverified",
@@ -287,5 +293,7 @@ export function stockSnapshotCandidatesForInvoice(item: InvoiceItemLike, stocks:
     const synced = new Date(stock.synced_at).getTime();
     return Number.isFinite(synced) && synced <= invoiceTime;
   });
-  return eligible.length > 0 ? eligible : [];
+  // A current snapshot cannot establish an invoice-date cost. Keep historical
+  // invoices unmatched rather than silently passing a later cost as historical.
+  return eligible;
 }
