@@ -222,7 +222,7 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   // Repeated immutable snapshots of the same stock product are not competing products.
   const distinct = matches.filter((stock, index) => !matches.slice(0, index).some((other) => sameStockIdentity(stock, other)));
   if (distinct.length === 1) return { status: "matched", stock: matches[0], reason: "commercial_identity" };
-  if (matches.length > 1) return { status: "needs_match_review", reason: "ambiguous_match", candidates: matches };
+  if (distinct.length > 1) return { status: "needs_match_review", reason: "ambiguous_match", candidates: distinct };
   return { status: "needs_match_review", reason: "no_match" };
 }
 
@@ -254,7 +254,7 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   const quantity = toNumber(item.quantity);
   const unitPrice = invoiceUnitPrice(item);
   const costPrice = toNumber(match.stock.cost_price);
-  const invoiceUnitPrice = quantity && quantity > 0 ? invoiceValue / quantity : 0;
+  const derivedUnitPrice = quantity && quantity > 0 ? invoiceValue / quantity : 0;
   const unitMatchesInvoice = quantity !== null && quantity > 0 && (unitPrice <= 0 || Math.abs(quantity * unitPrice - invoiceValue) < 0.01);
   const itemUnit = invoiceUnit(item);
   const stockUnit = match.stock.dosage_unit;
@@ -264,7 +264,7 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   const stockSale = toNumber(match.stock.sale_price);
   const unitsAgree = itemUnit && stockUnit
     ? normalizedUnit(itemUnit) === normalizedUnit(stockUnit)
-    : !itemUnit && Boolean(stockUnit && stockSale !== null && invoiceUnitPrice > 0 && Math.abs(stockSale - invoiceUnitPrice) < 0.001);
+    : !itemUnit && Boolean(stockUnit && stockSale !== null && derivedUnitPrice > 0 && Math.abs(stockSale - derivedUnitPrice) < 0.001);
   if (quantity === null || costPrice === null || invoiceValue <= 0 || !unitMatchesInvoice || !unitsAgree) {
     return {
       status: "pricing_unit_unverified",

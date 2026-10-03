@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     await qc.invalidateQueries({ queryKey: ["session"] });
   }
 
-  const isTiryaq = session?.pharmacy.name === TIRYAQ_PHARMACY_NAME;
+  const isTiryaq = session?.pharmacy?.name === TIRYAQ_PHARMACY_NAME;
   const isLegacyTiryaq = isTiryaq && (!session?.user || session.user.role === "legacy");
   const canSeeManagement =
     isTiryaq &&
@@ -67,7 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm leading-tight">PHIF Tracker</div>
             <div className="text-xs text-muted-foreground truncate">
-              {session?.unlocked ? session.pharmacy.name : ""}
+              {session?.unlocked ? session.pharmacy?.name : ""}
               {session?.user?.name ? ` · ${session.user.name}` : ""}
             </div>
           </div>

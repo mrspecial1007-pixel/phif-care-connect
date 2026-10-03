@@ -20,6 +20,7 @@ export type ReportItem = {
   active_ingredient?: string | null;
   strength?: string | null;
   brand?: string | null;
+  supplier?: string | null;
   quantity?: number | string | null;
   source_classification?: string | null;
   phif_financial_fields?: Record<string, unknown> | null;
