@@ -46,6 +46,7 @@ const itemTrackingSchema = itemSearchSchema.extend({
 const supplierPurchaseOverrideSchema = z.object({
   itemId: z.string().uuid(),
   purchasePrice: z.number().min(0).max(1_000_000),
+  purchaseUnit: z.string().trim().min(1).max(40),
 });
 
 function moneyValue(fields: Record<string, unknown> | null | undefined, keys: string[]) {
@@ -171,7 +172,7 @@ function internalPurchaseOverride(item: any): number | null {
 }
 
 function itemUnit(item: any) {
-  return String(item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.phif_financial_fields?.unit ?? "").trim() || null;
+  return String(item.phif_financial_fields?.internal_purchase_unit ?? item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.phif_financial_fields?.unit ?? "").trim() || null;
 }
 
 function invoiceItemName(item: any) {
@@ -241,7 +242,8 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         strength: item.strength ?? null,
         brand: item.brand ?? null,
         quantity: item.quantity,
-        quantity_label: reportItemQuantityLabel(item, profit.stock),
+         quantity_label: reportItemQuantityLabel(item, profit.stock),
+         identity_key: reportDrugIdentityKey(item, "scientific"),
          unit: itemUnit(item) ?? profit.stock?.dosage_unit ?? null,
          supplier: item.supplier ?? profit.stock?.supplier_name ?? null,
          stock_quantity: profit.stock?.stock_quantity ?? null,
@@ -480,12 +482,7 @@ export const getReportItemTracking = createServerFn({ method: "POST" })
     const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
     const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, { dateFrom: data.dateFrom, dateTo: data.dateTo, source: "all" });
     const movements = rows.filter((row) => {
-      const key = reportDrugIdentityKey({
-        active_ingredient: row.active_ingredient,
-        strength: row.strength,
-        brand: row.brand,
-        metadata: {},
-      }, data.groupBy);
+       const key = row.identity_key;
       return key === data.identityKey;
     });
      const beneficiaryCards = new Set(movements.map((row) => row.insurance_card_number ?? row.beneficiary_name).filter(Boolean));
@@ -573,7 +570,7 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
       beneficiary.invoice_ids.add(row.invoice_id);
       beneficiaryMap.set(beneficiaryKey, beneficiary);
 
-      const itemKey = reportDrugIdentityKey(row, "scientific");
+       const itemKey = row.identity_key;
       const item = itemMap.get(itemKey) ?? {
         key: itemKey,
         item_name: row.item_name,
@@ -654,7 +651,9 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     if (item.source_classification !== "phif-supplier") {
       throw new Error("Internal purchase price is only available for PHIF Supplier items");
     }
-    if (!itemUnit(item) || reportNumberValue(item.quantity) <= 0) throw new Error("وحدة الصنف أو كميته غير واضحة؛ لا يمكن حساب تكلفة الشراء");
+    if (reportNumberValue(item.quantity) <= 0) throw new Error("كمية الصنف غير واضحة؛ لا يمكن حساب تكلفة الشراء");
+    const recordedUnit = String(item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? (item.metadata.unit ?? item.metadata.dosage_unit ?? item.metadata.quantity_unit ?? "") : "").trim();
+    if (recordedUnit && recordedUnit.toLowerCase() !== data.purchaseUnit.toLowerCase()) throw new Error("وحدة سعر الشراء لا تطابق وحدة كمية الفاتورة");
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from("phif_invoices")
       .select("id, pharmacy_id")
@@ -663,8 +662,9 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     if (invoiceError) throw new Error(invoiceError.message);
     if (!invoice || invoice.pharmacy_id !== pharmacy_id) throw new Error("Invoice item not found");
     const fields = {
-      ...(item.phif_financial_fields ?? {}),
+       ...(typeof item.phif_financial_fields === "object" && item.phif_financial_fields !== null && !Array.isArray(item.phif_financial_fields) ? item.phif_financial_fields : {}),
       internal_purchase_price: data.purchasePrice,
+       internal_purchase_unit: data.purchaseUnit,
       internal_purchase_price_updated_at: new Date().toISOString(),
     };
     const { error } = await supabaseAdmin

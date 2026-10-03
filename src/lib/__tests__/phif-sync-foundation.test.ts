@@ -977,6 +977,7 @@ describe("PHIF sync foundation", () => {
         strength: "500mg",
         cost_price: "0.200",
         sale_price: "0.340",
+        dosage_unit: "TABS",
         synced_at: "2026-09-20T10:00:00Z",
       },
     ];
@@ -1028,7 +1029,7 @@ describe("PHIF sync foundation", () => {
       metadata: {},
     };
 
-    expect(calculateActualGrossMargin(item, [{ source_stock_id: "old", brand_name: "Formin", strength: "500mg", cost_price: "0.200" }])).toMatchObject({
+    expect(calculateActualGrossMargin(item, [{ source_stock_id: "old", brand_name: "Formin", strength: "500mg", dosage_unit: "TABS", sale_price: "0.340", cost_price: "0.200" }])).toMatchObject({
       invoiceValue: 10.2,
       purchaseCost: 6,
     });
@@ -1041,6 +1042,22 @@ describe("PHIF sync foundation", () => {
     ];
 
     expect(stockSnapshotCandidatesForInvoice({ brand: "Formin", strength: "500 mg" }, snapshots, "2026-09-25").map((row) => row.source_stock_id)).toEqual(["old"]);
+  });
+
+  it("requires comparable pricing units and preserves historical invoice revenue", () => {
+    const item = { brand: "Formin", strength: "500 mg", quantity: 30, source_classification: "actual-supplier", phif_financial_fields: { total_amount: "10.200" }, metadata: { unit: "TABS" } };
+    const stock = { brand_name: "Formin", strength: "500mg", dosage_unit: "TABS", cost_price: "0.284", sale_price: "0.400" };
+    expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "matched", invoiceValue: 10.2, purchaseCost: 8.52, grossMargin: 1.6799999999999997 });
+    expect(calculateActualGrossMargin({ ...item, metadata: { unit: "BOX" } }, [stock]).grossMargin).toBeNull();
+    expect(calculateActualGrossMargin({ ...item, metadata: {} }, [{ ...stock, sale_price: null }]).grossMargin).toBeNull();
+  });
+
+  it("does not choose between distinct commercial products at the same strength", () => {
+    const item = { brand: "Formin", strength: "500mg", source_classification: "actual-supplier", metadata: {} };
+    expect(matchActualInvoiceItemToStock(item, [
+      { brand_name: "Formin", strength: "500mg", supplier_id: "1", cost_price: 0.2 },
+      { brand_name: "Formin", strength: "500mg", supplier_id: "2", cost_price: 0.3 },
+    ])).toMatchObject({ status: "needs_match_review", reason: "ambiguous_match" });
   });
 
   it("does not mix Actual margin calculation with PHIF Supplier items", () => {

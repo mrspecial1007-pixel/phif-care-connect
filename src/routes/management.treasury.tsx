@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { InvoiceSummaryCard, formatMoney } from "@/components/management/InvoiceSummaryCard";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { getActualProfitReport, getManagementReport } from "@/lib/management.fun
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { todayISOLocal } from "@/lib/date";
 
 export const Route = createFileRoute("/management/treasury")({
   component: TreasuryPage,
@@ -15,7 +16,7 @@ export const Route = createFileRoute("/management/treasury")({
 });
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return todayISOLocal();
 }
 
 function money(value: number | null | undefined) {
@@ -23,6 +24,7 @@ function money(value: number | null | undefined) {
 }
 
 function TreasuryPage() {
+  const navigate = useNavigate();
   const reportFn = useServerFn(getManagementReport);
   const actualProfitFn = useServerFn(getActualProfitReport);
   const [dateFrom, setDateFrom] = useState(today());
@@ -48,9 +50,9 @@ function TreasuryPage() {
         <h1 className="text-xl font-bold">خزينة الصرف</h1>
         <p className="text-sm text-muted-foreground">هذه الصفحة تعرض قيمة الأدوية المصروفة، ولا تعرض رصيدًا نقديًا فعليًا.</p>
       </div>
-      <Card className="p-4 grid gap-3 md:grid-cols-3">
-        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <Input aria-label="من تاريخ" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        <Input aria-label="إلى تاريخ" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
         <Select value={source} onValueChange={(v: any) => setSource(v)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -59,7 +61,7 @@ function TreasuryPage() {
             <SelectItem value="phif">PHIF</SelectItem>
           </SelectContent>
         </Select>
-      </Card>
+      </div>
       {error && <Card className="p-4 text-destructive">تعذر تحميل الخزينة: {(error as Error).message}</Card>}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <Stat label="إجمالي قيمة الصرف" value={`${money(data?.total_dispensed_value)} د.ل`} />
@@ -72,27 +74,16 @@ function TreasuryPage() {
 
       {canShowActualProfit && <ActualProfitSection data={actualProfit.data} isLoading={actualProfit.isLoading} />}
 
-      <Card className="overflow-hidden">
-        <div className="p-4 font-semibold border-b">تفاصيل الفواتير</div>
-        <div className="divide-y">
+      <section className="space-y-2">
+        <h2 className="font-semibold">تفاصيل الفواتير</h2>
+        <div className="grid gap-2 sm:grid-cols-2">
           {isLoading && <div className="p-4 text-muted-foreground">جاري التحميل...</div>}
           {(data?.details ?? []).map((row: any) => (
-            <Link key={row.id} to="/phif-invoices/$id" params={{ id: row.id }} className="block p-3 hover:bg-accent/40">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-semibold">{row.invoice_number || row.invoice_key}</div>
-                  <div className="text-xs text-muted-foreground">{row.beneficiary_name || "مستفيد غير مسجل"} · {row.dispensing_date || "بدون تاريخ"}</div>
-                </div>
-                <div className="text-left text-xs">
-                  <div>{row.item_count} صنف</div>
-                  <div>Actual {money(row.actual_value)} / PHIF {money(row.phif_value)}</div>
-                </div>
-              </div>
-            </Link>
+            <InvoiceSummaryCard key={row.id} name={row.beneficiary_name} number={row.invoice_number || row.invoice_key} date={row.dispensing_date} count={row.item_count} revenue={row.actual_value + row.phif_value} status={`Actual ${formatMoney(row.actual_value)} · PHIF ${formatMoney(row.phif_value)}`} onClick={() => navigate({ to: "/phif-invoices/$id", params: { id: row.id } })} />
           ))}
           {!isLoading && (data?.details ?? []).length === 0 && <div className="p-4 text-center text-muted-foreground">لا توجد نتائج</div>}
         </div>
-      </Card>
+      </section>
     </div>
   );
 }

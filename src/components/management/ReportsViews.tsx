@@ -1,4 +1,4 @@
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -12,7 +12,7 @@ import { InvoiceSummaryCard, formatMoney, formatReportDate } from "./InvoiceSumm
 import { getMonthlyManagementReport, getOfficialMonthlyReportExport, getProfitAnalysisReport, getReportItemTracking, savePhifSupplierPurchasePrice, searchReportItems } from "@/lib/management.functions";
 import { toast } from "sonner";
 
-const dateString = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const dateString = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Tripoli", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const monthRange = (month: string) => { const [y, m] = month.split("-").map(Number); return { dateFrom: dateString(new Date(y, m - 1, 1)), dateTo: dateString(new Date(y, m, 0)) }; };
 const thisMonth = () => dateString(new Date()).slice(0, 7);
 const sourceLabel = (s: string) => s === "actual" ? "Actual" : s === "phif" ? "PHIF Supplier" : "كل المصادر";
@@ -70,14 +70,14 @@ export function ReportsSummaryPage() {
     try {
       const payload: any = await exportFn({ data: filters });
       const XLSX = await import("xlsx");
-      const wb = XLSX.utils.book_new();
+       const wb = XLSX.utils.book_new();
       const add = (name: string, rows: any[]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ ملاحظة: "لا توجد بيانات" }]), name);
       add("الملخص", [{ البند: "الفواتير", القيمة: payload.summary.invoice_count }, { البند: "المستفيدون", القيمة: payload.summary.unique_patient_count }, { البند: "قيمة الصرف", القيمة: payload.summary.total_dispensed_value }]);
       add("المستفيدون", payload.beneficiary_stats.beneficiaries.map((r: any) => ({ الاسم: r.name, البطاقة: r.card, الفواتير: r.invoice_count, القيمة: r.total_value })));
       add("الأصناف", payload.top_drugs.map((r: any) => ({ العلمي: r.active_ingredient, التجاري: r.brand, التركيز: r.strength, المصدر: sourceLabel(r.source), الكمية: r.quantity, القيمة: r.total_value })));
       add("اليومي", payload.daily);
       add("الجودة", [payload.quality]);
-      XLSX.writeFile(wb, `phif-report-${period.range.dateFrom}-${period.range.dateTo}.xlsx`);
+       XLSX.writeFile(wb, `phif-report-${period.range.dateFrom}-${period.range.dateTo}.xlsx`);
     } catch (error) { toast.error((error as Error).message); }
   }
   return <div className="space-y-5" dir="rtl">
@@ -111,12 +111,12 @@ function ItemFinancials({ row }: { row: any }) {
 function Movement({ row }: { row: any }) { return <div className="space-y-2 border-b py-3 text-sm"><div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"><div className="min-w-0"><strong>{row.beneficiary_name || "غير محدد"}</strong><p className="text-xs text-muted-foreground">{row.insurance_card_number || "بدون بطاقة"} · {row.invoice_number || row.invoice_key}</p></div><span className="shrink-0">{formatReportDate(row.dispensing_date)}</span></div><p className="text-xs text-muted-foreground">{row.quantity_label ?? row.quantity} · {sourceLabel(row.source)} · {statusLabel(row)}</p><ItemFinancials row={row} /></div>; }
 export function ReportsItemTrackingPage() {
   const period = usePeriod();
-  const params = useSearch({ from: "/management/reports/item-tracking", strict: false }) as { item?: string };
+  const params = useSearch({ strict: false }) as { item?: string };
   const [search, setSearch] = useState(""); const [selected, setSelected] = useState<any>(null);
   const [sheet, setSheet] = useState<"movements" | "beneficiaries" | null>(null);
   const searchFn = useServerFn(searchReportItems); const trackingFn = useServerFn(getReportItemTracking);
   const suggestions = useQuery({ queryKey: ["report_item_search", search, period.range], queryFn: () => searchFn({ data: { search, ...period.range } }), enabled: search.trim().length >= 2 });
-  const identityKey = selected?.identity_key ?? params.item;
+  const identityKey = selected?.identity_key ?? (search ? undefined : params.item);
   const tracking = useQuery({ queryKey: ["report_item_tracking", identityKey, period.range], queryFn: () => trackingFn({ data: { identityKey: identityKey ?? "", search: search || "aa", groupBy: "scientific", ...period.range } }), enabled: Boolean(identityKey), retry: false });
   const data = tracking.data;
   return <div className="space-y-5" dir="rtl"><Heading title="تتبع صنف" description="ابحث عن صنف لمراجعة حركته ومستخدميه ومخزونه" />
@@ -131,16 +131,16 @@ export function ReportsItemTrackingPage() {
 }
 
 function InvoiceDetails({ invoice, close, save, draft, setDraft, saving }: any) {
-  return <Sheet open={Boolean(invoice)} onOpenChange={open => !open && close()}><SheetContent side="bottom" className={sheetClass} dir="rtl"><SheetHeader className="text-right"><SheetTitle>تفاصيل الفاتورة {invoice?.invoice_number ?? invoice?.invoice_key}</SheetTitle></SheetHeader>{invoice && <div className="mt-4 space-y-3"><p className="text-sm">{invoice.beneficiary_name} · {formatReportDate(invoice.dispensing_date)}</p>{invoice.items.map((r: any) => <div className="space-y-2 border-b pb-4" key={r.item_id}><strong>{r.brand || r.item_name}</strong><p className="text-xs text-muted-foreground">{r.active_ingredient} · {r.strength} · {sourceLabel(r.source)} · الكمية {r.quantity_label ?? r.quantity}</p><ItemFinancials row={r} /><p className="text-xs text-amber-700">{statusLabel(r)}</p>{r.source === "phif" && <div className="space-y-1"><label htmlFor={`price-${r.item_id}`} className="text-xs">سعر شراء الوحدة {r.unit ? `· سعر شراء ${r.unit}` : "· وحدة غير محددة"}</label><div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"><Input id={`price-${r.item_id}`} inputMode="decimal" disabled={!r.unit} placeholder="سعر شراء الوحدة" value={draft[r.item_id] ?? r.unit_purchase_price ?? ""} onChange={e => setDraft((d: any) => ({ ...d, [r.item_id]: e.target.value }))} /><Button disabled={saving || !r.unit} onClick={() => save(r)}>{r.unit_purchase_price === null ? "حفظ" : "تعديل"}</Button></div>{!r.unit && <p className="text-xs text-amber-700">وحدة التكلفة تحتاج مراجعة</p>}</div>}</div>)}<div className="grid grid-cols-3 gap-2 border-t pt-4 text-xs"><Metric label="إجمالي الفاتورة" value={formatMoney(invoice.revenue)} /><Metric label="إجمالي التكلفة" value={invoice.matched_count === invoice.item_count ? formatMoney(invoice.known_cost) : "غير مكتمل"} /><Metric label="إجمالي الربح" value={invoice.matched_count === invoice.item_count ? formatMoney(invoice.known_profit) : "غير مكتمل"} /></div></div>}</SheetContent></Sheet>;
+  return <Sheet open={Boolean(invoice)} onOpenChange={open => !open && close()}><SheetContent side="bottom" className={sheetClass} dir="rtl"><SheetHeader className="text-right"><SheetTitle>تفاصيل الفاتورة {invoice?.invoice_number ?? invoice?.invoice_key}</SheetTitle></SheetHeader>{invoice && <div className="mt-4 space-y-3"><p className="text-sm">{invoice.beneficiary_name} · {formatReportDate(invoice.dispensing_date)}</p>{invoice.items.map((r: any) => <div className="space-y-2 border-b pb-4" key={r.item_id}><strong>{r.brand || r.item_name}</strong><p className="text-xs text-muted-foreground">{r.active_ingredient} · {r.strength} · {sourceLabel(r.source)} · الكمية {r.quantity_label ?? r.quantity}</p><ItemFinancials row={r} /><p className="text-xs text-amber-700">{statusLabel(r)}</p>{r.source === "phif" && <div className="space-y-1"><label htmlFor={`price-${r.item_id}`} className="text-xs">سعر شراء الوحدة · {r.unit || "وحدة غير مؤكدة"}</label><div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"><Input id={`price-${r.item_id}`} inputMode="decimal" placeholder="سعر شراء الوحدة" value={draft[r.item_id] ?? r.unit_purchase_price ?? ""} onChange={e => setDraft((d: any) => ({ ...d, [r.item_id]: e.target.value }))} /><Button disabled={saving} onClick={() => save(r)}>{r.unit_purchase_price === null ? "حفظ" : "تعديل"}</Button></div><label htmlFor={`unit-${r.item_id}`} className="text-xs">وحدة تسعير الشراء المطابقة لكمية الفاتورة</label><Input id={`unit-${r.item_id}`} placeholder="مثال: قرص، علبة، شريط" value={draft[`${r.item_id}:unit`] ?? r.unit ?? ""} onChange={e => setDraft((d: any) => ({ ...d, [`${r.item_id}:unit`]: e.target.value }))} />{!r.unit && <p className="text-xs text-amber-700">حدد وحدة السعر قبل الحساب، ولا تُفترض وحدة تلقائيًا</p>}</div>}</div>)}<div className="grid grid-cols-3 gap-2 border-t pt-4 text-xs"><Metric label="إجمالي الفاتورة" value={formatMoney(invoice.revenue)} /><Metric label="إجمالي التكلفة" value={invoice.matched_count === invoice.item_count ? formatMoney(invoice.known_cost) : "غير مكتمل"} /><Metric label="إجمالي الربح" value={invoice.matched_count === invoice.item_count ? formatMoney(invoice.known_profit) : "غير مكتمل"} /></div></div>}</SheetContent></Sheet>;
 }
 export function ReportsProfitAnalysisPage() {
   const period = usePeriod(); const [source, setSource] = useState<"all" | "actual" | "phif">("all");
   const [invoiceId, setInvoiceId] = useState<string | null>(null); const [beneficiary, setBeneficiary] = useState<any>(null); const [draft, setDraft] = useState<Record<string, string>>({});
   const navigate = useNavigate(); const qc = useQueryClient(); const profitFn = useServerFn(getProfitAnalysisReport); const saveFn = useServerFn(savePhifSupplierPurchasePrice);
   const profit = useQuery({ queryKey: ["management_profit_analysis", period.range, source], queryFn: () => profitFn({ data: { ...period.range, source } }), retry: false });
-  const mutation = useMutation({ mutationFn: (input: { itemId: string; purchasePrice: number }) => saveFn({ data: input }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["management_profit_analysis"] }); qc.invalidateQueries({ queryKey: ["report_item_tracking"] }); toast.success("تم حفظ سعر الشراء"); }, onError: e => toast.error(e.message) });
+  const mutation = useMutation({ mutationFn: (input: { itemId: string; purchasePrice: number; purchaseUnit: string }) => saveFn({ data: input }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["management_profit_analysis"] }); qc.invalidateQueries({ queryKey: ["report_item_tracking"] }); toast.success("تم حفظ سعر الشراء"); }, onError: e => toast.error(e.message) });
   const data = profit.data; const invoice = data?.invoices.find((i: any) => i.invoice_id === invoiceId);
-  function save(r: any) { const value = Number(draft[r.item_id] ?? r.unit_purchase_price); if (!Number.isFinite(value) || value < 0) { toast.error("أدخل سعر شراء صحيحًا"); return; } mutation.mutate({ itemId: r.item_id, purchasePrice: value }); }
+  function save(r: any) { const raw = draft[r.item_id] ?? r.unit_purchase_price; const value = Number(raw); const purchaseUnit = String(draft[`${r.item_id}:unit`] ?? r.unit ?? "").trim(); if (raw === "" || raw === null || raw === undefined || !Number.isFinite(value) || value < 0 || !purchaseUnit) { toast.error("أدخل سعر شراء ووحدة تسعير واضحة"); return; } mutation.mutate({ itemId: r.item_id, purchasePrice: value, purchaseUnit }); }
   const jump = (key: string) => navigate({ to: "/management/reports/item-tracking", search: { item: key } as any });
   const beneficiaries = (title: string, rows: any[]) => <Section title={title}><div className="grid gap-2 sm:grid-cols-2">{rows.map((r: any) => <Button key={r.key} variant="outline" className="h-auto min-w-0 flex-col items-start whitespace-normal p-3 text-right" onClick={() => setBeneficiary(r)}><strong>{r.beneficiary_name || "غير محدد"}</strong><span className="text-xs">{r.invoice_count} فاتورة · إيراد {formatMoney(r.revenue)} · ربح {r.known_profit || r.matched_count ? formatMoney(r.known_profit) : "غير مكتمل"}</span></Button>)}</div></Section>;
   const items = (title: string, rows: any[]) => <Section title={title}><div className="grid gap-2 sm:grid-cols-2">{rows.map((r: any) => <Button key={r.key} variant="outline" className="h-auto min-w-0 flex-col items-start whitespace-normal p-3 text-right" onClick={() => jump(r.key)}><strong>{r.item_name}</strong><span className="text-xs">{r.dispense_count} حركة · {formatMoney(r.revenue)} · ربح {r.matched_count ? formatMoney(r.known_profit) : "غير مكتمل"}</span></Button>)}</div></Section>;
