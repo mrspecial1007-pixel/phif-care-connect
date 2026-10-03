@@ -46,6 +46,7 @@ const itemTrackingSchema = itemSearchSchema.extend({
 const supplierPurchaseOverrideSchema = z.object({
   itemId: z.string().uuid(),
   purchasePrice: z.number().min(0).max(1_000_000),
+  purchaseUnit: z.string().trim().min(1).max(40),
 });
 
 function moneyValue(fields: Record<string, unknown> | null | undefined, keys: string[]) {
@@ -171,7 +172,7 @@ function internalPurchaseOverride(item: any): number | null {
 }
 
 function itemUnit(item: any) {
-  return String(item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.metadata?.dosage_form ?? item.phif_financial_fields?.unit ?? "").trim() || null;
+  return String(item.phif_financial_fields?.internal_purchase_unit ?? item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.phif_financial_fields?.unit ?? "").trim() || null;
 }
 
 function invoiceItemName(item: any) {
@@ -650,7 +651,9 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     if (item.source_classification !== "phif-supplier") {
       throw new Error("Internal purchase price is only available for PHIF Supplier items");
     }
-    if (!itemUnit(item) || reportNumberValue(item.quantity) <= 0) throw new Error("وحدة الصنف أو كميته غير واضحة؛ لا يمكن حساب تكلفة الشراء");
+    if (reportNumberValue(item.quantity) <= 0) throw new Error("كمية الصنف غير واضحة؛ لا يمكن حساب تكلفة الشراء");
+    const recordedUnit = String(item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? (item.metadata.unit ?? item.metadata.dosage_unit ?? item.metadata.quantity_unit ?? "") : "").trim();
+    if (recordedUnit && recordedUnit.toLowerCase() !== data.purchaseUnit.toLowerCase()) throw new Error("وحدة سعر الشراء لا تطابق وحدة كمية الفاتورة");
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from("phif_invoices")
       .select("id, pharmacy_id")
@@ -661,6 +664,7 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     const fields = {
        ...(typeof item.phif_financial_fields === "object" && item.phif_financial_fields !== null && !Array.isArray(item.phif_financial_fields) ? item.phif_financial_fields : {}),
       internal_purchase_price: data.purchasePrice,
+       internal_purchase_unit: data.purchaseUnit,
       internal_purchase_price_updated_at: new Date().toISOString(),
     };
     const { error } = await supabaseAdmin
