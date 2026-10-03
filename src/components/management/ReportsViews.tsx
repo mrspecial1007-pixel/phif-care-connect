@@ -12,7 +12,7 @@ import { InvoiceSummaryCard, formatMoney, formatReportDate } from "./InvoiceSumm
 import { getMonthlyManagementReport, getOfficialMonthlyReportExport, getProfitAnalysisReport, getReportItemTracking, savePhifSupplierPurchasePrice, searchReportItems } from "@/lib/management.functions";
 import { toast } from "sonner";
 
-const dateString = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const dateString = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Tripoli", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const monthRange = (month: string) => { const [y, m] = month.split("-").map(Number); return { dateFrom: dateString(new Date(y, m - 1, 1)), dateTo: dateString(new Date(y, m, 0)) }; };
 const thisMonth = () => dateString(new Date()).slice(0, 7);
 const sourceLabel = (s: string) => s === "actual" ? "Actual" : s === "phif" ? "PHIF Supplier" : "كل المصادر";
@@ -77,7 +77,7 @@ export function ReportsSummaryPage() {
       add("الأصناف", payload.top_drugs.map((r: any) => ({ العلمي: r.active_ingredient, التجاري: r.brand, التركيز: r.strength, المصدر: sourceLabel(r.source), الكمية: r.quantity, القيمة: r.total_value })));
       add("اليومي", payload.daily);
       add("الجودة", [payload.quality]);
-      XLSX.writeFile(wb, `phif-report-${period.range.dateFrom}-${period.range.dateTo}.xlsx`);
+       XLSX.writeFile(wb, `phif-report-${period.range.dateFrom}-${period.range.dateTo}.xlsx`);
     } catch (error) { toast.error((error as Error).message); }
   }
   return <div className="space-y-5" dir="rtl">
@@ -116,7 +116,7 @@ export function ReportsItemTrackingPage() {
   const [sheet, setSheet] = useState<"movements" | "beneficiaries" | null>(null);
   const searchFn = useServerFn(searchReportItems); const trackingFn = useServerFn(getReportItemTracking);
   const suggestions = useQuery({ queryKey: ["report_item_search", search, period.range], queryFn: () => searchFn({ data: { search, ...period.range } }), enabled: search.trim().length >= 2 });
-  const identityKey = selected?.identity_key ?? params.item;
+  const identityKey = selected?.identity_key ?? (search ? undefined : params.item);
   const tracking = useQuery({ queryKey: ["report_item_tracking", identityKey, period.range], queryFn: () => trackingFn({ data: { identityKey: identityKey ?? "", search: search || "aa", groupBy: "scientific", ...period.range } }), enabled: Boolean(identityKey), retry: false });
   const data = tracking.data;
   return <div className="space-y-5" dir="rtl"><Heading title="تتبع صنف" description="ابحث عن صنف لمراجعة حركته ومستخدميه ومخزونه" />
@@ -140,7 +140,7 @@ export function ReportsProfitAnalysisPage() {
   const profit = useQuery({ queryKey: ["management_profit_analysis", period.range, source], queryFn: () => profitFn({ data: { ...period.range, source } }), retry: false });
   const mutation = useMutation({ mutationFn: (input: { itemId: string; purchasePrice: number }) => saveFn({ data: input }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["management_profit_analysis"] }); qc.invalidateQueries({ queryKey: ["report_item_tracking"] }); toast.success("تم حفظ سعر الشراء"); }, onError: e => toast.error(e.message) });
   const data = profit.data; const invoice = data?.invoices.find((i: any) => i.invoice_id === invoiceId);
-  function save(r: any) { const value = Number(draft[r.item_id] ?? r.unit_purchase_price); if (!Number.isFinite(value) || value < 0) { toast.error("أدخل سعر شراء صحيحًا"); return; } mutation.mutate({ itemId: r.item_id, purchasePrice: value }); }
+  function save(r: any) { const raw = draft[r.item_id] ?? r.unit_purchase_price; const value = Number(raw); if (raw === "" || raw === null || raw === undefined || !Number.isFinite(value) || value < 0) { toast.error("أدخل سعر شراء صحيحًا"); return; } mutation.mutate({ itemId: r.item_id, purchasePrice: value }); }
   const jump = (key: string) => navigate({ to: "/management/reports/item-tracking", search: { item: key } as any });
   const beneficiaries = (title: string, rows: any[]) => <Section title={title}><div className="grid gap-2 sm:grid-cols-2">{rows.map((r: any) => <Button key={r.key} variant="outline" className="h-auto min-w-0 flex-col items-start whitespace-normal p-3 text-right" onClick={() => setBeneficiary(r)}><strong>{r.beneficiary_name || "غير محدد"}</strong><span className="text-xs">{r.invoice_count} فاتورة · إيراد {formatMoney(r.revenue)} · ربح {r.known_profit || r.matched_count ? formatMoney(r.known_profit) : "غير مكتمل"}</span></Button>)}</div></Section>;
   const items = (title: string, rows: any[]) => <Section title={title}><div className="grid gap-2 sm:grid-cols-2">{rows.map((r: any) => <Button key={r.key} variant="outline" className="h-auto min-w-0 flex-col items-start whitespace-normal p-3 text-right" onClick={() => jump(r.key)}><strong>{r.item_name}</strong><span className="text-xs">{r.dispense_count} حركة · {formatMoney(r.revenue)} · ربح {r.matched_count ? formatMoney(r.known_profit) : "غير مكتمل"}</span></Button>)}</div></Section>;

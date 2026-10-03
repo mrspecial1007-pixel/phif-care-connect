@@ -207,6 +207,7 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
 
   if (!brand && !brandProductId) return { status: "needs_match_review", reason: "unsafe_identity" };
 
+  const itemPricingUnit = invoiceUnit(item);
   const matches = candidates.filter((stock) => {
     if (!idsMatchOrMissing(brandProductId, stock.brand_product_id)) return false;
     if (!idsMatchOrMissing(supplierId, stock.supplier_id)) return false;
@@ -214,6 +215,7 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
     if (supplier && stock.supplier_name && normalizeText(stock.supplier_name) !== supplier) return false;
     if (!idsMatchOrMissing(packageQuantity, stock.package_quantity)) return false;
     if (!idsMatchOrMissing(stripsQuantity, stock.strips_quantity)) return false;
+    if (itemPricingUnit && stock.dosage_unit && normalizedUnit(itemPricingUnit) !== normalizedUnit(stock.dosage_unit)) return false;
     if (brand && normalizeText(stock.brand_name) !== brand) return false;
     if (strength && normalizeStrength(stock.strength) !== strength) return false;
     return Boolean(brandProductId || brand);
