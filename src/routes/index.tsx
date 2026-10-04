@@ -11,7 +11,7 @@ import { PatientCard, statusMeta } from "@/components/PatientCard";
 export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard /></Gate> });
 
 function Dashboard() {
-  const { data: rows, isLoading } = usePatientStatuses();
+  const { data: rows, isLoading, error, refetch } = usePatientStatuses();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite" | "old_follow_up">("active");
 
@@ -156,7 +156,12 @@ function Dashboard() {
         ))}
       </div>
 
-      {isLoading ? (
+      {error ? (
+        <div role="alert" className="space-y-3 py-10 text-center text-destructive">
+          <p>تعذر تحميل المستفيدين. تحقق من الاتصال وحاول مجددًا.</p>
+          <Button onClick={() => refetch()}>إعادة المحاولة</Button>
+        </div>
+      ) : isLoading ? (
         <div className="text-center py-10 text-muted-foreground">جاري التحميل…</div>
       ) : (
         <div className="grid gap-2">

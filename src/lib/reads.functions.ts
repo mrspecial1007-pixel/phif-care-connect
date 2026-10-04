@@ -258,15 +258,23 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
 
   const invoiceIds = invoices.map((invoice) => invoice.id);
   const items: any[] = [];
-  for (let index = 0; index < invoiceIds.length; index += 500) {
-    const batch = invoiceIds.slice(index, index + 500);
+  for (let index = 0; index < invoiceIds.length; index += 100) {
+    const batch = invoiceIds.slice(index, index + 100);
     if (batch.length === 0) continue;
-    const { data, error } = await admin
-      .from("phif_invoice_items")
-      .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata, created_at")
-      .in("phif_invoice_id", batch);
-    if (error) throw new Error(error.message);
-    items.push(...(data ?? []));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const { data, error } = await admin
+          .from("phif_invoice_items")
+          .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata, created_at")
+          .in("phif_invoice_id", batch);
+        if (error) throw new Error(error.message);
+        items.push(...(data ?? []));
+        break;
+      } catch (error) {
+        if (attempt === 2 || !/fetch failed|network|timeout/i.test(String(error))) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
   }
 
   const byPatient = new Map<string, { invoices: any[]; items: any[] }>();
