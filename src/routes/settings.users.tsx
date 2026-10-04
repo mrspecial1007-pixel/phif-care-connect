@@ -103,6 +103,7 @@ function UsersSettingsPage() {
 
   return (
     <div className="space-y-4">
+      <ReportBackLink to="/settings" label="الإعدادات" />
       <div>
         <h1 className="text-xl font-bold">إدارة الموظفين</h1>
         <p className="text-sm text-muted-foreground">إدارة حسابات الترياق وصلاحياتها. لا تُحفظ الأرقام السرية كنص صريح.</p>

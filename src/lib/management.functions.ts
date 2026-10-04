@@ -161,18 +161,14 @@ async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
 
 function internalPurchaseOverride(item: any): number | null {
   const raw = item.phif_financial_fields?.internal_purchase_price
-      ?? item.phif_financial_fields?.internalPurchasePrice
-      ?? item.phif_financial_fields?.internal_sale_price_override
-      ?? item.phif_financial_fields?.internalSalePriceOverride
-      ?? item.metadata?.internal_purchase_price
-      ?? item.metadata?.internal_sale_price_override;
+      ?? item.phif_financial_fields?.internalPurchasePrice;
   if (raw === null || raw === undefined || raw === "") return null;
   const value = Number(raw);
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function itemUnit(item: any) {
-  return String(item.phif_financial_fields?.internal_purchase_unit ?? item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.phif_financial_fields?.unit ?? "").trim() || null;
+  return String(item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.phif_financial_fields?.unit ?? "").trim() || null;
 }
 
 function invoiceItemName(item: any) {
@@ -186,7 +182,9 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
     const override = internalPurchaseOverride(item);
     const quantity = reportNumberValue(item.quantity);
     const unit = itemUnit(item);
-    const purchaseCost = override !== null && quantity > 0 && unit ? override * quantity : null;
+    const purchaseUnit = String(item.phif_financial_fields?.internal_purchase_unit ?? "").trim();
+    const unitVerified = Boolean(purchaseUnit && (!unit || unit.toLowerCase() === purchaseUnit.toLowerCase()));
+    const purchaseCost = override !== null && quantity > 0 && unitVerified ? override * quantity : null;
     return {
       source,
       invoiceValue,
@@ -194,8 +192,8 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
       purchaseCost,
       grossMargin: purchaseCost === null ? null : invoiceValue - purchaseCost,
       unitPurchasePrice: override,
-      status: purchaseCost === null ? (override !== null && !unit ? "pricing_unit_unverified" : "needs_purchase_price") : "matched",
-      reason: purchaseCost === null ? (!unit ? "pricing_unit_unverified" : "phif_supplier_purchase_price_missing") : "phif_supplier_internal_purchase_price",
+       status: purchaseCost === null ? (override !== null && !unitVerified ? "pricing_unit_unverified" : "needs_purchase_price") : "matched",
+       reason: purchaseCost === null ? (override !== null && !unitVerified ? "pricing_unit_unverified" : "phif_supplier_purchase_price_missing") : "phif_supplier_internal_purchase_price",
       stock: null,
       invoice,
     };
@@ -244,7 +242,7 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         quantity: item.quantity,
          quantity_label: reportItemQuantityLabel(item, profit.stock),
          identity_key: reportDrugIdentityKey(item, "scientific"),
-         unit: itemUnit(item) ?? profit.stock?.dosage_unit ?? null,
+          unit: (profit.source === "phif" ? String(item.phif_financial_fields?.internal_purchase_unit ?? "").trim() || itemUnit(item) : itemUnit(item) ?? profit.stock?.dosage_unit) ?? null,
          supplier: item.supplier ?? profit.stock?.supplier_name ?? null,
          stock_quantity: profit.stock?.stock_quantity ?? null,
          stock_synced_at: profit.stock?.synced_at ?? null,

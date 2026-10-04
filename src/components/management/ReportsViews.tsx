@@ -1,4 +1,4 @@
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -111,7 +111,7 @@ function ItemFinancials({ row }: { row: any }) {
 function Movement({ row }: { row: any }) { return <div className="space-y-2 border-b py-3 text-sm"><div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"><div className="min-w-0"><strong>{row.beneficiary_name || "غير محدد"}</strong><p className="text-xs text-muted-foreground">{row.insurance_card_number || "بدون بطاقة"} · {row.invoice_number || row.invoice_key}</p></div><span className="shrink-0">{formatReportDate(row.dispensing_date)}</span></div><p className="text-xs text-muted-foreground">{row.quantity_label ?? row.quantity} · {sourceLabel(row.source)} · {statusLabel(row)}</p><ItemFinancials row={row} /></div>; }
 export function ReportsItemTrackingPage() {
   const period = usePeriod();
-  const params = useSearch({ strict: false }) as { item?: string };
+  const params = { item: typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("item") ?? undefined };
   const [search, setSearch] = useState(""); const [selected, setSelected] = useState<any>(null);
   const [sheet, setSheet] = useState<"movements" | "beneficiaries" | null>(null);
   const searchFn = useServerFn(searchReportItems); const trackingFn = useServerFn(getReportItemTracking);

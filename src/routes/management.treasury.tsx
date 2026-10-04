@@ -20,7 +20,7 @@ function today() {
 }
 
 function money(value: number | null | undefined) {
-  return (value ?? 0).toLocaleString("ar-LY", { maximumFractionDigits: 3 });
+  return formatMoney(value);
 }
 
 function TreasuryPage() {
@@ -64,9 +64,9 @@ function TreasuryPage() {
       </div>
       {error && <Card className="p-4 text-destructive">تعذر تحميل الخزينة: {(error as Error).message}</Card>}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Stat label="إجمالي قيمة الصرف" value={`${money(data?.total_dispensed_value)} د.ل`} />
-        <Stat label="قيمة Actual" value={`${money(data?.actual_value)} د.ل`} />
-        <Stat label="قيمة PHIF" value={`${money(data?.phif_value)} د.ل`} />
+        <Stat label="إجمالي قيمة الصرف" value={money(data?.total_dispensed_value)} />
+        <Stat label="قيمة Actual" value={money(data?.actual_value)} />
+        <Stat label="قيمة PHIF" value={money(data?.phif_value)} />
         <Stat label="عدد الفواتير" value={data?.invoice_count ?? 0} />
         <Stat label="عدد الأصناف" value={data?.item_count ?? 0} />
         <Stat label="المستفيدون" value={data?.unique_patient_count ?? 0} />
