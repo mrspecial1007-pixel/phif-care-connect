@@ -20,7 +20,7 @@ function today() {
 }
 
 function money(value: number | null | undefined) {
-  return (value ?? 0).toLocaleString("ar-LY", { maximumFractionDigits: 3 });
+  return formatMoney(value);
 }
 
 function TreasuryPage() {
@@ -64,9 +64,9 @@ function TreasuryPage() {
       </div>
       {error && <Card className="p-4 text-destructive">تعذر تحميل الخزينة: {(error as Error).message}</Card>}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Stat label="إجمالي قيمة الصرف" value={`${money(data?.total_dispensed_value)} د.ل`} />
-        <Stat label="قيمة Actual" value={`${money(data?.actual_value)} د.ل`} />
-        <Stat label="قيمة PHIF" value={`${money(data?.phif_value)} د.ل`} />
+        <Stat label="إجمالي قيمة الصرف" value={money(data?.total_dispensed_value)} />
+        <Stat label="قيمة Actual" value={money(data?.actual_value)} />
+        <Stat label="قيمة PHIF" value={money(data?.phif_value)} />
         <Stat label="عدد الفواتير" value={data?.invoice_count ?? 0} />
         <Stat label="عدد الأصناف" value={data?.item_count ?? 0} />
         <Stat label="المستفيدون" value={data?.unique_patient_count ?? 0} />
@@ -79,7 +79,7 @@ function TreasuryPage() {
         <div className="grid gap-2 sm:grid-cols-2">
           {isLoading && <div className="p-4 text-muted-foreground">جاري التحميل...</div>}
           {(data?.details ?? []).map((row: any) => (
-            <InvoiceSummaryCard key={row.id} name={row.beneficiary_name} number={row.invoice_number || row.invoice_key} date={row.dispensing_date} count={row.item_count} revenue={row.actual_value + row.phif_value} status={`Actual ${formatMoney(row.actual_value)} · PHIF ${formatMoney(row.phif_value)}`} onClick={() => navigate({ to: "/phif-invoices/$id", params: { id: row.id } })} />
+            <InvoiceSummaryCard key={row.id} name={row.beneficiary_name} number={row.invoice_number || row.invoice_key} date={row.dispensing_date} count={row.item_count} revenue={Number(row.actual_value || 0) + Number(row.phif_value || 0)} status={`Actual ${formatMoney(row.actual_value)} · PHIF ${formatMoney(row.phif_value)}`} onClick={() => navigate({ to: "/phif-invoices/$id", params: { id: row.id } })} />
           ))}
           {!isLoading && (data?.details ?? []).length === 0 && <div className="p-4 text-center text-muted-foreground">لا توجد نتائج</div>}
         </div>
