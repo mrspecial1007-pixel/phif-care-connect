@@ -2,13 +2,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { usePatientStatuses } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
 import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff, Star } from "lucide-react";
 import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard, statusMeta } from "@/components/PatientCard";
 
-export const Route = createFileRoute("/")({ component: () => <Gate><Dashboard /></Gate> });
+export const Route = createFileRoute("/")({
+  component: () => <Gate><Dashboard /></Gate>,
+  head: () => ({ meta: [{ title: "المستفيدون — PHIF Tracker" }, { name: "description", content: "متابعة المستفيدين ومواعيد صرف الأدوية" }, { property: "og:title", content: "المستفيدون — PHIF Tracker" }, { property: "og:description", content: "متابعة المستفيدين ومواعيد صرف الأدوية" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
+});
 
 function Dashboard() {
   const { data: rows, isLoading, error, refetch } = usePatientStatuses();
