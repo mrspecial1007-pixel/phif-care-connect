@@ -13,7 +13,7 @@ import { getMonthlyManagementReport, getOfficialMonthlyReportExport, getProfitAn
 import { toast } from "sonner";
 
 const dateString = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Tripoli", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-const monthRange = (month: string) => { const [y, m] = month.split("-").map(Number); return { dateFrom: dateString(new Date(y, m - 1, 1)), dateTo: dateString(new Date(y, m, 0)) }; };
+const monthRange = (month: string) => { const [y, m] = month.split("-").map(Number); return { dateFrom: `${month}-01`, dateTo: `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` }; };
 const thisMonth = () => dateString(new Date()).slice(0, 7);
 const sourceLabel = (s: string) => s === "actual" ? "Actual" : s === "phif" ? "PHIF Supplier" : "كل المصادر";
 const percent = (v: number) => `${Math.round(v * 100)}%`;
