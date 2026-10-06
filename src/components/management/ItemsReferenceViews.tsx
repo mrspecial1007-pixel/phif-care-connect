@@ -50,7 +50,7 @@ export function ItemsReferencePage() {
 
   return <div className="space-y-4" dir="rtl">
     <header className="space-y-3">
-      <ReportBackLink to="/management/reports" label="مركز التقارير" />
+      <ReportBackLink to="/management/reports/items" label="الأصناف" />
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0"><h1 className="text-xl font-bold">الأصناف</h1><p className="mt-1 text-sm text-muted-foreground">مرجع الأدوية مرتب حسب الاسم العلمي</p></div>
         <Button size="sm" className="shrink-0" onClick={() => undefined}><PackagePlus className="size-4" />إضافة صنف</Button>
@@ -91,7 +91,7 @@ export function ItemReferenceDetailsPage({ itemId }: { itemId: string }) {
       <ReportBackLink to="/management/reports" label="مركز التقارير" />
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0"><p className="text-xs text-muted-foreground">تعريف الصنف العلمي</p><h1 className="truncate text-xl font-bold" dir="ltr">{item.ingredient}</h1><p className="mt-1 text-sm text-muted-foreground">{item.strength} · {item.form}</p></div>
-        <Button size="icon" variant="outline" className="shrink-0" aria-label="تعديل تعريف الصنف" title="تعديل تعريف الصنف" onClick={() => undefined}><Edit3 className="size-4" /></Button>
+        <Button size="sm" variant="outline" className="shrink-0" onClick={() => undefined}><Edit3 className="size-4" />تعديل التعريف</Button>
       </div>
       <SourceBadges sources={item.sources} />
     </header>
