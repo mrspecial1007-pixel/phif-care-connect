@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { Card } from "@/components/ui/card";
-import { BarChart3, LineChart, TrendingUp } from "lucide-react";
+import { BarChart3, Boxes, LineChart, TrendingUp } from "lucide-react";
 
 export const Route = createFileRoute("/management/reports")({
   component: ReportsLandingPage,
@@ -9,6 +9,12 @@ export const Route = createFileRoute("/management/reports")({
 });
 
 const reportCards = [
+  {
+    to: "/management/reports/items",
+    title: "الأصناف",
+    desc: "مرجع الأدوية بالاسم العلمي",
+    icon: Boxes,
+  },
   {
     to: "/management/reports/summary",
     title: "التقرير الشامل",
@@ -41,7 +47,7 @@ function ReportsLandingPage() {
         <h1 className="text-xl font-bold">مركز التقارير</h1>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         {reportCards.map((card) => {
           const Icon = card.icon;
           return (
