@@ -96,7 +96,7 @@ function PhifInvoicesPage() {
         </Card>
       ) : (
         <div className="grid gap-2">
-          {data!.rows.map((invoice) => (
+          {data!.rows.map((invoice: PhifInvoiceArchiveRow) => (
             <InvoiceCard key={invoice.id} invoice={invoice} />
           ))}
         </div>

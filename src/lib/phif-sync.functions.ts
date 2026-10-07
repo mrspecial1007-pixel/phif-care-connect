@@ -555,7 +555,7 @@ async function currentBridgeSession(admin: any, pharmacyId: string): Promise<Bri
 
 async function getOrCreateBridgeSession(admin: any, pharmacyId: string): Promise<BridgeSessionRecord> {
   const current = await currentBridgeSession(admin, pharmacyId);
-  if (isSessionFresh(current)) {
+  if (current && isSessionFresh(current)) {
     try {
       const verified = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(current.bridge_session_id)}/login-url`, {
         pharmacyId,
@@ -711,13 +711,13 @@ export const createPhifLoginSession = createServerFn({ method: "POST" }).handler
 });
 
 export const inspectPhifTransactions = createServerFn({ method: "POST" }).handler(async () => {
-  return inspectPhifTransactionsForRange({}) as Promise<unknown>;
+  return inspectPhifTransactionsForRange({}) as Promise<any>;
 });
 
 export const inspectPhifTransactionsRange = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => inspectSchema.parse(d))
   .handler(async ({ data }) => {
-    return inspectPhifTransactionsForRange(data) as Promise<unknown>;
+    return inspectPhifTransactionsForRange(data) as Promise<any>;
   });
 
 async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchema>) {

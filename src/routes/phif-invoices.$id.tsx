@@ -128,7 +128,7 @@ function PhifInvoiceDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {invoice.items.map((item, index) => (
+                {invoice.items.map((item: PhifInvoiceArchiveItem, index: number) => (
                   <tr key={item.id} className="align-top border-b last:border-b-0">
                     <td className="p-2">
                       <div className="flex gap-2">
