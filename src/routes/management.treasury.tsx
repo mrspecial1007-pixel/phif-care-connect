@@ -1,24 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { InvoiceSummaryCard, formatMoney } from "@/components/management/InvoiceSummaryCard";
 import { ReportBackLink } from "@/components/management/ReportBackLink";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { getProfitAnalysisReport } from "@/lib/management.functions";
+import { getProfitAnalysisReport, savePhifSupplierPurchasePrice } from "@/lib/management.functions";
 import { todayISOLocal } from "@/lib/date";
 
 export const Route = createFileRoute("/management/treasury")({
   component: TreasuryPage,
   head: () => ({
     meta: [
-      { title: "خزينة الصرف — PHIF Tracker" },
+      { title: "خزينة الصرف - PHIF Tracker" },
       { name: "description", content: "عرض فواتير الصرف وقيم Actual وPHIF Supplier والتكلفة والربح المعروف" },
-      { property: "og:title", content: "خزينة الصرف — PHIF Tracker" },
+      { property: "og:title", content: "خزينة الصرف - PHIF Tracker" },
       { property: "og:description", content: "عرض فواتير الصرف وقيم Actual وPHIF Supplier والتكلفة والربح المعروف" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -31,13 +33,9 @@ function money(value: number | null | undefined) {
 }
 
 function financialStatusLabel(invoice: any) {
-  if (invoice?.financial_status === "complete") return "مكتملة";
+  if (invoice?.financial_status === "actual_unmatched") return "Actual يحتاج مطابقة";
   if (invoice?.financial_status === "incomplete_cost") return "تكلفة غير مكتملة";
-  if (invoice?.financial_status === "actual_unmatched") return "Actual يحتاج مراجعة";
   if (invoice?.financial_status === "unit_review") return "وحدة تحتاج مراجعة";
-  if ((invoice?.needs_match_count ?? 0) > 0) return "Actual يحتاج مراجعة";
-  if ((invoice?.unit_review_count ?? 0) > 0) return "وحدة تحتاج مراجعة";
-  if ((invoice?.needs_price_count ?? 0) > 0) return "تكلفة غير مكتملة";
   return "مكتملة";
 }
 
@@ -45,12 +43,22 @@ function sourceLabel(source: string) {
   return source === "phif" ? "PHIF Supplier" : "Actual";
 }
 
+function purchasePriceLabel(item: any) {
+  if (item.source === "actual") {
+    return item.unit_purchase_price === null ? "Actual يحتاج مطابقة" : money(item.unit_purchase_price);
+  }
+  return item.unit_purchase_price === null ? "سعر شراء غير محفوظ" : money(item.unit_purchase_price);
+}
+
 function TreasuryPage() {
   const reportFn = useServerFn(getProfitAnalysisReport);
+  const saveFn = useServerFn(savePhifSupplierPurchasePrice);
+  const queryClient = useQueryClient();
   const [dateFrom, setDateFrom] = useState(todayISOLocal());
   const [dateTo, setDateTo] = useState(todayISOLocal());
   const [source, setSource] = useState<"all" | "actual" | "phif">("all");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
   const filters = useMemo(() => ({ dateFrom, dateTo, source }), [dateFrom, dateTo, source]);
   const { data, isLoading, error } = useQuery({
     queryKey: ["treasury_report", filters],
@@ -59,13 +67,34 @@ function TreasuryPage() {
   });
   const selectedInvoice = data?.invoices?.find((invoice: any) => invoice.invoice_id === selectedInvoiceId) ?? null;
 
+  const saveMutation = useMutation({
+    mutationFn: (input: { itemId: string; purchasePrice: number; purchaseUnit: string }) => saveFn({ data: input }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["treasury_report"] });
+      queryClient.invalidateQueries({ queryKey: ["management_profit_analysis"] });
+      toast.success("تم حفظ سعر الشراء");
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  function saveSupplierPrice(item: any) {
+    const raw = draft[item.item_id] ?? item.unit_purchase_price;
+    const value = Number(raw);
+    const purchaseUnit = String(draft[`${item.item_id}:unit`] ?? item.unit ?? "").trim();
+    if (raw === "" || raw === null || raw === undefined || !Number.isFinite(value) || value < 0 || !purchaseUnit) {
+      toast.error("أدخل سعر شراء ووحدة تسعير واضحة");
+      return;
+    }
+    saveMutation.mutate({ itemId: item.item_id, purchasePrice: value, purchaseUnit });
+  }
+
   return (
     <div className="space-y-4" dir="rtl">
       <ReportBackLink to="/management" label="الإدارة" />
       <div>
         <h1 className="text-xl font-bold">خزينة الصرف</h1>
         <p className="text-sm text-muted-foreground">
-          هذه الصفحة تعرض فواتير الصرف وقيم الأصناف والتكلفة المعروفة، ولا تعرض رصيدًا نقديًا فعليًا.
+          تعرض الصفحة الفواتير وقيم الصرف والتكلفة والربح المعروف دون إنشاء سجل صرف جديد.
         </p>
       </div>
 
@@ -111,7 +140,7 @@ function TreasuryPage() {
               onClick={() => setSelectedInvoiceId(invoice.invoice_id)}
             >
               <span className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                <span>البطاقة: {invoice.insurance_card_number || "—"}</span>
+                <span>البطاقة: {invoice.insurance_card_number || "-"}</span>
                 <span>Actual: {money(invoice.actual_value)}</span>
                 <span>PHIF: {money(invoice.phif_value)}</span>
                 <span>التغطية: {Math.round((invoice.cost_coverage_ratio ?? 0) * 100)}%</span>
@@ -124,12 +153,33 @@ function TreasuryPage() {
         </div>
       </section>
 
-      <TreasuryInvoiceSheet invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} />
+      <TreasuryInvoiceSheet
+        invoice={selectedInvoice}
+        onClose={() => setSelectedInvoiceId(null)}
+        draft={draft}
+        setDraft={setDraft}
+        onSaveSupplierPrice={saveSupplierPrice}
+        saving={saveMutation.isPending}
+      />
     </div>
   );
 }
 
-function TreasuryInvoiceSheet({ invoice, onClose }: { invoice: any; onClose: () => void }) {
+function TreasuryInvoiceSheet({
+  invoice,
+  onClose,
+  draft,
+  setDraft,
+  onSaveSupplierPrice,
+  saving,
+}: {
+  invoice: any;
+  onClose: () => void;
+  draft: Record<string, string>;
+  setDraft: Dispatch<SetStateAction<Record<string, string>>>;
+  onSaveSupplierPrice: (item: any) => void;
+  saving: boolean;
+}) {
   return (
     <Sheet open={Boolean(invoice)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-lg px-4 pb-8 pt-5 sm:mx-auto sm:max-w-2xl" dir="rtl">
@@ -152,21 +202,43 @@ function TreasuryInvoiceSheet({ invoice, onClose }: { invoice: any; onClose: () 
                     <div className="min-w-0">
                       <div className="break-words font-semibold">{item.brand || item.item_name || "صنف غير محدد"}</div>
                       <div className="text-xs text-muted-foreground">
-                        {item.active_ingredient || "—"} · {item.strength || "—"} · {sourceLabel(item.source)} · الكمية {item.quantity_label ?? item.quantity ?? "—"}
+                        {item.active_ingredient || "-"} · {item.strength || "-"} · {sourceLabel(item.source)} · الكمية {item.quantity_label ?? item.quantity ?? "-"}
                       </div>
                     </div>
                     <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs">
-                      {item.match_status === "matched" ? "مكتمل" : "مراجعة"}
+                      {item.match_status === "matched" ? "مكتمل" : financialStatusLabel({ needs_match_count: item.source === "actual" ? 1 : 0, needs_price_count: item.source === "phif" ? 1 : 0 })}
                     </span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
                     <Stat label="قيمة الصرف" value={money(item.invoice_value)} />
-                    <Stat label="سعر الشراء" value={item.unit_purchase_price === null ? "غير مدخل" : money(item.unit_purchase_price)} />
+                    <Stat label="سعر الشراء" value={purchasePriceLabel(item)} />
                     <Stat label="تكلفة الصنف" value={item.purchase_cost === null ? "غير مكتملة" : money(item.purchase_cost)} />
                     <Stat label="الربح" value={item.gross_margin === null ? "غير مكتمل" : money(item.gross_margin)} />
                     <Stat label="الوحدة" value={item.unit || "تحتاج مراجعة"} />
                     <Stat label="المصدر" value={sourceLabel(item.source)} />
                   </div>
+                  {item.source === "phif" && (
+                    <div className="mt-3 grid gap-2 rounded-md border p-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                      <label className="space-y-1">
+                        <span>سعر الشراء</span>
+                        <Input
+                          inputMode="decimal"
+                          value={draft[item.item_id] ?? item.unit_purchase_price ?? ""}
+                          onChange={(event) => setDraft((current) => ({ ...current, [item.item_id]: event.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span>وحدة السعر</span>
+                        <Input
+                          value={draft[`${item.item_id}:unit`] ?? item.unit ?? ""}
+                          onChange={(event) => setDraft((current) => ({ ...current, [`${item.item_id}:unit`]: event.target.value }))}
+                        />
+                      </label>
+                      <Button className="self-end" disabled={saving} onClick={() => onSaveSupplierPrice(item)}>
+                        {item.unit_purchase_price === null ? "حفظ" : "تعديل"}
+                      </Button>
+                    </div>
+                  )}
                 </Card>
               ))}
             </div>

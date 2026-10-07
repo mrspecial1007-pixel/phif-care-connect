@@ -105,8 +105,12 @@ export function ReportsSummaryPage() {
   </div>;
 }
 
+function purchasePriceLabel(row: any) {
+  if (row.source === "actual") return row.unit_purchase_price === null ? "Actual يحتاج مطابقة" : formatMoney(row.unit_purchase_price);
+  return row.unit_purchase_price === null ? "سعر شراء غير محفوظ" : formatMoney(row.unit_purchase_price);
+}
 function ItemFinancials({ row }: { row: any }) {
-  return <div className="grid grid-cols-3 gap-2 border-t pt-2 text-xs"><div>قيمة الصرف<strong className="block break-words">{formatMoney(row.invoice_value)}</strong></div><div>التكلفة<strong className="block break-words">{formatMoney(row.purchase_cost)}</strong></div><div>الربح<strong className="block break-words text-emerald-700">{formatMoney(row.gross_margin)}</strong></div></div>;
+  return <div className="grid grid-cols-2 gap-2 border-t pt-2 text-xs sm:grid-cols-4"><div>قيمة الصرف<strong className="block break-words">{formatMoney(row.invoice_value)}</strong></div><div>سعر الشراء<strong className="block break-words">{purchasePriceLabel(row)}</strong></div><div>التكلفة<strong className="block break-words">{formatMoney(row.purchase_cost)}</strong></div><div>الربح<strong className="block break-words text-emerald-700">{formatMoney(row.gross_margin)}</strong></div></div>;
 }
 function Movement({ row }: { row: any }) { return <div className="space-y-2 border-b py-3 text-sm"><div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"><div className="min-w-0"><strong>{row.beneficiary_name || "غير محدد"}</strong><p className="text-xs text-muted-foreground">{row.insurance_card_number || "بدون بطاقة"} · {row.invoice_number || row.invoice_key}</p></div><span className="shrink-0">{formatReportDate(row.dispensing_date)}</span></div><p className="text-xs text-muted-foreground">{row.quantity_label ?? row.quantity} · {sourceLabel(row.source)} · {statusLabel(row)}</p><ItemFinancials row={row} /></div>; }
 export function ReportsItemTrackingPage() {

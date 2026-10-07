@@ -111,7 +111,7 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain("reportItemSource(item) === \"phif\"");
     expect(management).toContain("actual_value");
     expect(management).toContain("phif_value");
-    expect(treasury).toContain("لا تعرض رصيدًا نقديًا فعليًا");
+    expect(treasury).toContain("دون إنشاء سجل صرف جديد");
   });
 
   it("renders treasury as invoice cards backed by the profit analysis dataset", () => {
@@ -121,11 +121,14 @@ describe("Tiryaq management and permissions", () => {
     expect(treasury).toContain("setSelectedInvoiceId(invoice.invoice_id)");
     expect(treasury).toContain("TreasuryInvoiceSheet");
     expect(treasury).toContain("Actual: {money(invoice.actual_value)}");
+    expect(treasury).toContain("savePhifSupplierPurchasePrice");
     expect(treasury).not.toContain("actualProfitFn");
   });
 
   it("keeps PHIF Supplier purchase price per invoice item and reports invoice-level finance status", () => {
     const management = readProjectFile("src/lib/management.functions.ts");
+    const treasury = readProjectFile("src/routes/management.treasury.tsx");
+    const reports = readProjectFile("src/components/management/ReportsViews.tsx");
     expect(management).toContain('requireTiryaqPermission("stock_cost_read")');
     expect(management).toContain('.from("phif_invoice_items")');
     expect(management).toContain(".eq(\"id\", data.itemId)");
@@ -136,5 +139,20 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain("needs_price_item_count");
     expect(management).toContain("actual_unmatched_item_count");
     expect(management).toContain("unit_review_item_count");
+    expect(treasury).toContain('item.source === "phif"');
+    expect(treasury).toContain('item.source === "actual"');
+    expect(treasury).toContain("Actual يحتاج مطابقة");
+    expect(treasury).not.toContain("غير مدخل");
+    expect(reports).toContain("purchasePriceLabel");
+    expect(reports).toContain("Actual يحتاج مطابقة");
+  });
+
+  it("uses current PHIF stock cost for Actual profit and keeps PHIF Supplier price item-scoped", () => {
+    const management = readProjectFile("src/lib/management.functions.ts");
+    expect(management).toContain('.from("phif_stock_items")');
+    expect(management).toContain('.eq("is_current", true)');
+    expect(management).toContain("const margin = calculateActualGrossMargin(item, stocks)");
+    expect(management).toContain("const purchaseCost = override !== null && quantity > 0 && unitVerified ? override * quantity : null");
+    expect(management).toContain("phif_financial_fields: fields");
   });
 });

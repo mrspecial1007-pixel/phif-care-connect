@@ -153,6 +153,7 @@ async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
     .from("phif_stock_items")
     .select("id, source_stock_id, generic_ingredient_id, supplier_id, supplier_name, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, cost_price, sale_price, synced_at")
     .eq("pharmacy_id", pharmacyId)
+    .eq("is_current", true)
     .order("synced_at", { ascending: false })
     .limit(5000);
   if (error) throw new Error(error.message);
@@ -207,8 +208,7 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
       invoice,
     };
   }
-  const candidates = stockSnapshotCandidatesForInvoice(item, stocks, invoice?.dispensing_date);
-  const margin = calculateActualGrossMargin(item, candidates);
+  const margin = calculateActualGrossMargin(item, stocks);
   return {
     source,
     invoiceValue: margin.invoiceValue,
