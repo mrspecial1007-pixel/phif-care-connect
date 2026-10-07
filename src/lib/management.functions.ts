@@ -171,6 +171,15 @@ function itemUnit(item: any) {
   return String(item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.phif_financial_fields?.unit ?? "").trim() || null;
 }
 
+function savedPurchaseUnit(item: any) {
+  return String(
+    item.phif_financial_fields?.internal_purchase_unit
+      ?? item.phif_financial_fields?.purchase_price_unit
+      ?? item.phif_financial_fields?.internalPurchaseUnit
+      ?? "",
+  ).trim();
+}
+
 function invoiceItemName(item: any) {
   return [item.brand, item.active_ingredient, item.strength].filter(Boolean).join(" · ") || "صنف غير محدد";
 }
@@ -182,7 +191,7 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
     const override = internalPurchaseOverride(item);
     const quantity = reportNumberValue(item.quantity);
     const unit = itemUnit(item);
-    const purchaseUnit = String(item.phif_financial_fields?.internal_purchase_unit ?? "").trim();
+    const purchaseUnit = savedPurchaseUnit(item);
     const unitVerified = Boolean(purchaseUnit && (!unit || unit.toLowerCase() === purchaseUnit.toLowerCase()));
     const purchaseCost = override !== null && quantity > 0 && unitVerified ? override * quantity : null;
     return {
@@ -246,6 +255,7 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
          supplier: item.supplier ?? profit.stock?.supplier_name ?? null,
          stock_quantity: profit.stock?.stock_quantity ?? null,
          stock_synced_at: profit.stock?.synced_at ?? null,
+         matched_stock_id: profit.stock?.source_stock_id ?? null,
         source: profit.source,
          invoice_value: profit.invoiceValue,
         revenue: profit.revenue,
@@ -257,6 +267,34 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
       };
     });
   return { invoices: dataset.invoices, items: dataset.items, rows, stocks };
+}
+
+function isKnownCostRow(row: any) {
+  return row.purchase_cost !== null && row.purchase_cost !== undefined && row.gross_margin !== null && row.gross_margin !== undefined;
+}
+
+function invoiceFinancialStatus(invoice: any) {
+  if ((invoice.needs_match_count ?? 0) > 0) return "actual_unmatched";
+  if ((invoice.unit_review_count ?? 0) > 0) return "unit_review";
+  if ((invoice.needs_price_count ?? 0) > 0) return "incomplete_cost";
+  return "complete";
+}
+
+function summarizeInvoiceItems(rows: any[]) {
+  const actualRows = rows.filter((row) => row.source === "actual");
+  const phifRows = rows.filter((row) => row.source === "phif");
+  const knownRows = rows.filter(isKnownCostRow);
+  return {
+    revenue: rows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+    actual_value: actualRows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+    phif_value: phifRows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+    known_cost: knownRows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
+    known_profit: knownRows.reduce((sum, row) => sum + reportNumberValue(row.gross_margin), 0),
+    matched_count: knownRows.length,
+    needs_price_count: rows.filter((row) => row.source === "phif" && row.match_status === "needs_purchase_price").length,
+    actual_unmatched_count: rows.filter((row) => row.source === "actual" && row.match_status === "needs_match_review").length,
+    unit_review_count: rows.filter((row) => row.match_status === "pricing_unit_unverified").length,
+  };
 }
 
 async function buildManagementMonthlyReport(data: z.infer<typeof monthlyReportSchema>, permission: "reports_read" | "reports_export") {
@@ -298,73 +336,71 @@ export const getManagementReport = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("reports_read");
-
-    const { data: invoices, error } = await supabaseAdmin
-      .from("phif_invoices")
-      .select("id, invoice_number, invoice_key, beneficiary_name, insurance_card_number, dispensing_date, patient_id")
-      .eq("pharmacy_id", pharmacy_id)
-      .gte("dispensing_date", data.dateFrom)
-      .lte("dispensing_date", data.dateTo)
-      .order("dispensing_date", { ascending: false });
-    if (error) throw new Error(error.message);
-
-    const ids = (invoices ?? []).map((invoice: any) => invoice.id);
-    const items: any[] = [];
-    for (let index = 0; index < ids.length; index += 500) {
-      const batch = ids.slice(index, index + 500);
-      if (batch.length === 0) continue;
-      const { data: rows, error: itemError } = await supabaseAdmin
-        .from("phif_invoice_items")
-        .select("phif_invoice_id, source_classification, quantity, phif_financial_fields")
-        .in("phif_invoice_id", batch);
-      if (itemError) throw new Error(itemError.message);
-      items.push(...(rows ?? []));
-    }
-
-    const invoiceById = new Map((invoices ?? []).map((invoice: any) => [invoice.id, invoice]));
-    const filteredItems = items.filter((item) => {
-      if (data.source === "all") return true;
-      if (data.source === "phif") return item.source_classification === "phif-supplier";
-      return item.source_classification !== "phif-supplier";
-    });
-    const invoiceIdsWithItems = new Set(filteredItems.map((item) => item.phif_invoice_id));
+    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
+    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data);
+    const invoiceMap = new Map<string, any>();
     const uniquePatients = new Set<string>();
-    for (const invoice of invoices ?? []) {
-      if (!invoiceIdsWithItems.has(invoice.id) && data.source !== "all") continue;
-      uniquePatients.add(invoice.patient_id ?? invoice.insurance_card_number ?? invoice.beneficiary_name ?? invoice.id);
+
+    for (const row of rows) {
+      const invoice = invoiceMap.get(row.invoice_id) ?? {
+        id: row.invoice_id,
+        invoice_number: row.invoice_number,
+        invoice_key: row.invoice_key,
+        beneficiary_name: row.beneficiary_name,
+        insurance_card_number: row.insurance_card_number,
+        dispensing_date: row.dispensing_date,
+        item_count: 0,
+        actual_value: 0,
+        phif_value: 0,
+        total_dispensed_value: 0,
+        known_cost: 0,
+        known_profit: 0,
+        matched_count: 0,
+        needs_price_count: 0,
+        needs_match_count: 0,
+        unit_review_count: 0,
+        items: [],
+      };
+      invoice.item_count += 1;
+      invoice.total_dispensed_value += reportNumberValue(row.revenue);
+      if (row.source === "actual") invoice.actual_value += reportNumberValue(row.revenue);
+      if (row.source === "phif") invoice.phif_value += reportNumberValue(row.revenue);
+      if (isKnownCostRow(row)) {
+        invoice.matched_count += 1;
+        invoice.known_cost += reportNumberValue(row.purchase_cost);
+        invoice.known_profit += reportNumberValue(row.gross_margin);
+      } else if (row.match_status === "pricing_unit_unverified") {
+        invoice.unit_review_count += 1;
+      } else if (row.source === "phif") {
+        invoice.needs_price_count += 1;
+      } else {
+        invoice.needs_match_count += 1;
+      }
+      invoice.items.push(row);
+      invoiceMap.set(row.invoice_id, invoice);
+      uniquePatients.add(row.insurance_card_number ?? row.beneficiary_name ?? row.invoice_id);
     }
 
-    const actualValue = filteredItems
-      .filter((item) => item.source_classification !== "phif-supplier")
-      .reduce((sum, item) => sum + itemAmount(item), 0);
-    const phifValue = filteredItems
-      .filter((item) => item.source_classification === "phif-supplier")
-      .reduce((sum, item) => sum + itemAmount(item), 0);
-
-    const details = [...invoiceIdsWithItems].map((id) => {
-      const invoice = invoiceById.get(id);
-      const invoiceItems = filteredItems.filter((item) => item.phif_invoice_id === id);
-      return {
-        id,
-        invoice_number: invoice?.invoice_number ?? null,
-        invoice_key: invoice?.invoice_key ?? null,
-        beneficiary_name: invoice?.beneficiary_name ?? null,
-        insurance_card_number: invoice?.insurance_card_number ?? null,
-        dispensing_date: invoice?.dispensing_date ?? null,
-        item_count: invoiceItems.length,
-        actual_value: invoiceItems.filter((item) => item.source_classification !== "phif-supplier").reduce((sum, item) => sum + itemAmount(item), 0),
-        phif_value: invoiceItems.filter((item) => item.source_classification === "phif-supplier").reduce((sum, item) => sum + itemAmount(item), 0),
-      };
-    });
+    const details = [...invoiceMap.values()].map((invoice) => ({
+      ...invoice,
+      financial_status: invoiceFinancialStatus(invoice),
+      cost_coverage_ratio: invoice.item_count ? invoice.matched_count / invoice.item_count : 0,
+    }));
 
     return {
-      invoice_count: invoiceIdsWithItems.size,
+      invoice_count: details.length,
       unique_patient_count: uniquePatients.size,
-      item_count: filteredItems.length,
-      actual_value: actualValue,
-      phif_value: phifValue,
-      total_dispensed_value: actualValue + phifValue,
+      item_count: rows.length,
+      actual_value: rows.filter((row) => row.source === "actual").reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+      phif_value: rows.filter((row) => row.source === "phif").reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+      total_dispensed_value: rows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
+      known_cost: rows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
+      known_profit: rows.reduce((sum, row) => sum + reportNumberValue(row.gross_margin), 0),
+      matched_item_count: rows.filter(isKnownCostRow).length,
+      needs_price_count: rows.filter((row) => row.source === "phif" && row.match_status === "needs_purchase_price").length,
+      actual_unmatched_count: rows.filter((row) => row.source === "actual" && row.match_status === "needs_match_review").length,
+      unit_review_count: rows.filter((row) => row.match_status === "pricing_unit_unverified").length,
+      cost_coverage_ratio: rows.length ? rows.filter(isKnownCostRow).length / rows.length : 0,
       employee_breakdown_available: false,
       details,
     };
@@ -532,20 +568,26 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
         insurance_card_number: row.insurance_card_number,
         dispensing_date: row.dispensing_date,
         revenue: 0,
+        actual_value: 0,
+        phif_value: 0,
         known_cost: 0,
         known_profit: 0,
         item_count: 0,
          matched_count: 0,
          needs_price_count: 0,
          needs_match_count: 0,
+         unit_review_count: 0,
         items: [],
       };
       invoice.revenue += reportNumberValue(row.revenue);
+      if (row.source === "actual") invoice.actual_value += reportNumberValue(row.revenue);
+      if (row.source === "phif") invoice.phif_value += reportNumberValue(row.revenue);
       invoice.known_cost += reportNumberValue(row.purchase_cost);
       invoice.known_profit += reportNumberValue(row.gross_margin);
       invoice.item_count += 1;
        if (row.gross_margin !== null) invoice.matched_count += 1;
        else if (row.source === "phif" && row.match_status === "needs_purchase_price") invoice.needs_price_count += 1;
+       else if (row.match_status === "pricing_unit_unverified") invoice.unit_review_count += 1;
        else invoice.needs_match_count += 1;
       invoice.items.push(row);
       invoiceMap.set(row.invoice_id, invoice);
@@ -592,6 +634,11 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
       itemMap.set(itemKey, item);
     }
     const knownRows = rows.filter((row) => row.gross_margin !== null);
+    const invoiceRows = [...invoiceMap.values()].map((invoice) => ({
+      ...invoice,
+      financial_status: invoiceFinancialStatus(invoice),
+      cost_coverage_ratio: invoice.item_count ? invoice.matched_count / invoice.item_count : 0,
+    }));
     const beneficiaries = [...beneficiaryMap.values()].map((row) => ({
       ...row,
       invoice_count: row.invoice_ids.size,
@@ -606,6 +653,11 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
         unique_patient_count: beneficiaryMap.size,
         item_count: rows.length,
          matched_count: knownRows.length,
+         complete_invoice_count: invoiceRows.filter((invoice) => invoice.financial_status === "complete").length,
+         incomplete_invoice_count: invoiceRows.filter((invoice) => invoice.financial_status !== "complete").length,
+         needs_price_item_count: rows.filter((row) => row.source === "phif" && row.match_status === "needs_purchase_price").length,
+         actual_unmatched_item_count: rows.filter((row) => row.source === "actual" && row.match_status === "needs_match_review").length,
+         unit_review_item_count: rows.filter((row) => row.match_status === "pricing_unit_unverified").length,
          review_count: rows.length - knownRows.length,
         coverage_ratio: rows.length ? knownRows.length / rows.length : 0,
       },
@@ -618,7 +670,7 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
        top_dispensed_items: [...itemMap.values()].sort((a, b) => b.dispense_count - a.dispense_count).slice(0, 20),
       top_revenue_beneficiaries: beneficiaries.sort((a, b) => b.revenue - a.revenue).slice(0, 20),
       top_profit_beneficiaries: [...beneficiaries].sort((a, b) => b.known_profit - a.known_profit).slice(0, 20),
-      invoices: [...invoiceMap.values()].sort((a, b) => String(b.dispensing_date ?? "").localeCompare(String(a.dispensing_date ?? ""))),
+      invoices: invoiceRows.sort((a, b) => String(b.dispensing_date ?? "").localeCompare(String(a.dispensing_date ?? ""))),
     };
   });
 
@@ -663,6 +715,7 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
        ...(typeof item.phif_financial_fields === "object" && item.phif_financial_fields !== null && !Array.isArray(item.phif_financial_fields) ? item.phif_financial_fields : {}),
       internal_purchase_price: data.purchasePrice,
        internal_purchase_unit: data.purchaseUnit,
+      purchase_price_unit: data.purchaseUnit,
       internal_purchase_price_updated_at: new Date().toISOString(),
     };
     const { error } = await supabaseAdmin

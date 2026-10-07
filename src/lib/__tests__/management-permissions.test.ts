@@ -108,9 +108,33 @@ describe("Tiryaq management and permissions", () => {
     const management = readProjectFile("src/lib/management.functions.ts");
     const treasury = readProjectFile("src/routes/management.treasury.tsx");
     expect(management).toContain("phif_invoice_items");
-    expect(management).toContain("source_classification === \"phif-supplier\"");
+    expect(management).toContain("reportItemSource(item) === \"phif\"");
     expect(management).toContain("actual_value");
     expect(management).toContain("phif_value");
     expect(treasury).toContain("لا تعرض رصيدًا نقديًا فعليًا");
+  });
+
+  it("renders treasury as invoice cards backed by the profit analysis dataset", () => {
+    const treasury = readProjectFile("src/routes/management.treasury.tsx");
+    expect(treasury).toContain("getProfitAnalysisReport");
+    expect(treasury).toContain("(data?.invoices ?? []).map");
+    expect(treasury).toContain("setSelectedInvoiceId(invoice.invoice_id)");
+    expect(treasury).toContain("TreasuryInvoiceSheet");
+    expect(treasury).toContain("Actual: {money(invoice.actual_value)}");
+    expect(treasury).not.toContain("actualProfitFn");
+  });
+
+  it("keeps PHIF Supplier purchase price per invoice item and reports invoice-level finance status", () => {
+    const management = readProjectFile("src/lib/management.functions.ts");
+    expect(management).toContain('requireTiryaqPermission("stock_cost_read")');
+    expect(management).toContain('.from("phif_invoice_items")');
+    expect(management).toContain(".eq(\"id\", data.itemId)");
+    expect(management).toContain("internal_purchase_price: data.purchasePrice");
+    expect(management).toContain("purchase_price_unit: data.purchaseUnit");
+    expect(management).toContain("invoiceFinancialStatus");
+    expect(management).toContain("complete_invoice_count");
+    expect(management).toContain("needs_price_item_count");
+    expect(management).toContain("actual_unmatched_item_count");
+    expect(management).toContain("unit_review_item_count");
   });
 });
