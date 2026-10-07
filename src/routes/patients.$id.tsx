@@ -87,7 +87,7 @@ function Detail() {
   const getPatientPhifInvoices = useServerFn(listPatientPhifInvoices);
   const getPhifMedicationProfile = useServerFn(getPatientPhifMedicationProfile);
   const getPatientCards = useServerFn(listPatientInsuranceCards);
-  const hasTiryaqPhifAccess = session?.pharmacy.name === "صيدلية الترياق الشافي";
+  const hasTiryaqPhifAccess = session?.pharmacy?.name === "صيدلية الترياق الشافي";
   const { data: patientCards } = useQuery({
     enabled: !!id && hasTiryaqPhifAccess,
     queryKey: ["patient_insurance_cards", id],

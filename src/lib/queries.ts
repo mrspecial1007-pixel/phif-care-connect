@@ -119,6 +119,7 @@ export type DispensingTransactionRow = {
   patient_id: string;
   patient_name: string;
   insurance_card_number: string | null;
+  insurance_cards?: { card_number: string; status: "current" | "previous" }[];
   pharmacy_id: string;
   pharmacy_name: string;
   transaction_type: "Partial" | "Remaining" | "Completed" | "PHIF";

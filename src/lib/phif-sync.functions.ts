@@ -427,7 +427,7 @@ function assertBridgeConfigured() {
   return { base: bridgeBaseUrl(), secret };
 }
 
-function isSessionFresh(session: BridgeSessionRecord | undefined) {
+function isSessionFresh(session: BridgeSessionRecord | null | undefined) {
   if (!session?.bridge_session_id || !session.expires_at) return false;
   return Date.parse(session.expires_at) > Date.now() + 60_000;
 }
@@ -555,14 +555,14 @@ async function currentBridgeSession(admin: any, pharmacyId: string): Promise<Bri
 
 async function getOrCreateBridgeSession(admin: any, pharmacyId: string): Promise<BridgeSessionRecord> {
   const current = await currentBridgeSession(admin, pharmacyId);
-  if (isSessionFresh(current)) {
+  if (current && isSessionFresh(current)) {
     try {
-      const verified = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(current!.bridge_session_id)}/login-url`, {
+      const verified = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(current.bridge_session_id)}/login-url`, {
         pharmacyId,
       });
-      return { ...current!, login_url: verified.login_url ?? current!.login_url };
+      return { ...current, login_url: verified.login_url ?? current.login_url };
     } catch {
-      await markBridgeSession(admin, pharmacyId, current!.bridge_session_id, "expired");
+      await markBridgeSession(admin, pharmacyId, current.bridge_session_id, "expired");
     }
   }
   return await storeBridgeSession(admin, pharmacyId, await createBridgeSession(pharmacyId));
@@ -711,13 +711,13 @@ export const createPhifLoginSession = createServerFn({ method: "POST" }).handler
 });
 
 export const inspectPhifTransactions = createServerFn({ method: "POST" }).handler(async () => {
-  return inspectPhifTransactionsForRange({});
+  return inspectPhifTransactionsForRange({}) as Promise<any>;
 });
 
 export const inspectPhifTransactionsRange = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => inspectSchema.parse(d))
   .handler(async ({ data }) => {
-    return inspectPhifTransactionsForRange(data);
+    return inspectPhifTransactionsForRange(data) as Promise<any>;
   });
 
 async function inspectPhifTransactionsForRange(data: z.infer<typeof inspectSchema>) {

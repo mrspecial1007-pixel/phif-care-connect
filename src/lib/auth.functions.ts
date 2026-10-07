@@ -47,7 +47,7 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
         pharmacy_phone: pharm.phone ?? undefined,
         user_id: user.id,
         user_name: user.display_name,
-        user_role: user.role,
+        user_role: user.role === "admin" || user.role === "employee" ? user.role : "employee",
         user_permissions: user.role === "admin" ? adminPermissions() : normalizePermissions(user.permissions),
         unlocked_at: Date.now(),
       });

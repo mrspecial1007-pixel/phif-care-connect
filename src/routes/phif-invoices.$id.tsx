@@ -6,7 +6,7 @@ import { Gate } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { getPhifInvoiceDetail } from "@/lib/phif-invoices.functions";
+import { getPhifInvoiceDetail, type PhifInvoiceArchiveDetail } from "@/lib/phif-invoices.functions";
 import {
   ArrowRight,
   Calendar,
@@ -128,7 +128,7 @@ function PhifInvoiceDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {invoice.items.map((item, index) => (
+                {invoice.items.map((item: PhifInvoiceArchiveDetail["items"][number], index: number) => (
                   <tr key={item.id} className="align-top border-b last:border-b-0">
                     <td className="p-2">
                       <div className="flex gap-2">
