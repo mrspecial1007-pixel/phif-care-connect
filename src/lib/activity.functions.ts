@@ -76,7 +76,7 @@ export const exportAllData = createServerFn({ method: "GET" }).handler(async () 
   const { served, anyTx, excluded, accessTableEnforced } = await patientAccessSetsForSession(supabaseAdmin, sessionPharmacyId);
   const [patients, cycles, txs, audit, pharmacies] = await Promise.all([
     supabaseAdmin.from("patients").select("*"),
-    supabaseAdmin.from("dispensing_cycles").select("*").eq("pharmacy_id", sessionPharmacyId),
+    supabaseAdmin.from("dispensing_cycles").select("*").in("patient_id", [...served]),
     supabaseAdmin.from("dispensing_transactions").select("*, patients(patient_name), pharmacies(name)").eq("pharmacy_id", sessionPharmacyId),
     supabaseAdmin.from("audit_log").select("*").eq("pharmacy_id", sessionPharmacyId),
     supabaseAdmin.from("pharmacies").select("id, name, address, phone, created_at").eq("id", sessionPharmacyId),
