@@ -170,6 +170,13 @@ function idsMatchOrMissing(a: unknown, b: unknown) {
   return !left || !right || left === right;
 }
 
+function compatibleText(a: unknown, b: unknown) {
+  const left = normalizeText(a);
+  const right = normalizeText(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
 function normalizedUnit(value: unknown) {
   const unit = normalizeText(value);
   const aliases: Record<string, string> = {
@@ -198,14 +205,19 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
 
   const brand = normalizeText(item.brand);
   const strength = normalizeStrength(item.strength);
-  const brandProductId = pickString(item.metadata, ["supplier_brand_name_id", "brand_product_id", "brand_id"]);
-  const supplierId = pickString(item.metadata, ["supplier_id", "medical_suppliers_id"]);
-  const genericId = pickString(item.metadata, ["generic_ingredient_id", "generic_id"]);
+  const brandProductId = pickString(item.metadata, ["supplier_brand_name_id", "brand_product_id", "brand_id"])
+    ?? pickString(item.phif_financial_fields, ["supplier_brand_name_id", "brand_product_id", "brand_id"]);
+  const supplierId = pickString(item.metadata, ["supplier_id", "medical_suppliers_id"])
+    ?? pickString(item.phif_financial_fields, ["supplier_id", "medical_suppliers_id"]);
+  const genericId = pickString(item.metadata, ["generic_ingredient_id", "generic_id", "genaric_names_id"])
+    ?? pickString(item.phif_financial_fields, ["generic_ingredient_id", "generic_id", "genaric_names_id"]);
   const supplier = normalizeText((item as InvoiceItemLike & { supplier?: string | null }).supplier);
-  const packageQuantity = pickString(item.metadata, ["package_quantity", "packageQuantity"]);
-  const stripsQuantity = pickString(item.metadata, ["strips_quantity", "stripsQuantity"]);
+  const packageQuantity = pickString(item.metadata, ["package_quantity", "packageQuantity"])
+    ?? pickString(item.phif_financial_fields, ["package_quantity", "packageQuantity"]);
+  const stripsQuantity = pickString(item.metadata, ["strips_quantity", "stripsQuantity"])
+    ?? pickString(item.phif_financial_fields, ["strips_quantity", "stripsQuantity"]);
 
-  if (!brand && !brandProductId) return { status: "needs_match_review", reason: "unsafe_identity" };
+  if (!brand && !brandProductId && !genericId) return { status: "needs_match_review", reason: "unsafe_identity" };
 
   const itemPricingUnit = invoiceUnit(item);
   const matches = candidates.filter((stock) => {
@@ -216,9 +228,9 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
     if (!idsMatchOrMissing(packageQuantity, stock.package_quantity)) return false;
     if (!idsMatchOrMissing(stripsQuantity, stock.strips_quantity)) return false;
     if (itemPricingUnit && stock.dosage_unit && normalizedUnit(itemPricingUnit) !== normalizedUnit(stock.dosage_unit)) return false;
-    if (brand && normalizeText(stock.brand_name) !== brand) return false;
+    if (brand && !compatibleText(stock.brand_name, brand)) return false;
     if (strength && normalizeStrength(stock.strength) !== strength) return false;
-    return Boolean(brandProductId || brand);
+    return Boolean(brandProductId || brand || (genericId && strength));
   });
 
   // Repeated immutable snapshots of the same stock product are not competing products.
@@ -254,20 +266,11 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   }
 
   const quantity = toNumber(item.quantity);
-  const unitPrice = invoiceUnitPrice(item);
   const costPrice = toNumber(match.stock.cost_price);
-  const derivedUnitPrice = quantity && quantity > 0 ? invoiceValue / quantity : 0;
-  const unitMatchesInvoice = quantity !== null && quantity > 0 && (unitPrice <= 0 || Math.abs(quantity * unitPrice - invoiceValue) < 0.01);
   const itemUnit = invoiceUnit(item);
   const stockUnit = match.stock.dosage_unit;
-  // Some archived invoices contain no unit field. In that case require the recorded
-  // invoice per-unit sale price to reconcile with the stock's per-unit sale price.
-  // This is evidence of the pricing unit, never a replacement for invoice revenue.
-  const stockSale = toNumber(match.stock.sale_price);
-  const unitsAgree = itemUnit && stockUnit
-    ? normalizedUnit(itemUnit) === normalizedUnit(stockUnit)
-    : !itemUnit && Boolean(stockUnit && stockSale !== null && derivedUnitPrice > 0 && Math.abs(stockSale - derivedUnitPrice) < 0.001);
-  if (quantity === null || costPrice === null || invoiceValue <= 0 || !unitMatchesInvoice || !unitsAgree) {
+  const unitsAgree = itemUnit && stockUnit ? normalizedUnit(itemUnit) === normalizedUnit(stockUnit) : true;
+  if (quantity === null || quantity <= 0 || costPrice === null || invoiceValue <= 0 || !unitsAgree) {
     return {
       status: "pricing_unit_unverified",
       invoiceValue,

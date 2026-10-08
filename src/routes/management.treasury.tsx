@@ -68,7 +68,7 @@ function TreasuryPage() {
   const selectedInvoice = data?.invoices?.find((invoice: any) => invoice.invoice_id === selectedInvoiceId) ?? null;
 
   const saveMutation = useMutation({
-    mutationFn: (input: { itemId: string; purchasePrice: number; purchaseUnit: string }) => saveFn({ data: input }),
+    mutationFn: (input: { itemId: string; purchaseCostMode: "total_dispensed_cost" | "unit_price"; purchaseCostValue: number; purchaseCostUnit?: string }) => saveFn({ data: input }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["treasury_report"] });
       queryClient.invalidateQueries({ queryKey: ["management_profit_analysis"] });
@@ -80,12 +80,13 @@ function TreasuryPage() {
   function saveSupplierPrice(item: any) {
     const raw = draft[item.item_id] ?? item.unit_purchase_price;
     const value = Number(raw);
-    const purchaseUnit = String(draft[`${item.item_id}:unit`] ?? item.unit ?? "").trim();
-    if (raw === "" || raw === null || raw === undefined || !Number.isFinite(value) || value < 0 || !purchaseUnit) {
-      toast.error("أدخل سعر شراء ووحدة تسعير واضحة");
+    const purchaseCostMode = (draft[`${item.item_id}:mode`] ?? item.purchase_cost_mode ?? "total_dispensed_cost") as "total_dispensed_cost" | "unit_price";
+    const purchaseCostUnit = String(draft[`${item.item_id}:unit`] ?? item.unit ?? "").trim();
+    if (raw === "" || raw === null || raw === undefined || !Number.isFinite(value) || value < 0 || (purchaseCostMode === "unit_price" && !purchaseCostUnit)) {
+      toast.error("أدخل تكلفة شراء واضحة");
       return;
     }
-    saveMutation.mutate({ itemId: item.item_id, purchasePrice: value, purchaseUnit });
+    saveMutation.mutate({ itemId: item.item_id, purchaseCostMode, purchaseCostValue: value, purchaseCostUnit: purchaseCostMode === "unit_price" ? purchaseCostUnit : undefined });
   }
 
   return (
@@ -220,7 +221,7 @@ function TreasuryInvoiceSheet({
                   {item.source === "phif" && (
                     <div className="mt-3 grid gap-2 rounded-md border p-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                       <label className="space-y-1">
-                        <span>سعر الشراء</span>
+                        <span>{(draft[`${item.item_id}:mode`] ?? item.purchase_cost_mode ?? "total_dispensed_cost") === "unit_price" ? "سعر الوحدة" : "تكلفة الكمية المصروفة"}</span>
                         <Input
                           inputMode="decimal"
                           value={draft[item.item_id] ?? item.unit_purchase_price ?? ""}
@@ -228,8 +229,22 @@ function TreasuryInvoiceSheet({
                         />
                       </label>
                       <label className="space-y-1">
+                        <span>طريقة الاحتساب</span>
+                        <Select
+                          value={draft[`${item.item_id}:mode`] ?? item.purchase_cost_mode ?? "total_dispensed_cost"}
+                          onValueChange={(value) => setDraft((current) => ({ ...current, [`${item.item_id}:mode`]: value }))}
+                        >
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="total_dispensed_cost">تكلفة الكمية المصروفة</SelectItem>
+                            <SelectItem value="unit_price">سعر الوحدة</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </label>
+                      <label className="space-y-1">
                         <span>وحدة السعر</span>
                         <Input
+                          disabled={(draft[`${item.item_id}:mode`] ?? item.purchase_cost_mode ?? "total_dispensed_cost") !== "unit_price"}
                           value={draft[`${item.item_id}:unit`] ?? item.unit ?? ""}
                           onChange={(event) => setDraft((current) => ({ ...current, [`${item.item_id}:unit`]: event.target.value }))}
                         />

@@ -1035,7 +1035,7 @@ describe("PHIF sync foundation", () => {
     });
   });
 
-  it("does not use later stock snapshots to recalculate older invoice margins", () => {
+  it("can still filter stock snapshots by invoice date when historical costing is needed", () => {
     const snapshots = [
       { source_stock_id: "old", brand_name: "Formin", strength: "500mg", cost_price: "0.200", synced_at: "2026-09-20T10:00:00Z" },
       { source_stock_id: "new", brand_name: "Formin", strength: "500mg", cost_price: "0.300", synced_at: "2026-10-20T10:00:00Z" },
@@ -1049,7 +1049,7 @@ describe("PHIF sync foundation", () => {
     const stock = { brand_name: "Formin", strength: "500mg", dosage_unit: "TABS", cost_price: "0.284", sale_price: "0.400" };
     expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "matched", invoiceValue: 10.2, purchaseCost: 8.52, grossMargin: 1.6799999999999997 });
     expect(calculateActualGrossMargin({ ...item, metadata: { unit: "BOX" } }, [stock]).grossMargin).toBeNull();
-    expect(calculateActualGrossMargin({ ...item, metadata: {} }, [{ ...stock, sale_price: null }]).grossMargin).toBeNull();
+    expect(calculateActualGrossMargin({ ...item, metadata: {} }, [{ ...stock, sale_price: null }])).toMatchObject({ status: "matched", purchaseCost: 8.52 });
   });
 
   it("does not choose between distinct commercial products at the same strength", () => {

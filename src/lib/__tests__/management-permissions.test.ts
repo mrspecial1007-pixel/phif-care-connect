@@ -132,8 +132,8 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain('requireTiryaqPermission("stock_cost_read")');
     expect(management).toContain('.from("phif_invoice_items")');
     expect(management).toContain(".eq(\"id\", data.itemId)");
-    expect(management).toContain("internal_purchase_price: data.purchasePrice");
-    expect(management).toContain("purchase_price_unit: data.purchaseUnit");
+    expect(management).toContain("internal_purchase_cost_mode: data.purchaseCostMode");
+    expect(management).toContain("internal_purchase_cost_value: purchaseValue");
     expect(management).toContain("invoiceFinancialStatus");
     expect(management).toContain("complete_invoice_count");
     expect(management).toContain("needs_price_item_count");
@@ -152,7 +152,8 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain('.from("phif_stock_items")');
     expect(management).toContain('.eq("is_current", true)');
     expect(management).toContain("const margin = calculateActualGrossMargin(item, stocks)");
-    expect(management).toContain("const purchaseCost = override !== null && quantity > 0 && unitVerified ? override * quantity : null");
+    expect(management).toContain("purchaseMode === \"total_dispensed_cost\"");
+    expect(management).toContain("override * quantity");
     expect(management).toContain("phif_financial_fields: fields");
   });
 });

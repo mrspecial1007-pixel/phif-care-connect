@@ -45,8 +45,11 @@ const itemTrackingSchema = itemSearchSchema.extend({
 
 const supplierPurchaseOverrideSchema = z.object({
   itemId: z.string().uuid(),
-  purchasePrice: z.number().min(0).max(1_000_000),
-  purchaseUnit: z.string().trim().min(1).max(40),
+  purchasePrice: z.number().min(0).max(1_000_000).optional(),
+  purchaseUnit: z.string().trim().min(1).max(40).optional(),
+  purchaseCostMode: z.enum(["total_dispensed_cost", "unit_price"]).default("total_dispensed_cost"),
+  purchaseCostValue: z.number().min(0).max(1_000_000).optional(),
+  purchaseCostUnit: z.string().trim().min(1).max(40).optional(),
 });
 
 function moneyValue(fields: Record<string, unknown> | null | undefined, keys: string[]) {
@@ -160,9 +163,10 @@ async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
   return rows ?? [];
 }
 
-function internalPurchaseOverride(item: any): number | null {
-  const raw = item.phif_financial_fields?.internal_purchase_price
-      ?? item.phif_financial_fields?.internalPurchasePrice;
+function internalPurchaseValue(item: any): number | null {
+  const raw = item.phif_financial_fields?.internal_purchase_cost_value
+    ?? item.phif_financial_fields?.internal_purchase_price
+    ?? item.phif_financial_fields?.internalPurchasePrice;
   if (raw === null || raw === undefined || raw === "") return null;
   const value = Number(raw);
   return Number.isFinite(value) && value >= 0 ? value : null;
@@ -174,11 +178,18 @@ function itemUnit(item: any) {
 
 function savedPurchaseUnit(item: any) {
   return String(
-    item.phif_financial_fields?.internal_purchase_unit
+    item.phif_financial_fields?.internal_purchase_cost_unit
+      ?? item.phif_financial_fields?.internal_purchase_unit
       ?? item.phif_financial_fields?.purchase_price_unit
       ?? item.phif_financial_fields?.internalPurchaseUnit
       ?? "",
   ).trim();
+}
+
+function savedPurchaseMode(item: any): "total_dispensed_cost" | "unit_price" {
+  const mode = String(item.phif_financial_fields?.internal_purchase_cost_mode ?? "").trim();
+  if (mode === "total_dispensed_cost" || mode === "unit_price") return mode;
+  return "unit_price";
 }
 
 function invoiceItemName(item: any) {
@@ -189,12 +200,19 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
   const source = reportItemSource(item);
   const invoiceValue = invoiceItemValue(item);
   if (source === "phif") {
-    const override = internalPurchaseOverride(item);
+    const override = internalPurchaseValue(item);
     const quantity = reportNumberValue(item.quantity);
     const unit = itemUnit(item);
     const purchaseUnit = savedPurchaseUnit(item);
-    const unitVerified = Boolean(purchaseUnit && (!unit || unit.toLowerCase() === purchaseUnit.toLowerCase()));
-    const purchaseCost = override !== null && quantity > 0 && unitVerified ? override * quantity : null;
+    const purchaseMode = savedPurchaseMode(item);
+    const unitVerified = purchaseMode === "total_dispensed_cost" || Boolean(purchaseUnit && (!unit || unit.toLowerCase() === purchaseUnit.toLowerCase()));
+    const purchaseCost = override !== null && unitVerified
+      ? purchaseMode === "total_dispensed_cost"
+        ? override
+        : quantity > 0
+          ? override * quantity
+          : null
+      : null;
     return {
       source,
       invoiceValue,
@@ -251,7 +269,8 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         quantity: item.quantity,
          quantity_label: reportItemQuantityLabel(item, profit.stock),
          identity_key: reportDrugIdentityKey(item, "scientific"),
-          unit: (profit.source === "phif" ? String(item.phif_financial_fields?.internal_purchase_unit ?? "").trim() || itemUnit(item) : itemUnit(item) ?? profit.stock?.dosage_unit) ?? null,
+          purchase_cost_mode: profit.source === "phif" ? savedPurchaseMode(item) : null,
+          unit: (profit.source === "phif" ? String(item.phif_financial_fields?.internal_purchase_cost_unit ?? item.phif_financial_fields?.internal_purchase_unit ?? "").trim() || itemUnit(item) : itemUnit(item) ?? profit.stock?.dosage_unit) ?? null,
          supplier: item.supplier ?? profit.stock?.supplier_name ?? null,
          stock_quantity: profit.stock?.stock_quantity ?? null,
          stock_synced_at: profit.stock?.synced_at ?? null,
@@ -701,9 +720,17 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     if (item.source_classification !== "phif-supplier") {
       throw new Error("Internal purchase price is only available for PHIF Supplier items");
     }
-    if (reportNumberValue(item.quantity) <= 0) throw new Error("كمية الصنف غير واضحة؛ لا يمكن حساب تكلفة الشراء");
+    const purchaseValue = data.purchaseCostValue ?? data.purchasePrice;
+    if (purchaseValue === undefined) throw new Error("Purchase cost is required");
+    if (data.purchaseCostMode === "unit_price" && reportNumberValue(item.quantity) <= 0) {
+      throw new Error("Invoice item quantity is required for unit-price purchase cost");
+    }
     const recordedUnit = String(item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? (item.metadata.unit ?? item.metadata.dosage_unit ?? item.metadata.quantity_unit ?? "") : "").trim();
-    if (recordedUnit && recordedUnit.toLowerCase() !== data.purchaseUnit.toLowerCase()) throw new Error("وحدة سعر الشراء لا تطابق وحدة كمية الفاتورة");
+    const purchaseUnit = data.purchaseCostUnit ?? data.purchaseUnit;
+    if (data.purchaseCostMode === "unit_price" && !purchaseUnit) throw new Error("Purchase cost unit is required");
+    if (data.purchaseCostMode === "unit_price" && recordedUnit && purchaseUnit && recordedUnit.toLowerCase() !== purchaseUnit.toLowerCase()) {
+      throw new Error("Purchase cost unit does not match invoice item unit");
+    }
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from("phif_invoices")
       .select("id, pharmacy_id")
@@ -712,10 +739,13 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     if (invoiceError) throw new Error(invoiceError.message);
     if (!invoice || invoice.pharmacy_id !== pharmacy_id) throw new Error("Invoice item not found");
     const fields = {
-       ...(typeof item.phif_financial_fields === "object" && item.phif_financial_fields !== null && !Array.isArray(item.phif_financial_fields) ? item.phif_financial_fields : {}),
-      internal_purchase_price: data.purchasePrice,
-       internal_purchase_unit: data.purchaseUnit,
-      purchase_price_unit: data.purchaseUnit,
+      ...(typeof item.phif_financial_fields === "object" && item.phif_financial_fields !== null && !Array.isArray(item.phif_financial_fields) ? item.phif_financial_fields : {}),
+      internal_purchase_cost_mode: data.purchaseCostMode,
+      internal_purchase_cost_value: purchaseValue,
+      internal_purchase_cost_unit: data.purchaseCostMode === "unit_price" ? purchaseUnit : null,
+      internal_purchase_price: purchaseValue,
+      internal_purchase_unit: data.purchaseCostMode === "unit_price" ? purchaseUnit : null,
+      purchase_price_unit: data.purchaseCostMode === "unit_price" ? purchaseUnit : null,
       internal_purchase_price_updated_at: new Date().toISOString(),
     };
     const { error } = await supabaseAdmin
