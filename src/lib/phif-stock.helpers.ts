@@ -119,15 +119,22 @@ function normalizeText(value: unknown) {
   return String(value ?? "")
     .trim()
     .toLowerCase()
+    .replace(/[µμ]/g, "mc")
     .replace(/\s+/g, " ")
-    .replace(/[^\p{L}\p{N}.+% -]/gu, "");
+    .replace(/[^\p{L}\p{N}.+% -]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeStrength(value: unknown) {
-  return normalizeText(value)
+  const compact = normalizeText(value)
     .replace(/\s+/g, "")
+    .replace(/mcg/g, "mcg")
     .replace(/iu\/?ml/g, "iu")
     .replace(/^u(\d+)/, "$1iu");
+  return compact
+    .replace(/(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)(mg|mcg|iu|g)\b/g, "$1$3/$2$3")
+    .replace(/\bu(\d+)/g, "$1iu");
 }
 
 function pickString(fields: Record<string, unknown> | null | undefined, keys: string[]) {
@@ -180,10 +187,44 @@ function compatibleText(a: unknown, b: unknown) {
   return left === right || left.includes(right) || right.includes(left);
 }
 
+function canonicalTextToken(token: string) {
+  const normalized = normalizeStrength(token).replace(/^[.\-]+|[.\-]+$/g, "");
+  const aliases: Record<string, string> = {
+    tab: "tabs",
+    tablet: "tabs",
+    tablets: "tabs",
+    tabs: "tabs",
+    cap: "caps",
+    capsule: "caps",
+    capsules: "caps",
+    caps: "caps",
+    inj: "inj",
+    injection: "inj",
+    injections: "inj",
+    injectable: "inj",
+    pen: "pen",
+    pens: "pen",
+    vial: "vial",
+    vials: "vial",
+    amp: "amp",
+    ampoule: "amp",
+    ampoules: "amp",
+    solostar: "pen",
+  };
+  return aliases[normalized] ?? normalized;
+}
+
+function textTokens(value: unknown) {
+  return normalizeText(value)
+    .split(/[\s/+*,;:_-]+/)
+    .map(canonicalTextToken)
+    .filter((token) => token.length >= 2);
+}
+
 function tokenCompatibleText(a: unknown, b: unknown) {
   if (compatibleText(a, b)) return true;
-  const leftTokens = new Set(normalizeText(a).split(/[\s/+*-]+/).filter((token) => token.length >= 2));
-  const rightTokens = normalizeText(b).split(/[\s/+*-]+/).filter((token) => token.length >= 2);
+  const leftTokens = new Set(textTokens(a));
+  const rightTokens = textTokens(b);
   if (leftTokens.size === 0 || rightTokens.length === 0) return false;
   const matching = rightTokens.filter((token) => leftTokens.has(token) || [...leftTokens].some((left) => left.includes(token) || token.includes(left)));
   return matching.length >= Math.min(rightTokens.length, 2);

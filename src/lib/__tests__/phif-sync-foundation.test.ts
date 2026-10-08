@@ -1056,6 +1056,68 @@ describe("PHIF sync foundation", () => {
     });
   });
 
+  it("normalizes common Actual dosage form aliases before matching inventory", () => {
+    expect(matchActualInvoiceItemToStock(
+      {
+        brand: "AMOXIL 500MG CAP",
+        active_ingredient: "AMOXICILLIN",
+        strength: "500 mg",
+        quantity: 20,
+        source_classification: "actual-supplier",
+        metadata: { unit: "CAP" },
+        phif_financial_fields: { total_amount: "18.000" },
+      },
+      [{ source_stock_id: "amoxil", brand_name: "AMOXIL 500MG CAPSULES", strength: "500MG", dosage_unit: "CAPSULE", cost_price: "0.500" }],
+    )).toMatchObject({ status: "matched" });
+
+    expect(matchActualInvoiceItemToStock(
+      {
+        brand: "MIXTARD U100 PEN",
+        active_ingredient: "INSULIN",
+        strength: "100IU",
+        quantity: 1,
+        source_classification: "actual-supplier",
+        metadata: { unit: "PEN" },
+        phif_financial_fields: { total_amount: "50.000" },
+      },
+      [{ source_stock_id: "mixtard", brand_name: "MIXTARD 100IU PENS", strength: "U100", dosage_unit: "PENS", cost_price: "35.000" }],
+    )).toMatchObject({ status: "matched" });
+  });
+
+  it("matches Actual brands despite token order, spacing, hyphens, punctuation, and compact combination strengths", () => {
+    const item = {
+      brand: "XARELTO 15 MG TABS -28 TABS",
+      active_ingredient: "RIVAROXABAN",
+      strength: "15MG",
+      quantity: 28,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TAB" },
+      phif_financial_fields: { total_amount: "100.000" },
+    };
+    const stock = {
+      source_stock_id: "xarelto",
+      brand_name: "XARELTO TABLETS 28 15MG",
+      active_ingredient: "RIVAROXABAN",
+      strength: "15 MG",
+      dosage_unit: "TABLETS",
+      cost_price: "2.000",
+    };
+
+    expect(matchActualInvoiceItemToStock(item, [stock])).toMatchObject({ status: "matched" });
+    expect(matchActualInvoiceItemToStock(
+      {
+        brand: "POTENZA 5/160MG",
+        active_ingredient: "AMLODIPINE + VALSARTAN",
+        strength: "5MG/160MG",
+        quantity: 30,
+        source_classification: "actual-supplier",
+        metadata: {},
+        phif_financial_fields: { total_amount: "75.000" },
+      },
+      [{ source_stock_id: "potenza", brand_name: "POTENZA 5/160 MG", strength: "5/160MG", cost_price: "1.000" }],
+    )).toMatchObject({ status: "matched" });
+  });
+
   it("marks ambiguous Actual stock matches for review instead of choosing automatically", () => {
     const item = {
       brand: "Karbis",
