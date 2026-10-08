@@ -124,7 +124,10 @@ function normalizeText(value: unknown) {
 }
 
 function normalizeStrength(value: unknown) {
-  return normalizeText(value).replace(/\s+/g, "");
+  return normalizeText(value)
+    .replace(/\s+/g, "")
+    .replace(/iu\/?ml/g, "iu")
+    .replace(/^u(\d+)/, "$1iu");
 }
 
 function pickString(fields: Record<string, unknown> | null | undefined, keys: string[]) {
@@ -177,6 +180,21 @@ function compatibleText(a: unknown, b: unknown) {
   return left === right || left.includes(right) || right.includes(left);
 }
 
+function tokenCompatibleText(a: unknown, b: unknown) {
+  if (compatibleText(a, b)) return true;
+  const leftTokens = new Set(normalizeText(a).split(/[\s/+*-]+/).filter((token) => token.length >= 2));
+  const rightTokens = normalizeText(b).split(/[\s/+*-]+/).filter((token) => token.length >= 2);
+  if (leftTokens.size === 0 || rightTokens.length === 0) return false;
+  const matching = rightTokens.filter((token) => leftTokens.has(token) || [...leftTokens].some((left) => left.includes(token) || token.includes(left)));
+  return matching.length >= Math.min(rightTokens.length, 2);
+}
+
+function compatibleStrength(a: unknown, b: unknown) {
+  const left = normalizeStrength(a);
+  const right = normalizeStrength(b);
+  return !left || !right || left === right || left.includes(right) || right.includes(left);
+}
+
 function normalizedUnit(value: unknown) {
   const unit = normalizeText(value);
   const aliases: Record<string, string> = {
@@ -224,12 +242,12 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
     if (!idsMatchOrMissing(brandProductId, stock.brand_product_id)) return false;
     if (!idsMatchOrMissing(supplierId, stock.supplier_id)) return false;
     if (!idsMatchOrMissing(genericId, stock.generic_ingredient_id)) return false;
-    if (supplier && stock.supplier_name && normalizeText(stock.supplier_name) !== supplier) return false;
+    if (supplier && stock.supplier_name && !tokenCompatibleText(stock.supplier_name, supplier)) return false;
     if (!idsMatchOrMissing(packageQuantity, stock.package_quantity)) return false;
     if (!idsMatchOrMissing(stripsQuantity, stock.strips_quantity)) return false;
     if (itemPricingUnit && stock.dosage_unit && normalizedUnit(itemPricingUnit) !== normalizedUnit(stock.dosage_unit)) return false;
-    if (brand && !compatibleText(stock.brand_name, brand)) return false;
-    if (strength && normalizeStrength(stock.strength) !== strength) return false;
+    if (brand && !tokenCompatibleText(stock.brand_name, brand)) return false;
+    if (strength && !compatibleStrength(stock.strength, strength) && !tokenCompatibleText(stock.brand_name, item.brand)) return false;
     return Boolean(brandProductId || brand || (genericId && strength));
   });
 

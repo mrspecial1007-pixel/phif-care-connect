@@ -999,6 +999,63 @@ describe("PHIF sync foundation", () => {
     });
   });
 
+  it("matches Apidra Actual by commercial brand tokens when invoice ids and unit are missing", () => {
+    const actualItem = {
+      brand: "APIDRA U100 SOLOSTAR 5X3ML INJ",
+      active_ingredient: "INSULIN(HUMAN RECOMBINANT RAPID ACTING ANALOGUE)",
+      strength: "100IU",
+      quantity: 1,
+      source_classification: "actual-supplier",
+      supplier: "شركة اكليل لاستيراد الادوية والمعدات الطبية",
+      phif_financial_fields: { total_amount: "56.483" },
+      metadata: {},
+    };
+    const stock = {
+      source_stock_id: "apidra-stock",
+      brand_name: "APIDRA SOLOSTAR U100 5X3ML INJ",
+      active_ingredient: "INSULIN GLULISINE",
+      strength: "U100",
+      dosage_unit: "INJ",
+      supplier_name: "اكليل لاستيراد الادوية",
+      cost_price: "40.000",
+      sale_price: "56.483",
+    };
+
+    expect(matchActualInvoiceItemToStock(actualItem, [stock])).toMatchObject({ status: "matched" });
+    expect(calculateActualGrossMargin(actualItem, [stock])).toMatchObject({
+      status: "matched",
+      purchaseCost: 40,
+      grossMargin: 16.482999999999997,
+    });
+  });
+
+  it("matches Warfarin Actual without accepting generic-only ambiguity", () => {
+    const actualItem = {
+      brand: "WARFARIN 5MG TABS",
+      active_ingredient: "WARFARIN SODIUM",
+      strength: "5 MG",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      phif_financial_fields: { total_amount: "12.000" },
+      metadata: {},
+    };
+    const stock = {
+      source_stock_id: "warfarin-stock",
+      brand_name: "WARFARIN 5MG TABLETS",
+      active_ingredient: "WARFARIN SODIUM",
+      strength: "5MG",
+      dosage_unit: "TABS",
+      cost_price: "0.250",
+    };
+
+    expect(matchActualInvoiceItemToStock(actualItem, [stock])).toMatchObject({ status: "matched" });
+    expect(calculateActualGrossMargin(actualItem, [stock])).toMatchObject({
+      status: "matched",
+      purchaseCost: 7.5,
+      grossMargin: 4.5,
+    });
+  });
+
   it("marks ambiguous Actual stock matches for review instead of choosing automatically", () => {
     const item = {
       brand: "Karbis",
