@@ -233,7 +233,7 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
     revenue: margin.invoiceValue,
     purchaseCost: margin.purchaseCost,
     grossMargin: margin.grossMargin,
-    unitPurchasePrice: null,
+    unitPurchasePrice: margin.status === "matched" ? reportNumberValue(margin.stock?.cost_price) : null,
     status: margin.status,
     reason: margin.reason,
     stock: margin.stock,

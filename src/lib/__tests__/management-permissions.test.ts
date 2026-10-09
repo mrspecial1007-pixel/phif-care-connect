@@ -152,6 +152,7 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain('.from("phif_stock_items")');
     expect(management).toContain('.eq("is_current", true)');
     expect(management).toContain("const margin = calculateActualGrossMargin(item, stocks)");
+    expect(management).toContain('unitPurchasePrice: margin.status === "matched" ? reportNumberValue(margin.stock?.cost_price) : null');
     expect(management).toContain("purchaseMode === \"total_dispensed_cost\"");
     expect(management).toContain("override * quantity");
     expect(management).toContain("phif_financial_fields: fields");
