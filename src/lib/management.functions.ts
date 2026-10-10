@@ -89,6 +89,20 @@ function financeAccess(session: any): FinanceAccess {
   };
 }
 
+async function requireTiryaqItemAccess() {
+  const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
+  const { TIRYAQ_PHARMACY_NAME } = await import("@/lib/pharmacy-isolation");
+  const session = await requirePharmacySession();
+  if (session.pharmacy_name !== TIRYAQ_PHARMACY_NAME) {
+    throw new Error("Unauthorized");
+  }
+  const access = financeAccess(session);
+  if (!access.actual.items && !access.phif.items) {
+    throw new Error("لا تملك صلاحية عرض الأصناف");
+  }
+  return { session, access };
+}
+
 function sourceAccess(access: FinanceAccess, source: unknown) {
   return access[String(source) === "phif" ? "phif" : "actual"];
 }
@@ -640,13 +654,15 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
 export const searchReportItems = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => itemSearchSchema.parse(d))
   .handler(async ({ data }) => {
-    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("reports_read");
+    const { session, access } = await requireTiryaqItemAccess();
+    const { pharmacy_id } = session;
     const dataset = await loadReportDataset(supabaseAdmin, pharmacy_id, data.dateFrom, data.dateTo);
     const query = data.search.toLowerCase();
     const grouped = new Map<string, any>();
     for (const item of dataset.items) {
+      const source = reportItemSource(item);
+      if (!sourceAccess(access, source).items) continue;
       const text = [item.brand, item.active_ingredient, item.strength].filter(Boolean).join(" ").toLowerCase();
       if (!text.includes(query)) continue;
       const identityKey = reportDrugIdentityKey(item, "scientific");
@@ -655,7 +671,7 @@ export const searchReportItems = createServerFn({ method: "POST" })
         brand: item.brand ?? null,
         active_ingredient: item.active_ingredient ?? null,
         strength: item.strength ?? null,
-        source: reportItemSource(item),
+        source,
         occurrence_count: 0,
       };
       row.occurrence_count += 1;
@@ -667,11 +683,9 @@ export const searchReportItems = createServerFn({ method: "POST" })
 export const getReportItemTracking = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => itemTrackingSchema.parse(d))
   .handler(async ({ data }) => {
-    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const session = await requireTiryaqPermission("reports_read");
+    const { session, access } = await requireTiryaqItemAccess();
     const { pharmacy_id } = session;
-    const access = financeAccess(session);
     const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, { dateFrom: data.dateFrom, dateTo: data.dateTo, source: "all" }, access);
     const movements = rows.filter((row) => {
        const key = row.identity_key;

@@ -95,6 +95,8 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain('to: "/management/treasury"');
     expect(appShell).toContain("isLegacyTiryaq");
     expect(appShell).toContain("isLegacyTiryaq ||");
+    expect(appShell).toContain('"phif_items_read"');
+    expect(appShell).toContain('"actual_items_read"');
     expect(appShell).not.toContain('{ to: "/phif-invoices"');
   });
 
@@ -209,5 +211,14 @@ describe("Tiryaq management and permissions", () => {
     expect(items).toContain("actual_revenue_read");
     expect(items).toContain("phif_cost_read");
     expect(view).toContain("لا تملك صلاحية عرض الأصناف");
+  });
+  it("loads report item search and tracking with source item permissions instead of reports_read", () => {
+    const management = readProjectFile("src/lib/management.functions.ts");
+
+    expect(management).toContain("requireTiryaqItemAccess");
+    expect(management).toContain("لا تملك صلاحية عرض الأصناف");
+    expect(management).toContain("if (!sourceAccess(access, source).items) continue");
+    expect(management).toContain("const { session, access } = await requireTiryaqItemAccess()");
+    expect(management).not.toContain('const { pharmacy_id } = await requireTiryaqPermission("reports_read")');
   });
 });

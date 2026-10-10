@@ -42,7 +42,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     (isLegacyTiryaq ||
       hasPermission(session?.user?.role, session?.user?.permissions, "reports_read") ||
       hasPermission(session?.user?.role, session?.user?.permissions, "treasury_read") ||
-      hasPermission(session?.user?.role, session?.user?.permissions, "inventory_read"));
+      hasPermission(session?.user?.role, session?.user?.permissions, "inventory_read") ||
+      hasPermission(session?.user?.role, session?.user?.permissions, "phif_items_read") ||
+      hasPermission(session?.user?.role, session?.user?.permissions, "actual_items_read"));
 
   const nav = [
     { to: "/", label: "الرئيسية", icon: LayoutDashboard },
