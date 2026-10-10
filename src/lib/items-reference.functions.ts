@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { hasPermission } from "@/lib/user-permissions";
 
 type Src = "Actual" | "PHIF Supplier";
 
@@ -27,10 +28,23 @@ async function pagedAll(build: (from: number, to: number) => any) {
   return out;
 }
 
-async function loadAll(admin: any, pharmacyId: string) {
-  const invoices = await pagedAll((a, b) =>
-    admin.from("phif_invoices").select("id, beneficiary_name, insurance_card_number, patient_id, dispensing_date")
-      .eq("pharmacy_id", pharmacyId).order("dispensing_date", { ascending: false }).range(a, b));
+const listReferenceInput = z.object({
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+}).optional().default({});
+
+function can(session: any, permission: any) {
+  return hasPermission(session?.session?.data?.user_role, session?.session?.data?.user_permissions, permission);
+}
+
+async function loadAll(admin: any, pharmacyId: string, range?: { dateFrom?: string; dateTo?: string }) {
+  const invoices = await pagedAll((a, b) => {
+    let query = admin.from("phif_invoices").select("id, beneficiary_name, insurance_card_number, patient_id, dispensing_date")
+      .eq("pharmacy_id", pharmacyId).order("dispensing_date", { ascending: false }).range(a, b);
+    if (range?.dateFrom) query = query.gte("dispensing_date", range.dateFrom);
+    if (range?.dateTo) query = query.lte("dispensing_date", range.dateTo);
+    return query;
+  });
   const items: any[] = [];
   const ids = invoices.map((i) => i.id);
   for (let i = 0; i < ids.length; i += 300) {
@@ -81,12 +95,14 @@ async function session() {
   const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const s = await requireTiryaqPermission("reports_read");
-  return { admin: supabaseAdmin, pharmacyId: s.pharmacy_id, requireTiryaqPermission };
+  return { admin: supabaseAdmin, pharmacyId: s.pharmacy_id, session: s };
 }
 
-export const listReferenceItems = createServerFn({ method: "POST" }).handler(async () => {
+export const listReferenceItems = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => listReferenceInput.parse(d))
+  .handler(async ({ data }) => {
   const { admin, pharmacyId } = await session();
-  const index = buildIndex(await loadAll(admin, pharmacyId));
+  const index = buildIndex(await loadAll(admin, pharmacyId, data));
   return [...index.values()]
     .map((r) => ({ id: r.id as string, ingredient: r.ingredient as string, strength: r.strength as string, form: r.form as string, beneficiaries: r.patients.size as number, sources: [...r.sources] as Src[] }))
     .sort((a, b) => a.ingredient.localeCompare(b.ingredient, "en"));
@@ -95,9 +111,11 @@ export const listReferenceItems = createServerFn({ method: "POST" }).handler(asy
 export const getReferenceItem = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().min(1).max(500) }).parse(d))
   .handler(async ({ data }) => {
-    const { admin, pharmacyId, requireTiryaqPermission } = await session();
-    let canSeeCost = true;
-    try { await requireTiryaqPermission("stock_cost_read"); } catch { canSeeCost = false; }
+    const { admin, pharmacyId, session: currentSession } = await session();
+    const canSeeActualCost = can(currentSession, "actual_cost_read");
+    const canSeeActualRevenue = can(currentSession, "actual_revenue_read");
+    const canSeePhifCost = can(currentSession, "phif_cost_read");
+    const canSeeMovements = can(currentSession, "actual_movements_read") || can(currentSession, "phif_movements_read");
     const index = buildIndex(await loadAll(admin, pharmacyId));
     const row = [...index.values()].find((r) => r.id === data.id);
     if (!row) return null;
@@ -132,23 +150,23 @@ export const getReferenceItem = createServerFn({ method: "POST" })
       sources: [...row.sources] as Src[],
       beneficiaryCount: row.patients.size as number,
       dispenseCount: row.items.length as number,
-      canSeeCost,
-      beneficiaries: [...beneficiaries.values()].sort((a, b) => b.count - a.count),
+      canSeeCost: canSeeActualCost,
+      beneficiaries: canSeeMovements ? [...beneficiaries.values()].sort((a, b) => b.count - a.count) : [],
       phif: {
         count: phifItems.length as number,
-        price: canSeeCost && priced ? Number(priced.phif_financial_fields.internal_purchase_price) : null,
+        price: canSeePhifCost && priced ? Number(priced.phif_financial_fields.internal_purchase_price) : null,
         unit: priced?.phif_financial_fields?.internal_purchase_unit ?? null,
       },
       actualProducts: row.stock.map((s: any) => ({
         id: s.id as string,
         brand: (s.brand_name ?? "—") as string,
         supplier: (s.supplier_name ?? "—") as string,
-        cost: canSeeCost && s.cost_price != null ? Number(s.cost_price) : null,
-        sale: s.sale_price != null ? Number(s.sale_price) : null,
+        cost: canSeeActualCost && s.cost_price != null ? Number(s.cost_price) : null,
+        sale: canSeeActualRevenue && s.sale_price != null ? Number(s.sale_price) : null,
         stock: s.stock_quantity != null ? Number(s.stock_quantity) : null,
         unit: (s.source_quantity_unit ?? s.dosage_unit ?? "") as string,
         synced: s.synced_at as string | null,
       })),
-      movements,
+      movements: canSeeMovements ? movements : [],
     };
   });

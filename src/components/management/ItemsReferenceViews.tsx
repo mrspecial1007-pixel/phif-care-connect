@@ -24,7 +24,14 @@ function StateBox({ loading, error, empty }: { loading?: boolean; error?: unknow
 
 export function ItemsReferencePage() {
   const [search, setSearch] = useState("");
-  const { data = [], isLoading, error } = useQuery({ queryKey: ["reference_items"], queryFn: () => listReferenceItems(), staleTime: 60_000 });
+  const [month, setMonth] = useState("all");
+  const range = useMemo(() => {
+    if (!/^\d{4}-\d{2}$/.test(month)) return {};
+    const [year, monthNumber] = month.split("-").map(Number);
+    const last = new Date(year, monthNumber, 0).getDate();
+    return { dateFrom: `${month}-01`, dateTo: `${month}-${String(last).padStart(2, "0")}` };
+  }, [month]);
+  const { data = [], isLoading, error } = useQuery({ queryKey: ["reference_items", range], queryFn: () => listReferenceItems({ data: range }), staleTime: 60_000 });
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return data;
@@ -42,6 +49,10 @@ export function ItemsReferencePage() {
     <div className="relative">
       <Search className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input aria-label="البحث في الأصناف" value={search} onChange={event => setSearch(event.target.value)} placeholder="ابحث بالمادة أو التركيز أو الشكل" className="h-11 pr-10" />
+    </div>
+    <div className="flex gap-2">
+      <Input aria-label="شهر الإحصائيات" type="month" value={month === "all" ? "" : month} onChange={event => setMonth(event.target.value || "all")} className="h-11" />
+      <Button type="button" variant={month === "all" ? "default" : "outline"} onClick={() => setMonth("all")}>كل التاريخ</Button>
     </div>
     {isLoading || error ? <StateBox loading={isLoading} error={error} /> : <>
       <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{filtered.length} صنف</span><span>بالاسم العلمي</span></div>

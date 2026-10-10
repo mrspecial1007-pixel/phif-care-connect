@@ -185,7 +185,7 @@ async function currentBridgeSession(db: any, pharmacyId: string) {
 function canSeeCost(session: any) {
   return !session.session?.data?.user_id && !session.session?.data?.user_role
     ? true
-    : hasPermission(session.session?.data?.user_role, session.session?.data?.user_permissions, "stock_cost_read");
+    : hasPermission(session.session?.data?.user_role, session.session?.data?.user_permissions, "actual_cost_read");
 }
 
 async function requireInventory() {

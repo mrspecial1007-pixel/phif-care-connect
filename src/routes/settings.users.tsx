@@ -45,6 +45,15 @@ const emptyDraft: DraftUser = {
   pin_confirm: "",
 };
 
+const PHIF_SUPPLIER_PERMISSION_KEYS = new Set([
+  "phif_items_read",
+  "phif_movements_read",
+  "phif_revenue_read",
+  "phif_cost_read",
+  "phif_profit_read",
+  "phif_purchase_price_write",
+]);
+
 function UsersSettingsPage() {
   const qc = useQueryClient();
   const listUsersFn = useServerFn(listPharmacyUsers);
@@ -58,6 +67,12 @@ function UsersSettingsPage() {
   const { data: users, isLoading } = useQuery({ queryKey: ["pharmacy_users"], queryFn: () => listUsersFn() });
   const { data: permissions } = useQuery({ queryKey: ["tiryaq_permissions"], queryFn: () => listPermissionsFn() });
   const permissionEntries = useMemo(() => Object.entries(permissions ?? {}), [permissions]);
+  const groupedPermissions = useMemo(() => {
+    const entries = permissionEntries.filter(([key]) => !PHIF_SUPPLIER_PERMISSION_KEYS.has(key) && !key.startsWith("actual_"));
+    const phif = permissionEntries.filter(([key]) => PHIF_SUPPLIER_PERMISSION_KEYS.has(key));
+    const actual = permissionEntries.filter(([key]) => key.startsWith("actual_"));
+    return { entries, phif, actual };
+  }, [permissionEntries]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -149,17 +164,10 @@ function UsersSettingsPage() {
           <Switch checked={draft.is_active} onCheckedChange={(value) => setDraft({ ...draft, is_active: value })} />
           <span className="text-sm">الحساب فعال</span>
         </div>
-        <div className={`grid gap-2 md:grid-cols-2 ${draft.role === "admin" ? "opacity-50" : ""}`}>
-          {permissionEntries.map(([key, label]) => (
-            <label key={key} className="flex items-center justify-between rounded-lg border p-3 text-sm">
-              <span>{label as string}</span>
-              <Switch
-                checked={draft.role === "admin" || draft.permissions[key] === true}
-                disabled={draft.role === "admin"}
-                onCheckedChange={(value) => setPermission(key, value)}
-              />
-            </label>
-          ))}
+        <div className={`space-y-4 ${draft.role === "admin" ? "opacity-50" : ""}`}>
+          <PermissionGroup title="صلاحيات عامة" entries={groupedPermissions.entries} draft={draft} setPermission={setPermission} />
+          <PermissionGroup title="PHIF Supplier" entries={groupedPermissions.phif} draft={draft} setPermission={setPermission} />
+          <PermissionGroup title="Actual" entries={groupedPermissions.actual} draft={draft} setPermission={setPermission} />
         </div>
         <div className="flex gap-2">
           <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
@@ -237,5 +245,36 @@ function UsersSettingsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function PermissionGroup({
+  title,
+  entries,
+  draft,
+  setPermission,
+}: {
+  title: string;
+  entries: [string, unknown][];
+  draft: DraftUser;
+  setPermission: (key: string, value: boolean) => void;
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-bold">{title}</h2>
+      <div className="grid gap-2 md:grid-cols-2">
+        {entries.map(([key, label]) => (
+          <label key={key} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+            <span>{label as string}</span>
+            <Switch
+              checked={draft.role === "admin" || draft.permissions[key] === true}
+              disabled={draft.role === "admin"}
+              onCheckedChange={(value) => setPermission(key, value)}
+            />
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }

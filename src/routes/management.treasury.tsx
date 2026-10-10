@@ -44,6 +44,7 @@ function sourceLabel(source: string) {
 }
 
 function purchasePriceLabel(item: any) {
+  if (item.cost_hidden) return "محجوب";
   if (item.source === "actual") {
     return item.unit_purchase_price === null ? "Actual يحتاج مطابقة" : money(item.unit_purchase_price);
   }
@@ -211,14 +212,14 @@ function TreasuryInvoiceSheet({
                     </span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                    <Stat label="قيمة الصرف" value={money(item.invoice_value)} />
+                    <Stat label="قيمة الصرف" value={item.revenue_hidden ? "محجوب" : money(item.invoice_value)} />
                     <Stat label="سعر الشراء" value={purchasePriceLabel(item)} />
-                    <Stat label="تكلفة الصنف" value={item.purchase_cost === null ? "غير مكتملة" : money(item.purchase_cost)} />
-                    <Stat label="الربح" value={item.gross_margin === null ? "غير مكتمل" : money(item.gross_margin)} />
+                    <Stat label="تكلفة الصنف" value={item.cost_hidden ? "محجوب" : item.purchase_cost === null ? "غير مكتملة" : money(item.purchase_cost)} />
+                    <Stat label="الربح" value={item.profit_hidden ? "محجوب" : item.gross_margin === null ? "غير مكتمل" : money(item.gross_margin)} />
                     <Stat label="الوحدة" value={item.unit || "تحتاج مراجعة"} />
                     <Stat label="المصدر" value={sourceLabel(item.source)} />
                   </div>
-                  {item.source === "phif" && (
+                  {item.source === "phif" && item.can_edit_purchase_price && (
                     <div className="mt-3 grid gap-2 rounded-md border p-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                       <label className="space-y-1">
                         <span>{(draft[`${item.item_id}:mode`] ?? item.purchase_cost_mode ?? "total_dispensed_cost") === "unit_price" ? "سعر الوحدة" : "تكلفة الكمية المصروفة"}</span>

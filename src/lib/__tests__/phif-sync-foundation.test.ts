@@ -944,7 +944,7 @@ describe("PHIF sync foundation", () => {
     expect(stockFunctions).not.toContain("PHIF_TIRYAQ_SOURCE_PHARMACY_ID");
     expect(stockFunctions).not.toContain("assertExpectedTiryaqStockSource");
     expect(stockFunctions).toContain('rpc("replace_phif_stock_snapshots"');
-    expect(stockFunctions).toContain('"stock_cost_read"');
+    expect(stockFunctions).toContain('"actual_cost_read"');
     expect(stockFunctions).toContain("const { cost_price, ...safe } = row");
     expect(stockFunctions).toContain('.from("phif_stock_items")');
     expect(route).toContain("syncPhifStock");
@@ -958,12 +958,12 @@ describe("PHIF sync foundation", () => {
     expect(stockQuantityBreakdown(1, null, "شريط").label).toBe("1 شريط");
   });
 
-  it("keeps PHIF stock cost server-side when stock_cost_read is missing", () => {
+  it("keeps PHIF stock cost server-side when Actual cost permission is missing", () => {
     const source = readProjectFile("src/lib/phif-stock.functions.ts");
     const route = readProjectFile("src/routes/management.inventory.tsx");
 
     expect(source).toContain("const { cost_price, ...safe } = row");
-    expect(source).toContain('"stock_cost_read"');
+    expect(source).toContain('"actual_cost_read"');
     expect(route).toContain("can_view_cost");
     expect(route).toContain("canViewCost &&");
   });

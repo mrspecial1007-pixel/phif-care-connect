@@ -98,7 +98,7 @@ function InventoryPage() {
       {!canViewCost && (
         <Card className="p-3 flex items-center gap-2 text-sm text-muted-foreground">
           <ShieldAlert className="h-4 w-4 text-amber-600" />
-          أسعار الشراء مخفية من الخادم لهذه الجلسة، ولا تظهر إلا لمن يملك صلاحية stock_cost_read.
+          أسعار الشراء مخفية من الخادم لهذه الجلسة، ولا تظهر إلا لمن يملك صلاحية عرض تكاليف Actual.
         </Card>
       )}
 

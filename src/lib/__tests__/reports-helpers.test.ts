@@ -159,7 +159,7 @@ describe("monthly PHIF reports", () => {
     expect(amlodipine?.formatted_quantity).toContain("60");
   });
 
-  it("keeps report routes independent and guarded by cost permission", () => {
+  it("keeps report routes independent and guarded by source financial permissions", () => {
     const management = readFileSync(join(process.cwd(), "src/lib/management.functions.ts"), "utf8");
     const landing = readFileSync(join(process.cwd(), "src/routes/management.reports.tsx"), "utf8");
     const summary = readFileSync(join(process.cwd(), "src/routes/management.reports.summary.tsx"), "utf8");
@@ -169,7 +169,10 @@ describe("monthly PHIF reports", () => {
     expect(management).toContain("getReportItemTracking");
     expect(management).toContain("getProfitAnalysisReport");
     expect(management).toContain("savePhifSupplierPurchasePrice");
-    expect(management).toContain('requireTiryaqPermission("stock_cost_read")');
+    expect(management).toContain("financeAccess");
+    expect(management).toContain("redactProfitRows");
+    expect(management).toContain("actual_cost_read");
+    expect(management).toContain("phif_purchase_price_write");
     expect(management).toContain("internal_purchase_price");
     expect(landing).toContain('createFileRoute("/management/reports")');
     expect(landing).toContain("/management/reports/summary");

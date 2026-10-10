@@ -47,8 +47,12 @@ describe("Tiryaq management and permissions", () => {
     expect(hasPermission("employee", { reports_read: true }, "reports_read")).toBe(true);
     expect(hasPermission("employee", { reports_read: true }, "treasury_read")).toBe(false);
     expect(adminPermissions().phif_sync_run).toBe(true);
+    expect(adminPermissions().actual_cost_read).toBe(true);
+    expect(adminPermissions().phif_purchase_price_write).toBe(true);
     expect(normalizePermissions({ reports_read: true, unknown: true }).reports_read).toBe(true);
     expect(normalizePermissions({}).dispensing_write).toBe(false);
+    expect(normalizePermissions({}).actual_cost_read).toBe(false);
+    expect(normalizePermissions({}).phif_purchase_price_write).toBe(false);
   });
 
   it("keeps PHIF sync and completion guarded by separate server permissions", () => {
@@ -129,7 +133,7 @@ describe("Tiryaq management and permissions", () => {
     const management = readProjectFile("src/lib/management.functions.ts");
     const treasury = readProjectFile("src/routes/management.treasury.tsx");
     const reports = readProjectFile("src/components/management/ReportsViews.tsx");
-    expect(management).toContain('requireTiryaqPermission("stock_cost_read")');
+    expect(management).toContain('requireTiryaqPermission("phif_purchase_price_write")');
     expect(management).toContain('.from("phif_invoice_items")');
     expect(management).toContain(".eq(\"id\", data.itemId)");
     expect(management).toContain("internal_purchase_cost_mode: data.purchaseCostMode");
@@ -156,5 +160,36 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain("purchaseMode === \"total_dispensed_cost\"");
     expect(management).toContain("override * quantity");
     expect(management).toContain("phif_financial_fields: fields");
+  });
+
+  it("separates PHIF Supplier and Actual financial permissions server-side", () => {
+    const permissions = readProjectFile("src/lib/user-permissions.ts");
+    const management = readProjectFile("src/lib/management.functions.ts");
+    const stock = readProjectFile("src/lib/phif-stock.functions.ts");
+    const settings = readProjectFile("src/routes/settings.users.tsx");
+    const reports = readProjectFile("src/components/management/ReportsViews.tsx");
+    const treasury = readProjectFile("src/routes/management.treasury.tsx");
+
+    expect(permissions).toContain("phif_items_read");
+    expect(permissions).toContain("phif_revenue_read");
+    expect(permissions).toContain("phif_cost_read");
+    expect(permissions).toContain("phif_profit_read");
+    expect(permissions).toContain("phif_purchase_price_write");
+    expect(permissions).toContain("actual_items_read");
+    expect(permissions).toContain("actual_revenue_read");
+    expect(permissions).toContain("actual_cost_read");
+    expect(permissions).toContain("actual_profit_read");
+    expect(management).toContain("financeAccess");
+    expect(management).toContain("redactProfitRows");
+    expect(management).toContain("cost_hidden");
+    expect(management).toContain("profit_hidden");
+    expect(management).toContain("revenue_hidden");
+    expect(management).toContain("can_edit_purchase_price");
+    expect(stock).toContain('"actual_cost_read"');
+    expect(settings).toContain("PHIF Supplier");
+    expect(settings).toContain("Actual");
+    expect(reports).toContain("row.cost_hidden ? \"محجوب\"");
+    expect(treasury).toContain("item.cost_hidden ? \"محجوب\"");
+    expect(treasury).toContain("item.can_edit_purchase_price");
   });
 });

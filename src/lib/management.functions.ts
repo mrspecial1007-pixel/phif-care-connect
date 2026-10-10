@@ -19,6 +19,7 @@ import {
   type ReportStock,
   type TopSort,
 } from "@/lib/reports.helpers";
+import { hasPermission, type TiryaqPermission } from "@/lib/user-permissions";
 
 const rangeSchema = z.object({
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -51,6 +52,46 @@ const supplierPurchaseOverrideSchema = z.object({
   purchaseCostValue: z.number().min(0).max(1_000_000).optional(),
   purchaseCostUnit: z.string().trim().min(1).max(40).optional(),
 });
+
+type SourceKey = "actual" | "phif";
+
+type FinanceAccess = Record<SourceKey, {
+  items: boolean;
+  movements: boolean;
+  revenue: boolean;
+  cost: boolean;
+  profit: boolean;
+  purchasePriceWrite: boolean;
+}>;
+
+function sessionHasPermission(session: any, permission: TiryaqPermission) {
+  return hasPermission(session?.session?.data?.user_role, session?.session?.data?.user_permissions, permission);
+}
+
+function financeAccess(session: any): FinanceAccess {
+  return {
+    actual: {
+      items: sessionHasPermission(session, "actual_items_read"),
+      movements: sessionHasPermission(session, "actual_movements_read"),
+      revenue: sessionHasPermission(session, "actual_revenue_read"),
+      cost: sessionHasPermission(session, "actual_cost_read"),
+      profit: sessionHasPermission(session, "actual_profit_read"),
+      purchasePriceWrite: false,
+    },
+    phif: {
+      items: sessionHasPermission(session, "phif_items_read"),
+      movements: sessionHasPermission(session, "phif_movements_read"),
+      revenue: sessionHasPermission(session, "phif_revenue_read"),
+      cost: sessionHasPermission(session, "phif_cost_read"),
+      profit: sessionHasPermission(session, "phif_profit_read"),
+      purchasePriceWrite: sessionHasPermission(session, "phif_purchase_price_write"),
+    },
+  };
+}
+
+function sourceAccess(access: FinanceAccess, source: unknown) {
+  return access[String(source) === "phif" ? "phif" : "actual"];
+}
 
 function moneyValue(fields: Record<string, unknown> | null | undefined, keys: string[]) {
   for (const key of keys) {
@@ -241,7 +282,7 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
   };
 }
 
-async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { dateFrom: string; dateTo: string; source?: "all" | "actual" | "phif" }) {
+async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { dateFrom: string; dateTo: string; source?: "all" | "actual" | "phif" }, access?: FinanceAccess) {
   const dataset = await loadReportDataset(supabaseAdmin, pharmacyId, data.dateFrom, data.dateTo);
   const stocks = await loadStockWithCosts(supabaseAdmin, pharmacyId);
   const invoiceById = new Map(dataset.invoices.map((invoice) => [invoice.id, invoice]));
@@ -285,11 +326,15 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         match_reason: profit.reason,
       };
     });
-  return { invoices: dataset.invoices, items: dataset.items, rows, stocks };
+  return { invoices: dataset.invoices, items: dataset.items, rows: access ? redactProfitRows(rows, access) : rows, stocks };
 }
 
 function isKnownCostRow(row: any) {
   return row.purchase_cost !== null && row.purchase_cost !== undefined && row.gross_margin !== null && row.gross_margin !== undefined;
+}
+
+function isFinanciallyCompleteRow(row: any) {
+  return row.match_status === "matched";
 }
 
 function invoiceFinancialStatus(invoice: any) {
@@ -297,6 +342,34 @@ function invoiceFinancialStatus(invoice: any) {
   if ((invoice.unit_review_count ?? 0) > 0) return "unit_review";
   if ((invoice.needs_price_count ?? 0) > 0) return "incomplete_cost";
   return "complete";
+}
+
+function redactProfitRow(row: any, access: FinanceAccess) {
+  const allowed = sourceAccess(access, row.source);
+  const canShowMovement = allowed.movements || allowed.items;
+  return {
+    ...row,
+    beneficiary_name: canShowMovement ? row.beneficiary_name : null,
+    insurance_card_number: canShowMovement ? row.insurance_card_number : null,
+    quantity: canShowMovement ? row.quantity : null,
+    quantity_label: canShowMovement ? row.quantity_label : null,
+    invoice_value: allowed.revenue ? row.invoice_value : null,
+    revenue: allowed.revenue ? row.revenue : null,
+    purchase_cost: allowed.cost ? row.purchase_cost : null,
+    unit_purchase_price: allowed.cost ? row.unit_purchase_price : null,
+    gross_margin: allowed.profit ? row.gross_margin : null,
+    stock_quantity: allowed.movements ? row.stock_quantity : null,
+    cost_hidden: !allowed.cost && row.purchase_cost !== null && row.purchase_cost !== undefined,
+    profit_hidden: !allowed.profit && row.gross_margin !== null && row.gross_margin !== undefined,
+    revenue_hidden: !allowed.revenue && ((row.revenue !== null && row.revenue !== undefined) || (row.invoice_value !== null && row.invoice_value !== undefined)),
+    can_edit_purchase_price: row.source === "phif" && allowed.purchasePriceWrite,
+  };
+}
+
+function redactProfitRows(rows: any[], access: FinanceAccess) {
+  return rows
+    .filter((row) => sourceAccess(access, row.source).items || sourceAccess(access, row.source).movements)
+    .map((row) => redactProfitRow(row, access));
 }
 
 function summarizeInvoiceItems(rows: any[]) {
@@ -309,7 +382,7 @@ function summarizeInvoiceItems(rows: any[]) {
     phif_value: phifRows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
     known_cost: knownRows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
     known_profit: knownRows.reduce((sum, row) => sum + reportNumberValue(row.gross_margin), 0),
-    matched_count: knownRows.length,
+    matched_count: rows.filter(isFinanciallyCompleteRow).length,
     needs_price_count: rows.filter((row) => row.source === "phif" && row.match_status === "needs_purchase_price").length,
     actual_unmatched_count: rows.filter((row) => row.source === "actual" && row.match_status === "needs_match_review").length,
     unit_review_count: rows.filter((row) => row.match_status === "pricing_unit_unverified").length,
@@ -319,7 +392,8 @@ function summarizeInvoiceItems(rows: any[]) {
 async function buildManagementMonthlyReport(data: z.infer<typeof monthlyReportSchema>, permission: "reports_read" | "reports_export") {
   const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { pharmacy_id } = await requireTiryaqPermission(permission);
+  const session = await requireTiryaqPermission(permission);
+  const { pharmacy_id } = session;
   const current = await loadReportDataset(supabaseAdmin, pharmacy_id, data.dateFrom, data.dateTo);
   const previousRange = previousMonthRange(data.dateFrom, data.dateTo);
   const previous = previousRange
@@ -327,7 +401,7 @@ async function buildManagementMonthlyReport(data: z.infer<typeof monthlyReportSc
     : null;
   const firstDispensingByCard = await loadFirstDispensingByCard(supabaseAdmin, pharmacy_id, current.invoices);
   const stockItems = await loadCurrentStockForReport(supabaseAdmin, pharmacy_id);
-  return buildMonthlyReport({
+  return redactMonthlyReport(buildMonthlyReport({
     dateFrom: data.dateFrom,
     dateTo: data.dateTo,
     source: data.source as ReportSource,
@@ -339,7 +413,63 @@ async function buildManagementMonthlyReport(data: z.infer<typeof monthlyReportSc
     firstDispensingByCard,
     stockItems,
     previous,
-  });
+  }), financeAccess(session));
+}
+
+function redactMonthlyReport(report: any, access: FinanceAccess) {
+  const actualRevenue = access.actual.revenue;
+  const phifRevenue = access.phif.revenue;
+  const canSeeAllRevenue = actualRevenue && phifRevenue;
+  const visibleActual = actualRevenue ? report.source_split.actual.value : 0;
+  const visiblePhif = phifRevenue ? report.source_split.phif.value : 0;
+  const visibleTotal = visibleActual + visiblePhif;
+  return {
+    ...report,
+    summary: {
+      ...report.summary,
+      total_dispensed_value: canSeeAllRevenue ? report.summary.total_dispensed_value : visibleTotal,
+      actual_value: actualRevenue ? report.summary.actual_value : null,
+      phif_value: phifRevenue ? report.summary.phif_value : null,
+    },
+    source_split: {
+      actual: {
+        ...report.source_split.actual,
+        value: actualRevenue ? report.source_split.actual.value : null,
+        contribution: actualRevenue && visibleTotal ? report.source_split.actual.value / visibleTotal : null,
+      },
+      phif: {
+        ...report.source_split.phif,
+        value: phifRevenue ? report.source_split.phif.value : null,
+        contribution: phifRevenue && visibleTotal ? report.source_split.phif.value / visibleTotal : null,
+      },
+    },
+    beneficiary_stats: {
+      ...report.beneficiary_stats,
+      beneficiaries: report.beneficiary_stats.beneficiaries.map((row: any) => ({
+        ...row,
+        total_value: canSeeAllRevenue ? row.total_value : null,
+      })),
+    },
+    top_drugs: report.top_drugs.map((row: any) => {
+      const canSeeRevenue = sourceAccess(access, row.source).revenue;
+      return {
+        ...row,
+        total_value: canSeeRevenue ? row.total_value : null,
+        products: row.products?.map((product: any) => ({ ...product, value: canSeeRevenue ? product.value : null })),
+      };
+    }),
+    daily: report.daily.map((row: any) => ({
+      ...row,
+      actual_value: actualRevenue ? row.actual_value : null,
+      phif_value: phifRevenue ? row.phif_value : null,
+      total_value: canSeeAllRevenue ? row.total_value : (actualRevenue ? row.actual_value : 0) + (phifRevenue ? row.phif_value : 0),
+    })),
+    comparison: report.comparison ? {
+      ...report.comparison,
+      total_value: canSeeAllRevenue ? report.comparison.total_value : null,
+    } : null,
+    reconciliation: canSeeAllRevenue ? report.reconciliation : { available: false, status: "hidden_by_permissions", invoice_total: null, item_total: null, difference: null },
+  };
 }
 
 export const getMonthlyManagementReport = createServerFn({ method: "POST" })
@@ -355,8 +485,9 @@ export const getManagementReport = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
-    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data);
+    const session = await requireTiryaqPermission("treasury_read");
+    const { pharmacy_id } = session;
+    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data, financeAccess(session));
     const invoiceMap = new Map<string, any>();
     const uniquePatients = new Set<string>();
 
@@ -384,8 +515,10 @@ export const getManagementReport = createServerFn({ method: "POST" })
       invoice.total_dispensed_value += reportNumberValue(row.revenue);
       if (row.source === "actual") invoice.actual_value += reportNumberValue(row.revenue);
       if (row.source === "phif") invoice.phif_value += reportNumberValue(row.revenue);
-      if (isKnownCostRow(row)) {
+      if (isFinanciallyCompleteRow(row)) {
         invoice.matched_count += 1;
+      }
+      if (isKnownCostRow(row)) {
         invoice.known_cost += reportNumberValue(row.purchase_cost);
         invoice.known_profit += reportNumberValue(row.gross_margin);
       } else if (row.match_status === "pricing_unit_unverified") {
@@ -415,11 +548,11 @@ export const getManagementReport = createServerFn({ method: "POST" })
       total_dispensed_value: rows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
       known_cost: rows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
       known_profit: rows.reduce((sum, row) => sum + reportNumberValue(row.gross_margin), 0),
-      matched_item_count: rows.filter(isKnownCostRow).length,
+      matched_item_count: rows.filter(isFinanciallyCompleteRow).length,
       needs_price_count: rows.filter((row) => row.source === "phif" && row.match_status === "needs_purchase_price").length,
       actual_unmatched_count: rows.filter((row) => row.source === "actual" && row.match_status === "needs_match_review").length,
       unit_review_count: rows.filter((row) => row.match_status === "pricing_unit_unverified").length,
-      cost_coverage_ratio: rows.length ? rows.filter(isKnownCostRow).length / rows.length : 0,
+      cost_coverage_ratio: rows.length ? rows.filter(isFinanciallyCompleteRow).length / rows.length : 0,
       employee_breakdown_available: false,
       details,
     };
@@ -430,7 +563,9 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
+    const session = await requireTiryaqPermission("reports_read");
+    const { pharmacy_id } = session;
+    const access = financeAccess(session);
 
     const { data: invoices, error } = await supabaseAdmin
       .from("phif_invoices")
@@ -464,7 +599,7 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
     if (stockError) throw new Error(stockError.message);
 
     const invoiceById = new Map((invoices ?? []).map((invoice: any) => [invoice.id, invoice]));
-    const details = items.map((item) => {
+    const details = redactProfitRows(items.map((item) => {
       const invoice: any = invoiceById.get(item.phif_invoice_id);
       const candidates = stockSnapshotCandidatesForInvoice(item, stockRows ?? [], invoice?.dispensing_date);
       const margin = calculateActualGrossMargin(item, candidates);
@@ -480,8 +615,10 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
         match_status: margin.status,
         match_reason: margin.reason,
         matched_stock_id: margin.stock?.source_stock_id ?? null,
+        source: "actual",
+        unit_purchase_price: margin.status === "matched" ? reportNumberValue(margin.stock?.cost_price) : null,
       };
-    });
+    }), access);
 
     const matched = details.filter((row) => row.match_status === "matched");
     const totalValue = details.reduce((sum, row) => sum + row.invoice_value, 0);
@@ -532,8 +669,10 @@ export const getReportItemTracking = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
-    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, { dateFrom: data.dateFrom, dateTo: data.dateTo, source: "all" });
+    const session = await requireTiryaqPermission("reports_read");
+    const { pharmacy_id } = session;
+    const access = financeAccess(session);
+    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, { dateFrom: data.dateFrom, dateTo: data.dateTo, source: "all" }, access);
     const movements = rows.filter((row) => {
        const key = row.identity_key;
       return key === data.identityKey;
@@ -573,8 +712,9 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
-    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data);
+    const session = await requireTiryaqPermission("reports_read");
+    const { pharmacy_id } = session;
+    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data, financeAccess(session));
     const invoiceMap = new Map<string, any>();
     const beneficiaryMap = new Map<string, any>();
     const itemMap = new Map<string, any>();
@@ -604,7 +744,7 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
       invoice.known_cost += reportNumberValue(row.purchase_cost);
       invoice.known_profit += reportNumberValue(row.gross_margin);
       invoice.item_count += 1;
-       if (row.gross_margin !== null) invoice.matched_count += 1;
+       if (isFinanciallyCompleteRow(row)) invoice.matched_count += 1;
        else if (row.source === "phif" && row.match_status === "needs_purchase_price") invoice.needs_price_count += 1;
        else if (row.match_status === "pricing_unit_unverified") invoice.unit_review_count += 1;
        else invoice.needs_match_count += 1;
@@ -649,10 +789,10 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
       item.known_profit += reportNumberValue(row.gross_margin);
       item.quantity += reportNumberValue(row.quantity);
       item.dispense_count += 1;
-       if (row.gross_margin !== null) item.matched_count += 1;
+       if (isFinanciallyCompleteRow(row)) item.matched_count += 1;
       itemMap.set(itemKey, item);
     }
-    const knownRows = rows.filter((row) => row.gross_margin !== null);
+    const knownRows = rows.filter(isFinanciallyCompleteRow);
     const invoiceRows = [...invoiceMap.values()].map((invoice) => ({
       ...invoice,
       financial_status: invoiceFinancialStatus(invoice),
@@ -709,7 +849,7 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("stock_cost_read");
+    const { pharmacy_id } = await requireTiryaqPermission("phif_purchase_price_write");
     const { data: item, error: itemError } = await supabaseAdmin
       .from("phif_invoice_items")
       .select("id, phif_invoice_id, source_classification, phif_financial_fields, metadata, quantity")
