@@ -18,7 +18,10 @@ function SourceBadges({ sources }: { sources: Src[] }) {
 }
 function StateBox({ loading, error, empty }: { loading?: boolean; error?: unknown; empty?: string }) {
   if (loading) return <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />جارٍ التحميل…</div>;
-  if (error) return <div className="border-y py-8 text-center text-sm text-destructive">تعذر تحميل الأصناف، حاول مجددًا</div>;
+  if (error) {
+    const message = (error as Error)?.message === "لا تملك صلاحية عرض الأصناف" ? "لا تملك صلاحية عرض الأصناف" : "تعذر تحميل الأصناف، حاول مجددًا";
+    return <div className="border-y py-8 text-center text-sm text-destructive">{message}</div>;
+  }
   return <div className="border-y py-8 text-center"><Pill className="mx-auto mb-2 size-6 text-muted-foreground" /><p className="font-medium">{empty}</p></div>;
 }
 

@@ -192,4 +192,22 @@ describe("Tiryaq management and permissions", () => {
     expect(treasury).toContain("item.cost_hidden ? \"محجوب\"");
     expect(treasury).toContain("item.can_edit_purchase_price");
   });
+
+  it("loads item reference data with item permissions without requiring financial access", () => {
+    const items = readProjectFile("src/lib/items-reference.functions.ts");
+    const view = readProjectFile("src/components/management/ItemsReferenceViews.tsx");
+
+    expect(items).toContain("requirePharmacySession");
+    expect(items).not.toContain('requireTiryaqPermission("reports_read")');
+    expect(items).toContain("actual_items_read");
+    expect(items).toContain("phif_items_read");
+    expect(items).toContain("لا تملك صلاحية عرض الأصناف");
+    expect(items).toContain("if (access.actualItems && !access.phifItems)");
+    expect(items).toContain('neq("source_classification", "phif-supplier")');
+    expect(items).toContain("if (access.phifItems && !access.actualItems)");
+    expect(items).toContain('eq("source_classification", "phif-supplier")');
+    expect(items).toContain("actual_revenue_read");
+    expect(items).toContain("phif_cost_read");
+    expect(view).toContain("لا تملك صلاحية عرض الأصناف");
+  });
 });
