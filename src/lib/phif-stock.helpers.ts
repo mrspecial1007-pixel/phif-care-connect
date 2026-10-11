@@ -39,7 +39,7 @@ type InvoiceItemLike = {
 
 export type ActualMatchResult =
   | { status: "matched"; stock: StockLike; reason: string }
-  | { status: "needs_match_review"; reason: "no_match" | "ambiguous_match" | "not_actual" | "unsafe_identity"; candidates?: StockLike[] };
+  | { status: "needs_match_review"; reason: "no_match" | "ambiguous_match" | "not_actual" | "unknown_source" | "unsafe_identity" | "strength_mismatch" | "unit_mismatch" | "supplier_mismatch"; candidates?: StockLike[] };
 
 export type ActualProfitResult = {
   status: "matched" | "needs_match_review" | "pricing_unit_unverified" | "phif_supplier_excluded";
@@ -121,7 +121,7 @@ function normalizeText(value: unknown) {
     .toLowerCase()
     .replace(/[µμ]/g, "mc")
     .replace(/\s+/g, " ")
-    .replace(/[^\p{L}\p{N}.+% -]/gu, " ")
+    .replace(/[^\p{L}\p{N}.+%/ -]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -132,9 +132,14 @@ function normalizeStrength(value: unknown) {
     .replace(/mcg/g, "mcg")
     .replace(/iu\/?ml/g, "iu")
     .replace(/^u(\d+)/, "$1iu");
-  return compact
-    .replace(/(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)(mg|mcg|iu|g)\b/g, "$1$3/$2$3")
-    .replace(/\bu(\d+)/g, "$1iu");
+  const expandedCompound = compact.replace(/(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)(mg|mcg|iu|g)\b/g, "$1$3/$2$3");
+  const withCanonicalMass = expandedCompound.replace(/(\d+(?:\.\d+)?)(mg|mcg)\b/g, (_match, amount, unit) => {
+    const numeric = Number(amount);
+    if (!Number.isFinite(numeric)) return `${amount}${unit}`;
+    const mcg = unit === "mg" ? numeric * 1000 : numeric;
+    return `${Number.isInteger(mcg) ? String(mcg) : String(mcg).replace(/0+$/, "").replace(/\.$/, "")}mcg`;
+  });
+  return withCanonicalMass.replace(/\bu(\d+)/g, "$1iu");
 }
 
 function pickString(fields: Record<string, unknown> | null | undefined, keys: string[]) {
@@ -261,6 +266,9 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   if (item.source_classification === "phif-supplier") {
     return { status: "needs_match_review", reason: "not_actual" };
   }
+  if (item.source_classification !== "actual-supplier") {
+    return { status: "needs_match_review", reason: item.source_classification ? "not_actual" : "unknown_source" };
+  }
 
   const brand = normalizeText(item.brand);
   const strength = normalizeStrength(item.strength);
@@ -279,16 +287,38 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   if (!brand && !brandProductId && !genericId) return { status: "needs_match_review", reason: "unsafe_identity" };
 
   const itemPricingUnit = invoiceUnit(item);
+  let sawBrandLike = false;
+  let sawSupplierMismatch = false;
+  let sawStrengthMismatch = false;
+  let sawUnitMismatch = false;
   const matches = candidates.filter((stock) => {
     if (!idsMatchOrMissing(brandProductId, stock.brand_product_id)) return false;
-    if (!idsMatchOrMissing(supplierId, stock.supplier_id)) return false;
+    if (!idsMatchOrMissing(supplierId, stock.supplier_id)) {
+      sawSupplierMismatch = true;
+      return false;
+    }
     if (!idsMatchOrMissing(genericId, stock.generic_ingredient_id)) return false;
-    if (supplier && stock.supplier_name && !tokenCompatibleText(stock.supplier_name, supplier)) return false;
+    if (supplier && stock.supplier_name && !tokenCompatibleText(stock.supplier_name, supplier)) {
+      sawSupplierMismatch = true;
+      return false;
+    }
     if (!idsMatchOrMissing(packageQuantity, stock.package_quantity)) return false;
     if (!idsMatchOrMissing(stripsQuantity, stock.strips_quantity)) return false;
-    if (itemPricingUnit && stock.dosage_unit && normalizedUnit(itemPricingUnit) !== normalizedUnit(stock.dosage_unit)) return false;
-    if (brand && !tokenCompatibleText(stock.brand_name, brand)) return false;
-    if (strength && !compatibleStrength(stock.strength, strength) && !tokenCompatibleText(stock.brand_name, item.brand)) return false;
+    const brandMatches = !brand || tokenCompatibleText(stock.brand_name, brand);
+    if (!brandMatches) return false;
+    sawBrandLike = true;
+    if (strength && stock.strength && !compatibleStrength(stock.strength, strength)) {
+      sawStrengthMismatch = true;
+      return false;
+    }
+    if (strength && !stock.strength && !tokenCompatibleText(stock.brand_name, item.brand)) {
+      sawStrengthMismatch = true;
+      return false;
+    }
+    if (itemPricingUnit && stock.dosage_unit && normalizedUnit(itemPricingUnit) !== normalizedUnit(stock.dosage_unit)) {
+      sawUnitMismatch = true;
+      return false;
+    }
     return Boolean(brandProductId || brand || (genericId && strength));
   });
 
@@ -296,6 +326,10 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   const distinct = matches.filter((stock, index) => !matches.slice(0, index).some((other) => sameStockIdentity(stock, other)));
   if (distinct.length === 1) return { status: "matched", stock: matches[0], reason: "commercial_identity" };
   if (distinct.length > 1) return { status: "needs_match_review", reason: "ambiguous_match", candidates: distinct };
+  if (sawUnitMismatch) return { status: "needs_match_review", reason: "unit_mismatch" };
+  if (sawStrengthMismatch) return { status: "needs_match_review", reason: "strength_mismatch" };
+  if (sawSupplierMismatch) return { status: "needs_match_review", reason: "supplier_mismatch" };
+  if (sawBrandLike) return { status: "needs_match_review", reason: "no_match" };
   return { status: "needs_match_review", reason: "no_match" };
 }
 
@@ -361,4 +395,8 @@ export function stockSnapshotCandidatesForInvoice(item: InvoiceItemLike, stocks:
   // A current snapshot cannot establish an invoice-date cost. Keep historical
   // invoices unmatched rather than silently passing a later cost as historical.
   return eligible;
+}
+
+export function currentStockCandidatesForActual(item: InvoiceItemLike, stocks: StockLike[]) {
+  return stocks;
 }

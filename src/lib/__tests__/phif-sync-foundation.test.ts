@@ -19,6 +19,7 @@ import { buildPhifHistoryRows, phifDueSummariesToTracks } from "@/lib/reads.func
 import { normalizePhifStockRows } from "@/lib/phif-stock.functions";
 import {
   calculateActualGrossMargin,
+  currentStockCandidatesForActual,
   matchActualInvoiceItemToStock,
   stockSnapshotCandidatesForInvoice,
   stockQuantityBreakdown,
@@ -1161,6 +1162,85 @@ describe("PHIF sync foundation", () => {
     ];
 
     expect(stockSnapshotCandidatesForInvoice({ brand: "Formin", strength: "500 mg" }, snapshots, "2026-09-25").map((row) => row.source_stock_id)).toEqual(["old"]);
+    expect(currentStockCandidatesForActual({ brand: "Formin", strength: "500 mg" }, snapshots).map((row) => row.source_stock_id)).toEqual(["old", "new"]);
+  });
+
+  it("uses current Actual stock for old invoices and includes zero-stock items", () => {
+    const item = {
+      brand: "ASPIREM EC 75MG",
+      active_ingredient: "ACETYLSALICYLIC ACID",
+      strength: "75MG",
+      quantity: 28,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TABS" },
+      phif_financial_fields: { total_amount: "20.496" },
+    };
+    const stock = {
+      source_stock_id: "aspirem-current",
+      brand_name: "ASPIREM EC 75MG TABLETS",
+      active_ingredient: "ACETYLSALICYLIC ACID",
+      strength: "75 MG",
+      dosage_unit: "TABLETS",
+      stock_quantity: "0",
+      cost_price: "0.500",
+      synced_at: "2026-10-01T10:00:00Z",
+    };
+
+    expect(stockSnapshotCandidatesForInvoice(item, [stock], "2026-09-25")).toEqual([]);
+    expect(calculateActualGrossMargin(item, currentStockCandidatesForActual(item, [stock]))).toMatchObject({
+      status: "matched",
+      purchaseCost: 14,
+    });
+    expect(calculateActualGrossMargin(item, currentStockCandidatesForActual(item, [stock])).grossMargin).toBeCloseTo(6.496);
+  });
+
+  it("normalizes Actual microgram strengths such as TAZIN 0.4mg and 400mcg", () => {
+    const item = {
+      brand: "TAZIN 0.4MG CAPS",
+      active_ingredient: "TAMSULOSIN",
+      strength: "0.4MG",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      metadata: { unit: "CAP" },
+      phif_financial_fields: { total_amount: "45.000" },
+    };
+    const stock = {
+      source_stock_id: "tazin-current",
+      brand_name: "TAZIN 400MCG CAPSULES",
+      active_ingredient: "TAMSULOSIN",
+      strength: "400MCG",
+      dosage_unit: "CAPSULE",
+      cost_price: "1.000",
+      synced_at: "2026-10-01T10:00:00Z",
+    };
+
+    expect(matchActualInvoiceItemToStock(item, [stock])).toMatchObject({ status: "matched" });
+    expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "matched", purchaseCost: 30, grossMargin: 15 });
+  });
+
+  it("reports specific Actual mismatch reasons without accepting unsafe matches", () => {
+    const base = {
+      brand: "BLOCOR 2.5MG TABS",
+      active_ingredient: "BISOPROLOL",
+      strength: "2.5MG",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TABS" },
+      phif_financial_fields: { total_amount: "30.000" },
+    };
+
+    expect(matchActualInvoiceItemToStock(base, [{ brand_name: "BLOCOR 5MG TABS", strength: "5MG", dosage_unit: "TABS", cost_price: "0.400" }])).toMatchObject({
+      status: "needs_match_review",
+      reason: "strength_mismatch",
+    });
+    expect(matchActualInvoiceItemToStock(base, [{ brand_name: "BLOCOR 2.5MG SYRUP", strength: "2.5MG", dosage_unit: "SYRUP", cost_price: "0.400" }])).toMatchObject({
+      status: "needs_match_review",
+      reason: "unit_mismatch",
+    });
+    expect(matchActualInvoiceItemToStock({ ...base, source_classification: null }, [{ brand_name: "BLOCOR 2.5MG TABS", strength: "2.5MG", dosage_unit: "TABS", cost_price: "0.400" }])).toMatchObject({
+      status: "needs_match_review",
+      reason: "unknown_source",
+    });
   });
 
   it("requires comparable pricing units and preserves historical invoice revenue", () => {

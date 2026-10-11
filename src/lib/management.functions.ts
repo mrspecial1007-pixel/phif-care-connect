@@ -2,9 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import {
   calculateActualGrossMargin,
+  currentStockCandidatesForActual,
   invoiceItemValue,
   matchActualInvoiceItemToStock,
-  stockSnapshotCandidatesForInvoice,
 } from "@/lib/phif-stock.helpers";
 import {
   buildMonthlyReport,
@@ -392,6 +392,10 @@ function auditReason(reason: string) {
   if (reason === "ambiguous_match") return "AMBIGUOUS_MATCHES";
   if (reason === "unsafe_identity") return "MISSING_IDENTIFIERS";
   if (reason === "pricing_unit_unverified") return "UNIT_MISMATCH";
+  if (reason === "unit_mismatch") return "UNIT_MISMATCH";
+  if (reason === "strength_mismatch") return "STRENGTH_MISMATCH";
+  if (reason === "supplier_mismatch") return "SUPPLIER_MISMATCH";
+  if (reason === "unknown_source") return "SOURCE_MISSING";
   if (reason === "no_match") return "NO_STOCK_MATCH";
   if (reason === "not_actual") return "SOURCE_MISMATCH";
   return reason || "NO_STOCK_MATCH";
@@ -454,7 +458,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       continue;
     }
 
-    const candidates = stockSnapshotCandidatesForInvoice(item, input.stocks, invoice?.dispensing_date);
+    const candidates = currentStockCandidatesForActual(item, input.stocks);
     const match = matchActualInvoiceItemToStock(item, candidates);
     const reasonCode = profit.status === "pricing_unit_unverified" ? "UNIT_MISMATCH" : auditReason(match.reason);
     const status = match.status === "matched" && profit.status === "matched"
@@ -804,7 +808,7 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
     const invoiceById = new Map((invoices ?? []).map((invoice: any) => [invoice.id, invoice]));
     const details = redactProfitRows(items.map((item) => {
       const invoice: any = invoiceById.get(item.phif_invoice_id);
-      const candidates = stockSnapshotCandidatesForInvoice(item, stockRows ?? [], invoice?.dispensing_date);
+      const candidates = currentStockCandidatesForActual(item, stockRows ?? []);
       const margin = calculateActualGrossMargin(item, candidates);
       return {
         invoice_id: item.phif_invoice_id,

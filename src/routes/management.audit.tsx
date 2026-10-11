@@ -40,6 +40,7 @@ const reasonLabels: Record<string, string> = {
   AMBIGUOUS_MATCHES: "أكثر من مرشح محتمل ولا يمكن الاختيار تلقائيًا",
   MISSING_IDENTIFIERS: "بيانات التعريف غير كافية للمطابقة الآمنة",
   SOURCE_MISMATCH: "مصدر الصنف غير مناسب للتدقيق",
+  SOURCE_MISSING: "مصدر الصنف غير مصنف ولا يمكن اعتباره Actual تلقائيًا",
 };
 
 function reasonLabel(reason: string | null | undefined) {
