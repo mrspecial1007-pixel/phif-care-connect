@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   calculateActualGrossMargin,
   invoiceItemValue,
+  matchActualInvoiceItemToStock,
   stockSnapshotCandidatesForInvoice,
 } from "@/lib/phif-stock.helpers";
 import {
@@ -52,6 +53,10 @@ const supplierPurchaseOverrideSchema = z.object({
   purchaseCostValue: z.number().min(0).max(1_000_000).optional(),
   purchaseCostUnit: z.string().trim().min(1).max(40).optional(),
 });
+
+const auditSchema = z.object({
+  refreshNonce: z.number().optional(),
+}).optional();
 
 type SourceKey = "actual" | "phif";
 
@@ -148,6 +153,31 @@ async function loadReportDataset(
     .eq("pharmacy_id", pharmacyId)
     .gte("dispensing_date", dateFrom)
     .lte("dispensing_date", dateTo)
+    .order("dispensing_date", { ascending: false });
+  if (error) throw new Error(error.message);
+
+  const invoiceRows = (invoices ?? []) as ReportInvoice[];
+  const ids = invoiceRows.map((invoice) => invoice.id);
+  const items: ReportItem[] = [];
+  for (let index = 0; index < ids.length; index += 500) {
+    const batch = ids.slice(index, index + 500);
+    if (batch.length === 0) continue;
+    const { data: rows, error: itemError } = await supabaseAdmin
+      .from("phif_invoice_items")
+      .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata")
+      .in("phif_invoice_id", batch);
+    if (itemError) throw new Error(itemError.message);
+    items.push(...((rows ?? []) as ReportItem[]));
+  }
+
+  return { invoices: invoiceRows, items };
+}
+
+async function loadAllReportDataset(supabaseAdmin: any, pharmacyId: string) {
+  const { data: invoices, error } = await supabaseAdmin
+    .from("phif_invoices")
+    .select("id, invoice_number, invoice_key, beneficiary_name, insurance_card_number, dispensing_date, metadata")
+    .eq("pharmacy_id", pharmacyId)
     .order("dispensing_date", { ascending: false });
   if (error) throw new Error(error.message);
 
@@ -356,6 +386,165 @@ function invoiceFinancialStatus(invoice: any) {
   if ((invoice.unit_review_count ?? 0) > 0) return "unit_review";
   if ((invoice.needs_price_count ?? 0) > 0) return "incomplete_cost";
   return "complete";
+}
+
+function auditReason(reason: string) {
+  if (reason === "ambiguous_match") return "AMBIGUOUS_MATCHES";
+  if (reason === "unsafe_identity") return "MISSING_IDENTIFIERS";
+  if (reason === "pricing_unit_unverified") return "UNIT_MISMATCH";
+  if (reason === "no_match") return "NO_STOCK_MATCH";
+  if (reason === "not_actual") return "SOURCE_MISMATCH";
+  return reason || "NO_STOCK_MATCH";
+}
+
+function stockCandidateView(stock: any, reason?: string) {
+  return {
+    stock_id: stock?.source_stock_id ?? stock?.id ?? null,
+    brand_name: stock?.brand_name ?? null,
+    generic: stock?.active_ingredient ?? null,
+    strength: stock?.strength ?? null,
+    unit: stock?.dosage_unit ?? stock?.source_quantity_unit ?? null,
+    supplier: stock?.supplier_name ?? null,
+    cost_price: reportNumberValue(stock?.cost_price),
+    match_score: null,
+    match_reasons: reason ? [reason] : [],
+  };
+}
+
+function auditStatusPriority(status: string) {
+  if (status === "ambiguous") return 3;
+  if (status === "unmatched") return 2;
+  return 1;
+}
+
+export function buildManagementAuditReport(input: { invoices: any[]; items: any[]; stocks: any[] }) {
+  const invoiceById = new Map(input.invoices.map((invoice) => [invoice.id, invoice]));
+  const actualGroups = new Map<string, any>();
+  const financialInvoices = new Map<string, any>();
+
+  for (const invoice of input.invoices) {
+    financialInvoices.set(invoice.id, {
+      invoice_id: invoice.id,
+      invoice_number: invoice.invoice_number ?? invoice.invoice_key ?? null,
+      invoice_key: invoice.invoice_key ?? null,
+      beneficiary_name: invoice.beneficiary_name ?? null,
+      dispensing_date: invoice.dispensing_date ?? null,
+      item_count: 0,
+      actual_unmatched_count: 0,
+      phif_missing_cost_count: 0,
+      unit_review_count: 0,
+      reasons: [],
+    });
+  }
+
+  for (const item of input.items) {
+    const invoice: any = invoiceById.get(item.phif_invoice_id) ?? {};
+    const invoiceAudit = financialInvoices.get(item.phif_invoice_id);
+    if (invoiceAudit) invoiceAudit.item_count += 1;
+
+    const profit = profitForItem(item, invoice, input.stocks);
+    if (profit.source === "phif") {
+      if (invoiceAudit && profit.status === "needs_purchase_price") {
+        invoiceAudit.phif_missing_cost_count += 1;
+        invoiceAudit.reasons.push("PHIF Supplier بدون تكلفة محفوظة");
+      } else if (invoiceAudit && profit.status === "pricing_unit_unverified") {
+        invoiceAudit.unit_review_count += 1;
+        invoiceAudit.reasons.push("وحدة تكلفة PHIF Supplier تحتاج مراجعة");
+      }
+      continue;
+    }
+
+    const candidates = stockSnapshotCandidatesForInvoice(item, input.stocks, invoice?.dispensing_date);
+    const match = matchActualInvoiceItemToStock(item, candidates);
+    const reasonCode = profit.status === "pricing_unit_unverified" ? "UNIT_MISMATCH" : auditReason(match.reason);
+    const status = match.status === "matched" && profit.status === "matched"
+      ? "matched"
+      : match.reason === "ambiguous_match"
+        ? "ambiguous"
+        : "unmatched";
+    if (invoiceAudit && status === "unmatched") {
+      invoiceAudit.actual_unmatched_count += 1;
+      invoiceAudit.reasons.push(`Actual: ${reasonCode}`);
+    } else if (invoiceAudit && status === "ambiguous") {
+      invoiceAudit.actual_unmatched_count += 1;
+      invoiceAudit.reasons.push("Actual: AMBIGUOUS_MATCHES");
+    }
+
+    const identityKey = reportDrugIdentityKey(item, "brand");
+    const row = actualGroups.get(identityKey) ?? {
+      identity_key: identityKey,
+      brand: item.brand ?? null,
+      active_ingredient: item.active_ingredient ?? null,
+      strength: item.strength ?? null,
+      unit: item.metadata?.unit ?? item.metadata?.dosage_unit ?? item.metadata?.quantity_unit ?? item.metadata?.dosage_form ?? null,
+      occurrence_count: 0,
+      invoice_ids: new Set<string>(),
+      status,
+      reason: status === "matched" ? null : reasonCode,
+      candidates: [],
+    };
+    row.occurrence_count += 1;
+    row.invoice_ids.add(item.phif_invoice_id);
+    if (auditStatusPriority(status) > auditStatusPriority(row.status)) {
+      row.status = status;
+      row.reason = status === "matched" ? null : reasonCode;
+    }
+    const candidateRows = match.status === "needs_match_review" && match.candidates
+      ? match.candidates.map((stock) => stockCandidateView(stock, "ambiguous_match"))
+      : profit.stock
+        ? [stockCandidateView(profit.stock, profit.reason)]
+        : [];
+    for (const candidate of candidateRows) {
+      if (!row.candidates.some((existing: any) => existing.stock_id === candidate.stock_id && existing.brand_name === candidate.brand_name)) {
+        row.candidates.push(candidate);
+      }
+    }
+    actualGroups.set(identityKey, row);
+  }
+
+  const actualItems = [...actualGroups.values()].map((row) => ({
+    ...row,
+    invoice_count: row.invoice_ids.size,
+    invoice_ids: undefined,
+  }));
+  const actualSummary = {
+    total_unique: actualItems.length,
+    matched: actualItems.filter((row) => row.status === "matched").length,
+    unmatched: actualItems.filter((row) => row.status === "unmatched").length,
+    ambiguous: actualItems.filter((row) => row.status === "ambiguous").length,
+    match_ratio: actualItems.length ? actualItems.filter((row) => row.status === "matched").length / actualItems.length : 0,
+  };
+
+  const invoices = [...financialInvoices.values()].map((invoice) => {
+    const uniqueReasons = [...new Set(invoice.reasons)];
+    return {
+      ...invoice,
+      reasons: uniqueReasons,
+      status: uniqueReasons.length === 0 ? "complete" : "incomplete",
+    };
+  });
+  const financialSummary = {
+    complete_invoices: invoices.filter((invoice) => invoice.status === "complete").length,
+    incomplete_invoices: invoices.filter((invoice) => invoice.status === "incomplete").length,
+    actual_unmatched_items: invoices.reduce((sum, invoice) => sum + invoice.actual_unmatched_count, 0),
+    phif_missing_cost_items: invoices.reduce((sum, invoice) => sum + invoice.phif_missing_cost_count, 0),
+  };
+
+  return {
+    generated_at: new Date().toISOString(),
+    actual: {
+      summary: actualSummary,
+      issues: actualItems
+        .filter((row) => row.status !== "matched")
+        .sort((a, b) => b.occurrence_count - a.occurrence_count),
+    },
+    financial: {
+      summary: financialSummary,
+      incomplete_invoices: invoices
+        .filter((invoice) => invoice.status === "incomplete")
+        .sort((a, b) => String(b.dispensing_date ?? "").localeCompare(String(a.dispensing_date ?? ""))),
+    },
+  };
 }
 
 function redactProfitRow(row: any, access: FinanceAccess) {
@@ -719,6 +908,17 @@ export const getReportItemTracking = createServerFn({ method: "POST" })
       movements,
        beneficiaries: [...new Map(movements.map((row) => [row.insurance_card_number ?? row.beneficiary_name, { name: row.beneficiary_name, card: row.insurance_card_number }])).values()],
     };
+  });
+
+export const getManagementAuditReport = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => auditSchema.parse(d))
+  .handler(async () => {
+    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { pharmacy_id } = await requireTiryaqPermission("reports_read");
+    const dataset = await loadAllReportDataset(supabaseAdmin, pharmacy_id);
+    const stocks = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
+    return buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks });
   });
 
 export const getProfitAnalysisReport = createServerFn({ method: "POST" })

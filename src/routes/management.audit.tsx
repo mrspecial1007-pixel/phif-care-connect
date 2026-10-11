@@ -1,0 +1,223 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+
+import { ReportBackLink } from "@/components/management/ReportBackLink";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { getManagementAuditReport } from "@/lib/management.functions";
+
+export const Route = createFileRoute("/management/audit")({
+  component: ManagementAuditPage,
+  head: () => ({
+    meta: [
+      { title: "مركز التدقيق - PHIF Tracker" },
+      { name: "description", content: "تدقيق قراءة فقط لمطابقة Actual واكتمال التسعير المالي" },
+      { property: "og:title", content: "مركز التدقيق - PHIF Tracker" },
+      { property: "og:description", content: "كشف مشاكل مطابقة Actual والتسعير المالي دون تعديل البيانات" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+});
+
+function percent(value: number | null | undefined) {
+  return `${Math.round((value ?? 0) * 100)}%`;
+}
+
+function money(value: number | null | undefined) {
+  if (value === null || value === undefined) return "غير متاح";
+  return `${Number(value).toLocaleString("ar-LY", { maximumFractionDigits: 3 })} د.ل`;
+}
+
+const reasonLabels: Record<string, string> = {
+  NO_STOCK_MATCH: "لا يوجد صنف مطابق في مخزون PHIF الحالي",
+  STRENGTH_MISMATCH: "اختلاف في التركيز",
+  UNIT_MISMATCH: "اختلاف أو غياب وحدة التسعير",
+  SUPPLIER_MISMATCH: "اختلاف المورد",
+  AMBIGUOUS_MATCHES: "أكثر من مرشح محتمل ولا يمكن الاختيار تلقائيًا",
+  MISSING_IDENTIFIERS: "بيانات التعريف غير كافية للمطابقة الآمنة",
+  SOURCE_MISMATCH: "مصدر الصنف غير مناسب للتدقيق",
+};
+
+function reasonLabel(reason: string | null | undefined) {
+  if (!reason) return "غير محدد";
+  return reasonLabels[reason] ?? reason;
+}
+
+function MetricCard({ label, value, tone = "neutral", onClick }: { label: string; value: string | number; tone?: "success" | "warning" | "danger" | "neutral"; onClick?: () => void }) {
+  const toneClass = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    warning: "border-amber-200 bg-amber-50 text-amber-900",
+    danger: "border-red-200 bg-red-50 text-red-900",
+    neutral: "border-border bg-card text-foreground",
+  }[tone];
+  const content = (
+    <Card className={`h-full p-3 ${toneClass}`}>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-bold">{value}</div>
+    </Card>
+  );
+  if (!onClick) return content;
+  return <button type="button" className="block h-full w-full text-right" onClick={onClick}>{content}</button>;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const cls = status === "matched" || status === "complete"
+    ? "bg-emerald-100 text-emerald-800"
+    : status === "ambiguous"
+      ? "bg-amber-100 text-amber-800"
+      : "bg-red-100 text-red-800";
+  const label = status === "matched" ? "مطابق" : status === "ambiguous" ? "يحتاج مراجعة" : status === "complete" ? "مكتملة" : "غير مكتمل";
+  return <span className={`rounded-full px-2 py-1 text-xs font-semibold ${cls}`}>{label}</span>;
+}
+
+function ActualIssueCard({ item }: { item: any }) {
+  return (
+    <Card className={`space-y-3 p-3 ${item.status === "ambiguous" ? "border-amber-200" : "border-red-200"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold leading-snug">{item.brand || item.active_ingredient || "صنف Actual"}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {item.active_ingredient || "اسم علمي غير متاح"} · {item.strength || "تركيز غير متاح"} · {item.unit || "وحدة غير متاحة"}
+          </div>
+        </div>
+        <StatusBadge status={item.status} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-md bg-muted/60 p-2">مرات الظهور<strong className="block text-base">{item.occurrence_count}</strong></div>
+        <div className="rounded-md bg-muted/60 p-2">الفواتير المتأثرة<strong className="block text-base">{item.invoice_count}</strong></div>
+      </div>
+      <div className="rounded-md bg-red-50 p-2 text-sm text-red-800">{reasonLabel(item.reason)}</div>
+      {item.candidates?.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-xs font-semibold text-muted-foreground">مرشحون محتملون من المخزون</div>
+          {item.candidates.map((candidate: any, index: number) => (
+            <div key={`${candidate.stock_id ?? candidate.brand_name}-${index}`} className="rounded-lg border p-2 text-xs">
+              <div className="font-semibold">{candidate.brand_name || "بدون اسم تجاري"}</div>
+              <div className="text-muted-foreground">{candidate.generic || "بدون اسم علمي"} · {candidate.strength || "تركيز غير متاح"} · {candidate.unit || "وحدة غير متاحة"}</div>
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <span>المورد: {candidate.supplier || "غير متاح"}</span>
+                <span>التكلفة: {money(candidate.cost_price)}</span>
+                <span>Stock ID: {candidate.stock_id || "غير متاح"}</span>
+                <span>Score: {candidate.match_score ?? "غير مدعوم"}</span>
+              </div>
+              {candidate.match_reasons?.length > 0 && <div className="mt-1 text-muted-foreground">الأسباب: {candidate.match_reasons.join(", ")}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function InvoiceIssueCard({ invoice }: { invoice: any }) {
+  return (
+    <Card className="space-y-2 border-red-200 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold">فاتورة {invoice.invoice_number || invoice.invoice_key || "غير محددة"}</div>
+          <div className="text-xs text-muted-foreground">{invoice.beneficiary_name || "مستفيد غير محدد"} · {invoice.dispensing_date || "بدون تاريخ"}</div>
+        </div>
+        <StatusBadge status="incomplete" />
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="rounded-md bg-muted/60 p-2">الأصناف<strong className="block text-base">{invoice.item_count}</strong></div>
+        <div className="rounded-md bg-red-50 p-2">Actual<strong className="block text-base">{invoice.actual_unmatched_count}</strong></div>
+        <div className="rounded-md bg-amber-50 p-2">PHIF تكلفة<strong className="block text-base">{invoice.phif_missing_cost_count}</strong></div>
+      </div>
+      <div className="space-y-1 text-sm">
+        {invoice.reasons.map((reason: string) => <div key={reason} className="rounded-md bg-muted/50 px-2 py-1">{reason}</div>)}
+      </div>
+    </Card>
+  );
+}
+
+function ManagementAuditPage() {
+  const auditFn = useServerFn(getManagementAuditReport);
+  const [nonce, setNonce] = useState(0);
+  const [section, setSection] = useState<"actual" | "financial">("actual");
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["management_audit", nonce],
+    queryFn: () => auditFn({ data: { refreshNonce: nonce } }),
+    retry: false,
+  });
+
+  const actual = data?.actual;
+  const financial = data?.financial;
+
+  return (
+    <div className="space-y-4" dir="rtl">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <ReportBackLink to="/management" label="الإدارة" />
+          <h1 className="text-xl font-bold">مركز التدقيق</h1>
+          <p className="text-sm text-muted-foreground">تشخيص قراءة فقط لمطابقة Actual والتسعير المالي دون تعديل أي بيانات.</p>
+        </div>
+        <Button
+          variant="outline"
+          className="shrink-0 gap-2"
+          disabled={isFetching}
+          onClick={() => {
+            setNonce((value) => value + 1);
+            refetch();
+          }}
+        >
+          <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          إعادة التدقيق
+        </Button>
+      </div>
+
+      {isLoading && <Card className="p-4 text-sm text-muted-foreground">جاري تشغيل التدقيق...</Card>}
+      {error && <Card className="border-red-200 p-4 text-sm text-red-700">تعذر تشغيل التدقيق: {(error as Error).message}</Card>}
+
+      {data && (
+        <>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+            <MetricCard label="Actual فريدة" value={actual.summary.total_unique} />
+            <MetricCard label="Matched" value={actual.summary.matched} tone="success" />
+            <MetricCard label="Unmatched" value={actual.summary.unmatched} tone="danger" onClick={() => setSection("actual")} />
+            <MetricCard label="Ambiguous" value={actual.summary.ambiguous} tone="warning" onClick={() => setSection("actual")} />
+            <MetricCard label="نسبة المطابقة" value={percent(actual.summary.match_ratio)} tone={actual.summary.match_ratio === 1 ? "success" : "warning"} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <MetricCard label="فواتير مكتملة" value={financial.summary.complete_invoices} tone="success" />
+            <MetricCard label="فواتير غير مكتملة" value={financial.summary.incomplete_invoices} tone="danger" onClick={() => setSection("financial")} />
+            <MetricCard label="Actual غير مطابق" value={financial.summary.actual_unmatched_items} tone="danger" />
+            <MetricCard label="PHIF بلا تكلفة" value={financial.summary.phif_missing_cost_items} tone="warning" />
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant={section === "actual" ? "default" : "outline"} onClick={() => setSection("actual")} className="gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              تدقيق Actual
+            </Button>
+            <Button variant={section === "financial" ? "default" : "outline"} onClick={() => setSection("financial")} className="gap-2">
+              <ShieldCheck className="h-4 w-4" />
+              التدقيق المالي
+            </Button>
+          </div>
+
+          {section === "actual" && (
+            <div className="space-y-3">
+              {actual.issues.length === 0 ? (
+                <Card className="flex items-center gap-2 border-emerald-200 p-4 text-emerald-800"><CheckCircle2 className="h-5 w-5" /> لا توجد مشاكل مطابقة Actual.</Card>
+              ) : actual.issues.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} />)}
+            </div>
+          )}
+
+          {section === "financial" && (
+            <div className="space-y-3">
+              {financial.incomplete_invoices.length === 0 ? (
+                <Card className="flex items-center gap-2 border-emerald-200 p-4 text-emerald-800"><CheckCircle2 className="h-5 w-5" /> كل الفواتير مكتملة ماليًا.</Card>
+              ) : financial.incomplete_invoices.map((invoice: any) => <InvoiceIssueCard key={invoice.invoice_id} invoice={invoice} />)}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

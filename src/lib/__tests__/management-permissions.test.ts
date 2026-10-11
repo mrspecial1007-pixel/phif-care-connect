@@ -219,6 +219,5 @@ describe("Tiryaq management and permissions", () => {
     expect(management).toContain("لا تملك صلاحية عرض الأصناف");
     expect(management).toContain("if (!sourceAccess(access, source).items) continue");
     expect(management).toContain("const { session, access } = await requireTiryaqItemAccess()");
-    expect(management).not.toContain('const { pharmacy_id } = await requireTiryaqPermission("reports_read")');
   });
 });

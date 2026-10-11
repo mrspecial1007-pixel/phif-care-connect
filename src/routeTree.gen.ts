@@ -19,6 +19,7 @@ import { Route as PhifSyncRouteImport } from './routes/phif-sync'
 import { Route as QualityRouteImport } from './routes/quality'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ManagementInventoryRouteImport } from './routes/management.inventory'
+import { Route as ManagementAuditRouteImport } from './routes/management.audit'
 import { Route as ManagementReportsRouteImport } from './routes/management.reports'
 import { Route as ManagementTreasuryRouteImport } from './routes/management.treasury'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
@@ -85,6 +86,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ManagementInventoryRoute = ManagementInventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
+  getParentRoute: () => ManagementRoute,
+} as any)
+const ManagementAuditRoute = ManagementAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
   getParentRoute: () => ManagementRoute,
 } as any)
 const ManagementReportsRoute = ManagementReportsRouteImport.update({
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
@@ -247,6 +255,7 @@ export interface FileRoutesById {
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
@@ -278,6 +287,7 @@ export interface FileRouteTypes {
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/audit'
     | '/management/inventory'
     | '/management/reports'
     | '/management/treasury'
@@ -307,6 +317,7 @@ export interface FileRouteTypes {
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/audit'
     | '/management/inventory'
     | '/management/reports'
     | '/management/treasury'
@@ -336,6 +347,7 @@ export interface FileRouteTypes {
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/audit'
     | '/management/inventory'
     | '/management/reports'
     | '/management/treasury'
@@ -440,6 +452,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/management/audit': {
+      id: '/management/audit'
+      path: '/audit'
+      fullPath: '/management/audit'
+      preLoaderRoute: typeof ManagementAuditRouteImport
+      parentRoute: typeof ManagementRoute
     }
     '/management/inventory': {
       id: '/management/inventory'
@@ -602,12 +621,14 @@ const ManagementReportsRouteWithChildren =
   ManagementReportsRoute._addFileChildren(ManagementReportsRouteChildren)
 
 interface ManagementRouteChildren {
+  ManagementAuditRoute: typeof ManagementAuditRoute
   ManagementInventoryRoute: typeof ManagementInventoryRoute
   ManagementReportsRoute: typeof ManagementReportsRouteWithChildren
   ManagementTreasuryRoute: typeof ManagementTreasuryRoute
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
+  ManagementAuditRoute: ManagementAuditRoute,
   ManagementInventoryRoute: ManagementInventoryRoute,
   ManagementReportsRoute: ManagementReportsRouteWithChildren,
   ManagementTreasuryRoute: ManagementTreasuryRoute,
