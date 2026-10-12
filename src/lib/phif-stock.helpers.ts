@@ -226,6 +226,57 @@ function textTokens(value: unknown) {
     .filter((token) => token.length >= 2);
 }
 
+function descriptiveBrandTokens(value: unknown) {
+  return new Set(textTokens(value).filter((token) => {
+    if (["tabs", "caps", "inj", "pen", "vial", "amp", "strip"].includes(token)) return true;
+    if (/^\d+(?:\.\d+)?(?:mcg|mg|g|iu|ml|%)$/.test(token)) return true;
+    if (/^\d+x\d+(?:\.\d+)?(?:mcg|mg|g|iu|ml)?$/.test(token)) return true;
+    return false;
+  }));
+}
+
+function strengthDescriptorTokens(value: unknown) {
+  const raw = normalizeText(value);
+  const tokens = new Set(textTokens(raw));
+  const compact = raw.replace(/\s+/g, "");
+  for (const match of compact.matchAll(/(\d+(?:\.\d+)?)(mcg|mg|g|iu|ml|%)\b/g)) {
+    tokens.add(match[1]);
+    tokens.add(match[2]);
+    tokens.add(canonicalTextToken(`${match[1]}${match[2]}`));
+  }
+  for (const match of compact.matchAll(/u(\d+)\b/g)) {
+    tokens.add(`u${match[1]}`);
+    tokens.add(`${match[1]}iu`);
+  }
+  return tokens;
+}
+
+function commercialBrandTokens(value: unknown, context: { strength?: unknown; unit?: unknown; packageQuantity?: unknown; stripsQuantity?: unknown } = {}) {
+  const descriptors = new Set([
+    ...descriptiveBrandTokens(value),
+    ...strengthDescriptorTokens(context.strength),
+    ...textTokens(context.unit),
+    ...textTokens(context.packageQuantity),
+    ...textTokens(context.stripsQuantity),
+  ]);
+  return textTokens(value).filter((token) => !descriptors.has(token));
+}
+
+function commercialBrandCompatible(
+  stockBrand: unknown,
+  itemBrand: unknown,
+  stockContext: { strength?: unknown; unit?: unknown; packageQuantity?: unknown; stripsQuantity?: unknown } = {},
+  itemContext: { strength?: unknown; unit?: unknown; packageQuantity?: unknown; stripsQuantity?: unknown } = {},
+) {
+  if (compatibleText(stockBrand, itemBrand)) return true;
+  const stockTokens = commercialBrandTokens(stockBrand, stockContext);
+  const itemTokens = commercialBrandTokens(itemBrand, itemContext);
+  if (stockTokens.length === 0 || itemTokens.length === 0) return false;
+  const stockSet = new Set(stockTokens);
+  const matches = itemTokens.filter((token) => stockSet.has(token) || stockTokens.some((stockToken) => stockToken.includes(token) || token.includes(stockToken)));
+  return matches.length === itemTokens.length;
+}
+
 function tokenCompatibleText(a: unknown, b: unknown) {
   if (compatibleText(a, b)) return true;
   const leftTokens = new Set(textTokens(a));
@@ -304,7 +355,22 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
     }
     if (!idsMatchOrMissing(packageQuantity, stock.package_quantity)) return false;
     if (!idsMatchOrMissing(stripsQuantity, stock.strips_quantity)) return false;
-    const brandMatches = !brand || tokenCompatibleText(stock.brand_name, brand);
+    const brandMatches = !brand || commercialBrandCompatible(
+      stock.brand_name,
+      item.brand,
+      {
+        strength: stock.strength,
+        unit: stock.dosage_unit,
+        packageQuantity: stock.package_quantity,
+        stripsQuantity: stock.strips_quantity,
+      },
+      {
+        strength: item.strength,
+        unit: itemPricingUnit,
+        packageQuantity,
+        stripsQuantity,
+      },
+    );
     if (!brandMatches) return false;
     sawBrandLike = true;
     if (strength && stock.strength && !compatibleStrength(stock.strength, strength)) {

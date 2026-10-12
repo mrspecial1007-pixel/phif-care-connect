@@ -1139,6 +1139,109 @@ describe("PHIF sync foundation", () => {
     });
   });
 
+  it("prioritizes the dispensed commercial Actual brand over same-generic alternatives", () => {
+    const benefitItem = {
+      brand: "BENEFIT 40MG TABS",
+      active_ingredient: "ATORVASTATIN",
+      strength: "40MG",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TABS" },
+      phif_financial_fields: { total_amount: "60.000" },
+    };
+    const stocks = [
+      {
+        source_stock_id: "benefit",
+        brand_name: "BENEFIT 40MG TABLETS",
+        active_ingredient: "ATORVASTATIN",
+        strength: "40MG",
+        dosage_unit: "TABLETS",
+        cost_price: "1.000",
+      },
+      {
+        source_stock_id: "liptin",
+        brand_name: "LIPTIN 40MG TABS",
+        active_ingredient: "ATORVASTATIN",
+        strength: "40MG",
+        dosage_unit: "TABS",
+        cost_price: "0.800",
+      },
+    ];
+
+    expect(matchActualInvoiceItemToStock(benefitItem, stocks)).toMatchObject({
+      status: "matched",
+      stock: { source_stock_id: "benefit" },
+    });
+    expect(calculateActualGrossMargin(benefitItem, stocks)).toMatchObject({
+      status: "matched",
+      purchaseCost: 30,
+      grossMargin: 30,
+    });
+    expect(matchActualInvoiceItemToStock({ ...benefitItem, brand: "LIPTIN 40MG TABS" }, stocks)).toMatchObject({
+      status: "matched",
+      stock: { source_stock_id: "liptin" },
+    });
+  });
+
+  it("does not accept a same-generic Actual stock item when the commercial brand differs", () => {
+    expect(matchActualInvoiceItemToStock(
+      {
+        brand: "BENEFIT 40MG TABS",
+        active_ingredient: "ATORVASTATIN",
+        strength: "40MG",
+        quantity: 30,
+        source_classification: "actual-supplier",
+        metadata: { unit: "TABS" },
+        phif_financial_fields: { total_amount: "60.000" },
+      },
+      [{
+        source_stock_id: "liptin",
+        brand_name: "LIPTIN 40MG TABS",
+        active_ingredient: "ATORVASTATIN",
+        strength: "40MG",
+        dosage_unit: "TABS",
+        cost_price: "0.800",
+      }],
+    )).toMatchObject({
+      status: "needs_match_review",
+      reason: "no_match",
+    });
+  });
+
+  it("keeps commercial numbers while ignoring descriptive strength and form tokens", () => {
+    expect(matchActualInvoiceItemToStock(
+      {
+        brand: "3TC 150MG TABS",
+        active_ingredient: "LAMIVUDINE",
+        strength: "150MG",
+        quantity: 30,
+        source_classification: "actual-supplier",
+        metadata: { unit: "TAB" },
+        phif_financial_fields: { total_amount: "45.000" },
+      },
+      [{ source_stock_id: "3tc", brand_name: "3TC TABLETS 150 MG", strength: "150MG", dosage_unit: "TABLETS", cost_price: "1.000" }],
+    )).toMatchObject({ status: "matched", stock: { source_stock_id: "3tc" } });
+  });
+
+  it("keeps same commercial Actual products ambiguous when package metadata differs", () => {
+    const item = {
+      brand: "BENEFIT 40MG TABS",
+      active_ingredient: "ATORVASTATIN",
+      strength: "40MG",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TABS" },
+      phif_financial_fields: { total_amount: "60.000" },
+    };
+    expect(matchActualInvoiceItemToStock(item, [
+      { source_stock_id: "benefit-30", brand_name: "BENEFIT 40MG TABS 30", strength: "40MG", dosage_unit: "TABS", package_quantity: 30, cost_price: "1.000" },
+      { source_stock_id: "benefit-90", brand_name: "BENEFIT 40MG TABS 90", strength: "40MG", dosage_unit: "TABS", package_quantity: 90, cost_price: "0.900" },
+    ])).toMatchObject({
+      status: "needs_match_review",
+      reason: "ambiguous_match",
+    });
+  });
+
   it("does not replace invoice sale value while calculating Actual margin", () => {
     const item = {
       brand: "Formin",
