@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +31,18 @@ function formatExpiry(value: string | null | undefined) {
   return date.toLocaleDateString("ar-LY", { month: "2-digit", year: "numeric" });
 }
 
+function expiryState(value: string | null | undefined) {
+  if (!value) return { status: "missing" as const, label: "الصلاحية غير متاحة", tone: "muted" as const };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { status: "missing" as const, label: "الصلاحية غير واضحة", tone: "muted" as const };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.ceil((date.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return { status: "expired" as const, label: "منتهي الصلاحية", tone: "danger" as const };
+  if (days <= 90) return { status: "soon" as const, label: `ينتهي خلال ${days} يوم`, tone: "warning" as const };
+  return { status: "valid" as const, label: "صالح", tone: "success" as const };
+}
+
 function money(value: unknown) {
   if (value === null || value === undefined || value === "") return "—";
   const numeric = typeof value === "number" ? value : Number(String(value).replace(/,/g, ""));
@@ -37,9 +50,17 @@ function money(value: unknown) {
   return numeric.toLocaleString("ar-LY", { maximumFractionDigits: 3 });
 }
 
+function textIncludes(value: unknown, term: string) {
+  return String(value ?? "").toLowerCase().includes(term);
+}
+
 function InventoryPage() {
   const qc = useQueryClient();
   const [query, setQuery] = useState("");
+  const [stockFilter, setStockFilter] = useState("all");
+  const [expiryFilter, setExpiryFilter] = useState("all");
+  const [supplierFilter, setSupplierFilter] = useState("all");
+  const [formFilter, setFormFilter] = useState("all");
   const [selected, setSelected] = useState<any | null>(null);
   const summaryFn = useServerFn(getPhifStockSummary);
   const listFn = useServerFn(listPhifStockItems);
@@ -50,8 +71,8 @@ function InventoryPage() {
     queryFn: () => summaryFn(),
   });
   const items = useQuery({
-    queryKey: ["phif_stock_items", query],
-    queryFn: () => listFn({ data: { query, limit: 120 } }),
+    queryKey: ["phif_stock_items"],
+    queryFn: () => listFn({ data: { query: "", limit: 5000 } }),
   });
   const sync = useMutation({
     mutationFn: () => syncFn(),
@@ -67,6 +88,46 @@ function InventoryPage() {
 
   const lastRun = summary.data?.last_run;
   const canViewCost = summary.data?.can_view_cost === true;
+  const allItems = items.data ?? [];
+  const supplierOptions = useMemo(() => [...new Set(allItems.map((item: any) => String(item.supplier_name ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar")), [allItems]);
+  const formOptions = useMemo(() => [...new Set(allItems.map((item: any) => String(item.dosage_unit ?? item.source_quantity_unit ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar")), [allItems]);
+  const filteredItems = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return allItems.filter((item: any) => {
+      if (term && ![item.brand_name, item.active_ingredient, item.supplier_name, item.strength, item.dosage_unit, item.batch_number].some((value) => textIncludes(value, term))) return false;
+      const availability = stockAvailability(item).status;
+      if (stockFilter !== "all" && availability !== stockFilter) return false;
+      const expiry = expiryState(item.expiry_date).status;
+      if (expiryFilter !== "all" && expiry !== expiryFilter) return false;
+      if (supplierFilter !== "all" && String(item.supplier_name ?? "") !== supplierFilter) return false;
+      if (formFilter !== "all" && String(item.dosage_unit ?? item.source_quantity_unit ?? "") !== formFilter) return false;
+      return true;
+    });
+  }, [allItems, query, stockFilter, expiryFilter, supplierFilter, formFilter]);
+
+  function exportInventory() {
+    const rows = filteredItems.map((item: any, index: number) => {
+      const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط");
+      const expiry = expiryState(item.expiry_date);
+      return {
+        "ر.م": index + 1,
+        "الاسم الكامل": [item.brand_name, item.strength, item.dosage_unit].filter(Boolean).join(" "),
+        "الاسم العلمي": item.active_ingredient ?? "",
+        "الكمية": quantity.label,
+        "إجمالي الأشرطة/الوحدات": item.stock_quantity ?? "",
+        "الوحدة": item.source_quantity_unit ?? item.dosage_unit ?? "",
+        "الصلاحية": item.expiry_date ?? "",
+        "حالة الصلاحية": expiry.label,
+        "المورد": item.supplier_name ?? "",
+        "الشكل الدوائي": item.dosage_unit ?? "",
+        "رقم التشغيلة": item.batch_number ?? "",
+      };
+    });
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "PHIF Inventory");
+    XLSX.writeFile(workbook, "phif_inventory_filtered.xlsx");
+  }
 
   return (
     <div className="space-y-3" dir="rtl">
@@ -112,17 +173,46 @@ function InventoryPage() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="بحث بالاسم التجاري أو العلمي أو المورد أو التركيز"
-            className="h-10 md:w-96"
+            className="h-10"
             dir="rtl"
           />
+          <Button type="button" variant="outline" onClick={exportInventory} disabled={filteredItems.length === 0}>
+            تصدير Excel
+          </Button>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))]">
+          <select value={stockFilter} onChange={(event) => setStockFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="all">كل حالات المخزون</option>
+            <option value="available">متوفر</option>
+            <option value="low">منخفض</option>
+            <option value="out">نفد</option>
+          </select>
+          <select value={expiryFilter} onChange={(event) => setExpiryFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="all">كل الصلاحيات</option>
+            <option value="valid">صالحة</option>
+            <option value="soon">قريبة الانتهاء</option>
+            <option value="expired">منتهية</option>
+            <option value="missing">غير متاحة</option>
+          </select>
+          <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="all">كل الموردين</option>
+            {supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}
+          </select>
+          <select value={formFilter} onChange={(event) => setFormFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="all">كل الأشكال</option>
+            {formOptions.map((form) => <option key={form} value={form}>{form}</option>)}
+          </select>
         </div>
 
         {items.isLoading && <div className="p-4 text-center text-muted-foreground">جاري التحميل...</div>}
-        {!items.isLoading && (items.data ?? []).length === 0 && (
+        {!items.isLoading && filteredItems.length === 0 && (
           <div className="p-6 text-center text-muted-foreground">لا توجد سجلات مخزون مطابقة</div>
         )}
+        {!items.isLoading && filteredItems.length > 0 && (
+          <div className="text-xs text-muted-foreground">عرض {filteredItems.length.toLocaleString("ar-LY")} من {allItems.length.toLocaleString("ar-LY")} صنف</div>
+        )}
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {(items.data ?? []).map((item: any) => (
+          {filteredItems.map((item: any) => (
             <StockCard key={item.id} item={item} onOpen={() => setSelected(item)} />
           ))}
         </div>
@@ -147,6 +237,9 @@ function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
   const availability = stockAvailability(item);
   const quantityDisplay = compactQuantityDisplay(quantity);
   const expiry = formatExpiry(item.expiry_date);
+  const expiryInfo = expiryState(item.expiry_date);
+  const displayTitle = [item.brand_name || item.active_ingredient || "صنف غير مسمى", item.strength, item.dosage_unit].filter(Boolean).join(" ");
+  const displayMeta = [item.active_ingredient, item.supplier_name].filter(Boolean).join(" · ") || "بدون مادة علمية أو مورد محفوظ";
   const tone =
     availability.tone === "danger"
       ? "border-red-200 bg-red-50/80"
@@ -168,12 +261,8 @@ function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
     >
       <div className="flex h-full items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="line-clamp-2 break-words text-[15px] font-semibold leading-5 text-foreground">
-            {item.brand_name || item.active_ingredient || "صنف غير مسمى"}
-          </div>
-          <div className="mt-1 break-words text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {[item.strength, item.dosage_unit].filter(Boolean).join(" · ") || "بدون تركيز"}
-          </div>
+          <div className="line-clamp-2 break-words text-[15px] font-semibold leading-5 text-foreground">{displayTitle}</div>
+          <div className="mt-1 break-words text-xs font-medium text-muted-foreground">{displayMeta}</div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {availability.status !== "available" && (
               <Badge variant={availability.tone === "danger" ? "destructive" : "secondary"} className="h-5 px-2 text-[11px]">
@@ -181,11 +270,12 @@ function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
               </Badge>
             )}
             {expiry && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${expiryInfo.tone === "danger" ? "bg-red-100 text-red-700" : expiryInfo.tone === "warning" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
                 <CalendarDays className="h-3 w-3" />
-                {expiry}
+                {expiry} · {expiryInfo.label}
               </span>
             )}
+            {item.batch_number && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">تشغيلة {item.batch_number}</span>}
           </div>
         </div>
 

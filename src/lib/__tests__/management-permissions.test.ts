@@ -210,6 +210,9 @@ describe("Tiryaq management and permissions", () => {
     expect(items).toContain('eq("source_classification", "phif-supplier")');
     expect(items).toContain("actual_revenue_read");
     expect(items).toContain("phif_cost_read");
+    expect(items).toContain("itemIdentityKey(ingredient, strength, form)");
+    expect(items).toContain("inv.insurance_card_number ?? inv.patient_id");
+    expect(view).toContain('refetchOnMount: "always"');
     expect(view).toContain("لا تملك صلاحية عرض الأصناف");
   });
   it("loads report item search and tracking with source item permissions instead of reports_read", () => {

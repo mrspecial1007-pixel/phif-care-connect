@@ -289,7 +289,19 @@ function tokenCompatibleText(a: unknown, b: unknown) {
 function compatibleStrength(a: unknown, b: unknown) {
   const left = normalizeStrength(a);
   const right = normalizeStrength(b);
-  return !left || !right || left === right || left.includes(right) || right.includes(left);
+  if (!left || !right) return !left || !right;
+  if (left === right) return true;
+
+  const splitComponents = (value: string) =>
+    value
+      .split(/[+/]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .sort();
+  const leftComponents = splitComponents(left);
+  const rightComponents = splitComponents(right);
+  if (leftComponents.length !== rightComponents.length) return false;
+  return leftComponents.every((part, index) => part === rightComponents[index]);
 }
 
 function normalizedUnit(value: unknown) {

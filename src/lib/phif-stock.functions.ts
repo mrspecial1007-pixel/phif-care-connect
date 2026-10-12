@@ -8,7 +8,7 @@ const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com"
 
 const listInput = z.object({
   query: z.string().trim().max(120).optional().default(""),
-  limit: z.number().int().min(1).max(200).optional().default(100),
+  limit: z.number().int().min(1).max(5000).optional().default(100),
 });
 
 function pickString(obj: any, keys: string[]): string | null {

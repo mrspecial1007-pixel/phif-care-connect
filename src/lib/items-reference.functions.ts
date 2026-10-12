@@ -11,6 +11,9 @@ function norm(v: unknown) {
 function itemKey(ingredient: unknown, strength: unknown) {
   return `${norm(ingredient)}|${norm(strength).replace(/\s+/g, "")}`;
 }
+function itemIdentityKey(ingredient: unknown, strength: unknown, form: unknown) {
+  return `${itemKey(ingredient, strength)}|${norm(form)}`;
+}
 function formOf(meta: any) {
   return String(meta?.dosage_form ?? meta?.form ?? meta?.unit ?? meta?.dosage_unit ?? "").trim();
 }
@@ -111,7 +114,7 @@ function buildIndex(data: Awaited<ReturnType<typeof loadAll>>, access: ItemAcces
   const invById = new Map(data.invoices.map((i) => [i.id, i]));
   const map = new Map<string, any>();
   const get = (ingredient: string, strength: string, form: string) => {
-    const key = itemKey(ingredient, strength);
+    const key = itemIdentityKey(ingredient, strength, form);
     let row = map.get(key);
     if (!row) {
       row = { key, id: toId(key), ingredient, strength, form, sources: new Set<Src>(), patients: new Set<string>(), items: [], stock: [] };
@@ -127,7 +130,7 @@ function buildIndex(data: Awaited<ReturnType<typeof loadAll>>, access: ItemAcces
     const row = get(String(it.active_ingredient).trim(), String(it.strength ?? "").trim(), formOf(it.metadata));
     row.sources.add(source);
     const inv: any = invById.get(it.phif_invoice_id);
-    if (inv && sourceMovementsVisible(source, access)) row.patients.add(inv.patient_id ?? inv.insurance_card_number ?? inv.beneficiary_name ?? inv.id);
+    if (inv && sourceMovementsVisible(source, access)) row.patients.add(inv.insurance_card_number ?? inv.patient_id ?? inv.beneficiary_name ?? inv.id);
     row.items.push({ ...it, invoice: inv });
   }
   for (const s of data.stock) {
@@ -172,7 +175,7 @@ export const getReferenceItem = createServerFn({ method: "POST" })
     for (const it of row.items) {
       const inv = it.invoice;
       if (!inv) continue;
-      const k = inv.patient_id ?? inv.insurance_card_number ?? inv.beneficiary_name ?? inv.id;
+      const k = inv.insurance_card_number ?? inv.patient_id ?? inv.beneficiary_name ?? inv.id;
       const b = beneficiaries.get(k) ?? { name: inv.beneficiary_name ?? "مستفيد غير معروف", count: 0 };
       b.count += 1;
       beneficiaries.set(k, b);

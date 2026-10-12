@@ -34,7 +34,13 @@ export function ItemsReferencePage() {
     const last = new Date(year, monthNumber, 0).getDate();
     return { dateFrom: `${month}-01`, dateTo: `${month}-${String(last).padStart(2, "0")}` };
   }, [month]);
-  const { data = [], isLoading, error } = useQuery({ queryKey: ["reference_items", range], queryFn: () => listReferenceItems({ data: range }), staleTime: 60_000 });
+  const { data = [], isLoading, error } = useQuery({
+    queryKey: ["reference_items", range],
+    queryFn: () => listReferenceItems({ data: range }),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return data;

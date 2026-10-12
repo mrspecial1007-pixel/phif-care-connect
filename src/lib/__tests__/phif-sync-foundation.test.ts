@@ -967,6 +967,10 @@ describe("PHIF sync foundation", () => {
     expect(source).toContain('"actual_cost_read"');
     expect(route).toContain("can_view_cost");
     expect(route).toContain("canViewCost &&");
+    expect(route).toContain("exportInventory");
+    expect(route).toContain("expiryFilter");
+    expect(route).toContain("supplierFilter");
+    expect(route).toContain("formFilter");
   });
 
   it("matches Actual invoice items by commercial identity instead of scientific name alone", () => {
@@ -1426,6 +1430,32 @@ describe("PHIF sync foundation", () => {
       { brand_name: "Formin", strength: "500mg", supplier_id: "1", cost_price: 0.2 },
       { brand_name: "Formin", strength: "500mg", supplier_id: "2", cost_price: 0.3 },
     ])).toMatchObject({ status: "needs_match_review", reason: "ambiguous_match" });
+  });
+
+  it("requires every compound strength component before matching Actual stock", () => {
+    const item = {
+      brand: "TENSTAR 160/25MG",
+      active_ingredient: "VALSARTAN + HYDROCHLOROTHIAZIDE",
+      strength: "160/25MG",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TABS" },
+      phif_financial_fields: { total_amount: "75.000" },
+    };
+
+    expect(matchActualInvoiceItemToStock(item, [
+      { source_stock_id: "tenstar-combo", brand_name: "TENSTAR 160/25MG TABS", strength: "160/25MG", dosage_unit: "TABS", cost_price: "1.924" },
+      { source_stock_id: "tenstar-single", brand_name: "TENSTAR 160MG TABS", strength: "160MG", dosage_unit: "TABS", cost_price: "1.460" },
+    ])).toMatchObject({ status: "matched", stock: { source_stock_id: "tenstar-combo" } });
+
+    expect(matchActualInvoiceItemToStock(item, [
+      { source_stock_id: "tenstar-single", brand_name: "TENSTAR 160MG TABS", strength: "160MG", dosage_unit: "TABS", cost_price: "1.460" },
+    ])).toMatchObject({ status: "needs_match_review", reason: "strength_mismatch" });
+
+    expect(matchActualInvoiceItemToStock({ ...item, strength: "160/12.5 mg", brand: "TENSTAR 160/12.5MG" }, [
+      { source_stock_id: "tenstar-12-5", brand_name: "TENSTAR 160/12.5MG TABS", strength: "160mg/12.5mg", dosage_unit: "TABS", cost_price: "1.800" },
+      { source_stock_id: "tenstar-25", brand_name: "TENSTAR 160/25MG TABS", strength: "160/25MG", dosage_unit: "TABS", cost_price: "1.924" },
+    ])).toMatchObject({ status: "matched", stock: { source_stock_id: "tenstar-12-5" } });
   });
 
   it("does not mix Actual margin calculation with PHIF Supplier items", () => {
