@@ -425,6 +425,43 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
   const invoiceById = new Map(input.invoices.map((invoice) => [invoice.id, invoice]));
   const actualGroups = new Map<string, any>();
   const financialInvoices = new Map<string, any>();
+  const profitCache = new Map<string, ReturnType<typeof profitForItem>>();
+  const matchCache = new Map<string, ReturnType<typeof matchActualInvoiceItemToStock>>();
+  const actualAuditKey = (item: any) => JSON.stringify({
+    source: item.source_classification ?? null,
+    brand: item.brand ?? null,
+    ingredient: item.active_ingredient ?? null,
+    strength: item.strength ?? null,
+    quantity: item.quantity ?? null,
+    metadata: item.metadata ?? null,
+    financial: item.phif_financial_fields ?? null,
+    supplier: item.supplier ?? null,
+  });
+  const actualMatchKey = (item: any) => JSON.stringify({
+    source: item.source_classification ?? null,
+    brand: item.brand ?? null,
+    ingredient: item.active_ingredient ?? null,
+    strength: item.strength ?? null,
+    metadata: item.metadata ?? null,
+    financial: item.phif_financial_fields ?? null,
+    supplier: item.supplier ?? null,
+  });
+  const cachedProfit = (item: any, invoice: any) => {
+    const key = actualAuditKey(item);
+    const existing = profitCache.get(key);
+    if (existing) return existing;
+    const result = profitForItem(item, invoice, input.stocks);
+    profitCache.set(key, result);
+    return result;
+  };
+  const cachedMatch = (item: any) => {
+    const key = actualMatchKey(item);
+    const existing = matchCache.get(key);
+    if (existing) return existing;
+    const result = matchActualInvoiceItemToStock(item, currentStockCandidatesForActual(item, input.stocks));
+    matchCache.set(key, result);
+    return result;
+  };
 
   for (const invoice of input.invoices) {
     financialInvoices.set(invoice.id, {
@@ -446,7 +483,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     const invoiceAudit = financialInvoices.get(item.phif_invoice_id);
     if (invoiceAudit) invoiceAudit.item_count += 1;
 
-    const profit = profitForItem(item, invoice, input.stocks);
+    const profit = cachedProfit(item, invoice);
     if (profit.source === "phif") {
       if (invoiceAudit && profit.status === "needs_purchase_price") {
         invoiceAudit.phif_missing_cost_count += 1;
@@ -458,12 +495,11 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       continue;
     }
 
-    const candidates = currentStockCandidatesForActual(item, input.stocks);
-    const match = matchActualInvoiceItemToStock(item, candidates);
-    const reasonCode = profit.status === "pricing_unit_unverified" ? "UNIT_MISMATCH" : auditReason(match.reason);
-    const status = match.status === "matched" && profit.status === "matched"
+    const match = profit.status === "matched" ? null : cachedMatch(item);
+    const reasonCode = profit.status === "pricing_unit_unverified" ? "UNIT_MISMATCH" : auditReason(match?.reason ?? profit.reason);
+    const status = profit.status === "matched"
       ? "matched"
-      : match.reason === "ambiguous_match"
+      : match?.reason === "ambiguous_match"
         ? "ambiguous"
         : "unmatched";
     if (invoiceAudit && status === "unmatched") {
@@ -493,7 +529,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       row.status = status;
       row.reason = status === "matched" ? null : reasonCode;
     }
-    const candidateRows = match.status === "needs_match_review" && match.candidates
+    const candidateRows = match?.status === "needs_match_review" && match.candidates
       ? match.candidates.map((stock) => stockCandidateView(stock, "ambiguous_match"))
       : profit.stock
         ? [stockCandidateView(profit.stock, profit.reason)]
@@ -917,12 +953,23 @@ export const getReportItemTracking = createServerFn({ method: "POST" })
 export const getManagementAuditReport = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => auditSchema.parse(d))
   .handler(async () => {
-    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("reports_read");
-    const dataset = await loadAllReportDataset(supabaseAdmin, pharmacy_id);
-    const stocks = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
-    return buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks });
+    try {
+      const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { pharmacy_id } = await requireTiryaqPermission("reports_read");
+      const dataset = await loadAllReportDataset(supabaseAdmin, pharmacy_id);
+      const stocks = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
+      return buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks });
+    } catch (error: any) {
+      console.error("management audit failed", {
+        name: error?.name ?? null,
+        message: error?.message ?? "Unknown audit error",
+        code: error?.code ?? null,
+        details: error?.details ?? null,
+        hint: error?.hint ?? null,
+      });
+      throw new Error("تعذر تشغيل التدقيق من الخادم. تحقق من صلاحية التقارير وتوفر بيانات المخزون ثم حاول مرة أخرى.");
+    }
   });
 
 export const getProfitAnalysisReport = createServerFn({ method: "POST" })

@@ -48,6 +48,14 @@ function reasonLabel(reason: string | null | undefined) {
   return reasonLabels[reason] ?? reason;
 }
 
+function auditErrorMessage(error: unknown) {
+  const message = (error as Error)?.message ?? "";
+  if (/internal server error/i.test(message)) {
+    return "تعذر تشغيل التدقيق من الخادم. حاول مرة أخرى، وإذا تكرر الخطأ راجع سجلات Lovable لمعرفة السبب التقني.";
+  }
+  return message || "تعذر تشغيل التدقيق من الخادم.";
+}
+
 function MetricCard({ label, value, tone = "neutral", onClick }: { label: string; value: string | number; tone?: "success" | "warning" | "danger" | "neutral"; onClick?: () => void }) {
   const toneClass = {
     success: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -172,7 +180,7 @@ function ManagementAuditPage() {
       </div>
 
       {isLoading && <Card className="p-4 text-sm text-muted-foreground">جاري تشغيل التدقيق...</Card>}
-      {error && <Card className="border-red-200 p-4 text-sm text-red-700">تعذر تشغيل التدقيق: {(error as Error).message}</Card>}
+      {error && <Card className="border-red-200 p-4 text-sm text-red-700">تعذر تشغيل التدقيق: {auditErrorMessage(error)}</Card>}
 
       {data && (
         <>
