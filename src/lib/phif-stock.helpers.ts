@@ -268,13 +268,13 @@ function commercialBrandCompatible(
   stockContext: { strength?: unknown; unit?: unknown; packageQuantity?: unknown; stripsQuantity?: unknown } = {},
   itemContext: { strength?: unknown; unit?: unknown; packageQuantity?: unknown; stripsQuantity?: unknown } = {},
 ) {
-  if (compatibleText(stockBrand, itemBrand)) return true;
   const stockTokens = commercialBrandTokens(stockBrand, stockContext);
   const itemTokens = commercialBrandTokens(itemBrand, itemContext);
   if (stockTokens.length === 0 || itemTokens.length === 0) return false;
   const stockSet = new Set(stockTokens);
-  const matches = itemTokens.filter((token) => stockSet.has(token) || stockTokens.some((stockToken) => stockToken.includes(token) || token.includes(stockToken)));
-  return matches.length === itemTokens.length;
+  const itemSet = new Set(itemTokens);
+  if (stockSet.size !== itemSet.size) return false;
+  return [...itemSet].every((token) => stockSet.has(token));
 }
 
 function tokenCompatibleText(a: unknown, b: unknown) {

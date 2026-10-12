@@ -1183,6 +1183,72 @@ describe("PHIF sync foundation", () => {
     });
   });
 
+  it("does not make Formin ambiguous because Glyformin shares generic strength and form", () => {
+    const forminItem = {
+      brand: "FORMIN 500MG TABS",
+      active_ingredient: "METFORMIN",
+      strength: "500MG",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TABS" },
+      phif_financial_fields: { total_amount: "10.200" },
+    };
+    const stocks = [
+      {
+        source_stock_id: "formin-diwan",
+        brand_name: "FORMIN 500MG TABLETS",
+        active_ingredient: "METFORMIN",
+        strength: "500MG",
+        dosage_unit: "TABLETS",
+        supplier_name: "DIWAN",
+        cost_price: "0.284",
+      },
+      {
+        source_stock_id: "glyformin",
+        brand_name: "GLYFORMIN 500MG TABS",
+        active_ingredient: "METFORMIN",
+        strength: "500MG",
+        dosage_unit: "TABS",
+        cost_price: "0.250",
+      },
+    ];
+
+    expect(matchActualInvoiceItemToStock(forminItem, stocks)).toMatchObject({
+      status: "matched",
+      stock: { source_stock_id: "formin-diwan" },
+    });
+    expect(calculateActualGrossMargin(forminItem, stocks)).toMatchObject({
+      status: "matched",
+      purchaseCost: 8.52,
+      grossMargin: 1.6799999999999997,
+    });
+  });
+
+  it("does not treat a longer commercial brand containing the dispensed brand as the same product", () => {
+    expect(matchActualInvoiceItemToStock(
+      {
+        brand: "FORMIN 500MG TABS",
+        active_ingredient: "METFORMIN",
+        strength: "500MG",
+        quantity: 30,
+        source_classification: "actual-supplier",
+        metadata: { unit: "TABS" },
+        phif_financial_fields: { total_amount: "10.200" },
+      },
+      [{
+        source_stock_id: "glyformin",
+        brand_name: "GLYFORMIN 500MG TABS",
+        active_ingredient: "METFORMIN",
+        strength: "500MG",
+        dosage_unit: "TABS",
+        cost_price: "0.250",
+      }],
+    )).toMatchObject({
+      status: "needs_match_review",
+      reason: "no_match",
+    });
+  });
+
   it("does not accept a same-generic Actual stock item when the commercial brand differs", () => {
     expect(matchActualInvoiceItemToStock(
       {
