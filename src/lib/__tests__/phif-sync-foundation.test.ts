@@ -699,6 +699,9 @@ describe("PHIF sync foundation", () => {
     expect(source).toContain("linkPhifInvoicesToPatient");
     expect(source).toContain("rejectPhifReviewCase");
     expect(source).toContain("reopenPhifReviewCase");
+    expect(source).toContain("function chunks");
+    expect(source).toContain("for (const batch of chunks(invoiceIds))");
+    expect(source).toContain("for (const batch of chunks(uniqueCards))");
     expect(source).toContain("listPatientPhifInvoices");
     expect(source).toContain("getPatientPhifMedicationProfile");
     expect(source).toContain("buildPhifMedicationProfileFromRows");
@@ -720,6 +723,20 @@ describe("PHIF sync foundation", () => {
     expect(patientRoute).toContain("getPatientPhifMedicationProfile");
     expect(patientRoute).toContain("الملف الدوائي PHIF");
     expect(patientRoute).toContain("فواتير PHIF");
+  });
+
+  it("keeps PHIF review reads batched and refreshes review state after sync saves", () => {
+    const source = readProjectFile("src/lib/phif-invoices.functions.ts");
+    const syncRoute = readProjectFile("src/routes/phif-sync.tsx");
+
+    expect(source).toContain("function chunks");
+    expect(source).toContain("for (const batch of chunks(invoiceIds))");
+    expect(source).toContain("for (const batch of chunks(uniqueCards))");
+
+    expect(syncRoute).toContain("useQueryClient");
+    expect(syncRoute).toContain('queryKey: ["phif_review_cases"]');
+    expect(syncRoute).toContain('queryKey: ["phif_invoices_archive"]');
+    expect(syncRoute).toContain('queryKey: ["phif_invoice_archive_stats"]');
   });
 
   it("supports confirmed multi-card PHIF patient linking without automatic name merges", () => {

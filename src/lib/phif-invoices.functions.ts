@@ -156,6 +156,14 @@ function normalizeSearch(value: string | undefined) {
   return value?.trim() || "";
 }
 
+function chunks<T>(values: T[], size = 100) {
+  const batches: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    batches.push(values.slice(index, index + size));
+  }
+  return batches;
+}
+
 async function patientAccessSets(admin: any, pharmacyId: string) {
   const { patientAccessSetsForSession } = await import("@/lib/pharmacy-isolation");
   return patientAccessSetsForSession(admin, pharmacyId);
@@ -168,29 +176,35 @@ async function accessiblePatientsByCard(admin: any, pharmacyId: string, cards: (
 
   const { served, anyTx, excluded, accessTableEnforced } = await patientAccessSets(admin, pharmacyId);
 
-  const { data: cardRows, error: cardError } = await admin
-    .from("patient_insurance_cards")
-    .select("patient_id, card_number")
-    .in("card_number", uniqueCards);
-  if (!cardError) {
-    for (const row of cardRows ?? []) {
-      if (!row.patient_id || !row.card_number || excluded.has(row.patient_id)) continue;
-      if (accessTableEnforced ? served.has(row.patient_id) : served.has(row.patient_id) || !anyTx.has(row.patient_id)) {
-        matches.set(row.card_number, row.patient_id);
+  for (const batch of chunks(uniqueCards)) {
+    const { data: cardRows, error: cardError } = await admin
+      .from("patient_insurance_cards")
+      .select("patient_id, card_number")
+      .in("card_number", batch);
+    if (!cardError) {
+      for (const row of cardRows ?? []) {
+        if (!row.patient_id || !row.card_number || excluded.has(row.patient_id)) continue;
+        if (accessTableEnforced ? served.has(row.patient_id) : served.has(row.patient_id) || !anyTx.has(row.patient_id)) {
+          matches.set(row.card_number, row.patient_id);
+        }
       }
+    } else if (!isMissingPatientCardsTable(cardError)) {
+      throw new Error(cardError.message);
     }
   }
 
-  const { data: patients, error } = await admin
-    .from("patients")
-    .select("id, insurance_card_number")
-    .in("insurance_card_number", uniqueCards);
-  if (error) throw new Error(error.message);
+  for (const batch of chunks(uniqueCards)) {
+    const { data: patients, error } = await admin
+      .from("patients")
+      .select("id, insurance_card_number")
+      .in("insurance_card_number", batch);
+    if (error) throw new Error(error.message);
 
-  for (const patient of patients ?? []) {
-    if (!patient?.id || !patient.insurance_card_number || excluded.has(patient.id)) continue;
-    if (accessTableEnforced ? served.has(patient.id) : served.has(patient.id) || !anyTx.has(patient.id)) {
-      matches.set(patient.insurance_card_number, patient.id);
+    for (const patient of patients ?? []) {
+      if (!patient?.id || !patient.insurance_card_number || excluded.has(patient.id)) continue;
+      if (accessTableEnforced ? served.has(patient.id) : served.has(patient.id) || !anyTx.has(patient.id)) {
+        matches.set(patient.insurance_card_number, patient.id);
+      }
     }
   }
   return matches;
@@ -407,15 +421,17 @@ async function itemCounts(admin: any, invoiceIds: string[]) {
   const counts = new Map<string, number>();
   if (invoiceIds.length === 0) return counts;
 
-  const { data, error } = await admin
-    .from("phif_invoice_items")
-    .select("phif_invoice_id")
-    .in("phif_invoice_id", invoiceIds);
-  if (error) throw new Error(error.message);
+  for (const batch of chunks(invoiceIds)) {
+    const { data, error } = await admin
+      .from("phif_invoice_items")
+      .select("phif_invoice_id")
+      .in("phif_invoice_id", batch);
+    if (error) throw new Error(error.message);
 
-  for (const row of data ?? []) {
-    const id = (row as any).phif_invoice_id;
-    counts.set(id, (counts.get(id) ?? 0) + 1);
+    for (const row of data ?? []) {
+      const id = (row as any).phif_invoice_id;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
   }
   return counts;
 }

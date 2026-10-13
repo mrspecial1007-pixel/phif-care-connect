@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Gate } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,7 @@ function PhifSyncPage() {
   const inspectItemCompletion = useServerFn(inspectSavedPhifInvoiceItemCompletion);
   const completeItemRange = useServerFn(completeSavedPhifInvoiceItemRange);
   const archiveStats = useServerFn(getPhifInvoiceArchiveStats);
+  const qc = useQueryClient();
   const today = new Date().toISOString().slice(0, 10);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -127,6 +128,11 @@ function PhifSyncPage() {
         completion_failed_count: result.completion_failed_count,
       }));
       setPreview([]);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["phif_review_cases"] }),
+        qc.invalidateQueries({ queryKey: ["phif_invoices_archive"] }),
+        qc.invalidateQueries({ queryKey: ["phif_invoice_archive_stats"] }),
+      ]);
     } catch (error: any) {
       toast.error(error?.message ?? "فشل حفظ فواتير PHIF");
     } finally {
