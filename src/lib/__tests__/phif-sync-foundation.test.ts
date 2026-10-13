@@ -1432,6 +1432,81 @@ describe("PHIF sync foundation", () => {
     ])).toMatchObject({ status: "needs_match_review", reason: "ambiguous_match" });
   });
 
+  it("does not use supplier identity to reject a trusted Actual stock match", () => {
+    const item = {
+      brand: "XARELTO 15MG TABS",
+      active_ingredient: "RIVAROXABAN",
+      strength: "15MG",
+      quantity: 28,
+      source_classification: "actual-supplier",
+      supplier: "Invoice Supplier A",
+      metadata: { unit: "TABS", supplier_id: "invoice-supplier" },
+      phif_financial_fields: { total_amount: "120.000", supplier_id: "invoice-supplier" },
+    };
+    const stock = {
+      source_stock_id: "xarelto-stock",
+      brand_name: "XARELTO 15MG TABLETS",
+      active_ingredient: "RIVAROXABAN",
+      strength: "15MG",
+      dosage_unit: "TABS",
+      supplier_id: "stock-supplier",
+      supplier_name: "Stock Supplier B",
+      cost_price: "3.000",
+    };
+
+    expect(matchActualInvoiceItemToStock(item, [stock])).toMatchObject({
+      status: "matched",
+      stock: { source_stock_id: "xarelto-stock" },
+    });
+    expect(calculateActualGrossMargin(item, [stock])).toMatchObject({
+      status: "matched",
+      purchaseCost: 84,
+      grossMargin: 36,
+    });
+  });
+
+  it("collapses duplicate Actual stock rows that only differ by supplier", () => {
+    const item = {
+      brand: "JARDIANCE 10MG TABS",
+      active_ingredient: "EMPAGLIFLOZIN",
+      strength: "10MG",
+      quantity: 30,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TABS" },
+      phif_financial_fields: { total_amount: "90.000" },
+    };
+
+    expect(matchActualInvoiceItemToStock(item, [
+      { source_stock_id: "jardiance-a", brand_name: "JARDIANCE 10MG TABS", strength: "10MG", dosage_unit: "TABS", supplier_id: "a", supplier_name: "Supplier A", cost_price: "2.000" },
+      { source_stock_id: "jardiance-b", brand_name: "JARDIANCE 10MG TABS", strength: "10MG", dosage_unit: "TABS", supplier_id: "b", supplier_name: "Supplier B", cost_price: "2.000" },
+    ])).toMatchObject({ status: "matched" });
+  });
+
+  it("keeps same Actual product under review when duplicate stock rows have different cost", () => {
+    const item = {
+      brand: "SYNJARDY 12.5/1000MG TABS",
+      active_ingredient: "EMPAGLIFLOZIN + METFORMIN",
+      strength: "12.5/1000MG",
+      quantity: 60,
+      source_classification: "actual-supplier",
+      metadata: { unit: "TABS" },
+      phif_financial_fields: { total_amount: "240.000" },
+    };
+
+    expect(matchActualInvoiceItemToStock(item, [
+      { source_stock_id: "synjardy-a", brand_name: "SYNJARDY 12.5/1000MG TABS", strength: "12.5/1000MG", dosage_unit: "TABS", supplier_id: "a", supplier_name: "Supplier A", cost_price: "3.000" },
+      { source_stock_id: "synjardy-b", brand_name: "SYNJARDY 12.5/1000MG TABS", strength: "12.5/1000MG", dosage_unit: "TABS", supplier_id: "b", supplier_name: "Supplier B", cost_price: "3.500" },
+      { source_stock_id: "synjardy-wrong-strength", brand_name: "SYNJARDY 12.5/850MG TABS", strength: "12.5/850MG", dosage_unit: "TABS", supplier_id: "c", cost_price: "2.500" },
+    ])).toMatchObject({
+      status: "needs_match_review",
+      reason: "ambiguous_match",
+      candidates: [
+        { source_stock_id: "synjardy-a" },
+        { source_stock_id: "synjardy-b" },
+      ],
+    });
+  });
+
   it("requires every compound strength component before matching Actual stock", () => {
     const item = {
       brand: "TENSTAR 160/25MG",

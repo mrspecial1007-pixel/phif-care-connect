@@ -52,6 +52,27 @@ describe("management audit center", () => {
     expect(report.financial.summary.complete_invoices).toBe(1);
   });
 
+  it("does not make supplier differences fail Actual audit or invoice completion", () => {
+    const report = buildManagementAuditReport({
+      invoices: [invoice],
+      items: [actualItem({
+        supplier: "Invoice Supplier",
+        metadata: { unit: "PEN", supplier_id: "invoice-supplier" },
+        phif_financial_fields: { total_amount: 50, supplier_id: "invoice-supplier" },
+      })],
+      stocks: [stock({
+        supplier_id: "stock-supplier",
+        supplier_name: "Stock Supplier",
+      })],
+    });
+
+    expect(report.actual.summary.matched).toBe(1);
+    expect(report.actual.summary.ambiguous).toBe(0);
+    expect(report.actual.summary.unmatched).toBe(0);
+    expect(report.financial.summary.complete_invoices).toBe(1);
+    expect(report.financial.summary.actual_unmatched_items).toBe(0);
+  });
+
   it("reports unmatched Actual items with a clear reason", () => {
     const report = buildManagementAuditReport({
       invoices: [invoice],

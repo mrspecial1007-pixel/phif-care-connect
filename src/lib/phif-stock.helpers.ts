@@ -321,7 +321,7 @@ function invoiceUnit(item: InvoiceItemLike) {
 }
 
 function sameStockIdentity(a: StockLike, b: StockLike) {
-  return ["brand_product_id", "supplier_id", "generic_ingredient_id", "brand_name", "strength", "dosage_unit", "cost_price", "package_quantity", "strips_quantity"]
+  return ["brand_product_id", "generic_ingredient_id", "brand_name", "strength", "dosage_unit", "cost_price", "package_quantity", "strips_quantity"]
     .every((key) => normalizeText(a[key as keyof StockLike]) === normalizeText(b[key as keyof StockLike]));
 }
 
@@ -337,11 +337,8 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   const strength = normalizeStrength(item.strength);
   const brandProductId = pickString(item.metadata, ["supplier_brand_name_id", "brand_product_id", "brand_id"])
     ?? pickString(item.phif_financial_fields, ["supplier_brand_name_id", "brand_product_id", "brand_id"]);
-  const supplierId = pickString(item.metadata, ["supplier_id", "medical_suppliers_id"])
-    ?? pickString(item.phif_financial_fields, ["supplier_id", "medical_suppliers_id"]);
   const genericId = pickString(item.metadata, ["generic_ingredient_id", "generic_id", "genaric_names_id"])
     ?? pickString(item.phif_financial_fields, ["generic_ingredient_id", "generic_id", "genaric_names_id"]);
-  const supplier = normalizeText((item as InvoiceItemLike & { supplier?: string | null }).supplier);
   const packageQuantity = pickString(item.metadata, ["package_quantity", "packageQuantity"])
     ?? pickString(item.phif_financial_fields, ["package_quantity", "packageQuantity"]);
   const stripsQuantity = pickString(item.metadata, ["strips_quantity", "stripsQuantity"])
@@ -351,20 +348,11 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
 
   const itemPricingUnit = invoiceUnit(item);
   let sawBrandLike = false;
-  let sawSupplierMismatch = false;
   let sawStrengthMismatch = false;
   let sawUnitMismatch = false;
   const matches = candidates.filter((stock) => {
     if (!idsMatchOrMissing(brandProductId, stock.brand_product_id)) return false;
-    if (!idsMatchOrMissing(supplierId, stock.supplier_id)) {
-      sawSupplierMismatch = true;
-      return false;
-    }
     if (!idsMatchOrMissing(genericId, stock.generic_ingredient_id)) return false;
-    if (supplier && stock.supplier_name && !tokenCompatibleText(stock.supplier_name, supplier)) {
-      sawSupplierMismatch = true;
-      return false;
-    }
     if (!idsMatchOrMissing(packageQuantity, stock.package_quantity)) return false;
     if (!idsMatchOrMissing(stripsQuantity, stock.strips_quantity)) return false;
     const brandMatches = !brand || commercialBrandCompatible(
@@ -406,7 +394,6 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   if (distinct.length > 1) return { status: "needs_match_review", reason: "ambiguous_match", candidates: distinct };
   if (sawUnitMismatch) return { status: "needs_match_review", reason: "unit_mismatch" };
   if (sawStrengthMismatch) return { status: "needs_match_review", reason: "strength_mismatch" };
-  if (sawSupplierMismatch) return { status: "needs_match_review", reason: "supplier_mismatch" };
   if (sawBrandLike) return { status: "needs_match_review", reason: "no_match" };
   return { status: "needs_match_review", reason: "no_match" };
 }
