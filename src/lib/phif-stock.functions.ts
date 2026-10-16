@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { hasPermission } from "@/lib/user-permissions";
+import { enrichStockIngredients, parseStockExpiry } from "@/lib/phif-stock-details.helpers";
 
 const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:5174";
 const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com";
@@ -14,7 +15,7 @@ const listInput = z.object({
 function pickString(obj: any, keys: string[]): string | null {
   for (const key of keys) {
     const value = obj?.[key];
-    if (value === undefined || value === null) continue;
+    if (value === undefined || value === null || typeof value === "object") continue;
     const text = String(value).trim();
     if (text) return text;
   }
@@ -28,16 +29,6 @@ function pickDecimalString(obj: any, keys: string[]): string | null {
     const text = String(value).trim().replace(/,/g, "");
     if (/^-?\d+(?:\.\d+)?$/.test(text)) return text;
   }
-  return null;
-}
-
-function normalizeDate(raw: unknown): string | null {
-  const text = String(raw ?? "").trim();
-  if (!text) return null;
-  const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(text);
-  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
-  const dmy = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/.exec(text);
-  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
   return null;
 }
 
@@ -86,6 +77,9 @@ export function normalizePhifStockRows(payload: unknown): NormalizedPhifStockRow
     const batch = nested(row, ["patsh_numbers", "patch_numbers", "batch", "batch_number"]);
     const supplier = nested(row, ["medical_supplier", "medical_suppliers", "supplier"]);
     const generic = nested(row, ["genaric_name", "generic_name", "generic"]);
+    const brandGeneric = nested(brand, ["genaric_name", "generic_name", "generic"]);
+    const expiryKeys = ["expiry_date", "expire_date", "expiration_date", "expireDate"];
+    const expiry = parseStockExpiry(pickString(batch, expiryKeys) ?? pickString(row, expiryKeys));
     const source_stock_id = pickString(row, ["id", "stock_id", "stockId"]);
     if (!source_stock_id) return null;
 
@@ -97,7 +91,10 @@ export function normalizePhifStockRows(payload: unknown): NormalizedPhifStockRow
       brand_product_id: pickString(row, ["supplier_brand_name_id", "brand_id", "product_id"]),
       batch_id: pickString(row, ["patsh_numbers_id", "patch_numbers_id", "batch_id"]),
       brand_name: pickString(brand, ["brand_name", "brandName", "name"]),
-      active_ingredient: pickString(generic, ["name", "generic_name", "genaric_name", "active_ingredient"]),
+      active_ingredient: pickString(generic, ["name", "generic_name", "genaric_name", "active_ingredient"])
+        ?? pickString(brandGeneric, ["name", "generic_name", "genaric_name", "active_ingredient"])
+        ?? pickString(row, ["active_ingredient", "generic_name", "genaric_name", "generic"])
+        ?? pickString(brand, ["active_ingredient", "generic_name", "genaric_name", "generic"]),
       strength: pickString(brand, ["doses", "strength", "dose"]),
       dosage_unit: pickString(brand, ["unit", "dosage_unit", "form"]),
       package_quantity: pickDecimalString(brand, ["package_quantity", "packageQuantity"]),
@@ -105,7 +102,7 @@ export function normalizePhifStockRows(payload: unknown): NormalizedPhifStockRow
       stock_quantity: pickDecimalString(row, ["quantity", "qty"]),
       source_quantity_unit: pickString(brand, ["unit", "quantity_unit"]),
       batch_number: pickString(batch, ["batch_number", "patsh_number", "patch_number", "number", "name"]),
-      expiry_date: normalizeDate(pickString(batch, ["expiry_date", "expire_date", "expiration_date", "expireDate"])),
+      expiry_date: expiry.date,
       cost_price: pickDecimalString(brand, ["cost_price", "costPrice"]),
       sale_price: pickDecimalString(brand, ["sale_price", "salePrice"]),
       factory_price: pickDecimalString(brand, ["factory_price", "factoryPrice"]),
@@ -113,11 +110,13 @@ export function normalizePhifStockRows(payload: unknown): NormalizedPhifStockRow
       company_name: pickString(supplier, ["company_name", "companyName", "name"]),
       raw_metadata: {
         source_keys: Object.keys(row ?? {}),
+        ...(expiry.month ? { expiry_month: expiry.month } : {}),
       },
     };
     const hashSource = {
       ...normalized,
       raw_metadata: undefined,
+      ...(expiry.month ? { expiry_month: expiry.month } : {}),
     };
     return {
       ...normalized,
@@ -231,7 +230,7 @@ export const listPhifStockItems = createServerFn({ method: "POST" })
 
     let query = supabaseAdmin
       .from("phif_stock_items")
-      .select("id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, batch_number, expiry_date, sale_price, supplier_name, company_name, source_stock_id, generic_ingredient_id, supplier_id, brand_product_id, batch_id, synced_at, cost_price")
+      .select("id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, batch_number, expiry_date, raw_metadata, sale_price, supplier_name, company_name, source_stock_id, generic_ingredient_id, supplier_id, brand_product_id, batch_id, synced_at, cost_price")
       .eq("pharmacy_id", pharmacy_id)
       .eq("is_current", true)
       .order("brand_name", { ascending: true })
@@ -244,12 +243,41 @@ export const listPhifStockItems = createServerFn({ method: "POST" })
 
     const { data: rows, error } = await query;
     if (error) throw new Error(error.message);
-    return (rows ?? []).map((row: any) => {
+    const references = (rows ?? []).some((row: any) => !row.active_ingredient?.trim())
+      ? await loadStockIngredientReferences(supabaseAdmin, pharmacy_id) : [];
+    const enriched = enrichStockIngredients(rows ?? [], [...(rows ?? []), ...references]);
+    return enriched.map((item: any) => {
+      const { raw_metadata, ...row } = item;
+      const month = parseStockExpiry(raw_metadata?.expiry_month).month;
+      if (month) row.expiry_month = month;
       if (includeCost) return row;
       const { cost_price, ...safe } = row;
       return safe;
     });
   });
+
+export async function loadStockIngredientReferences(db: any, pharmacyId: string) {
+  const references: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from("phif_invoice_items")
+      .select("id, brand, active_ingredient, strength, metadata, phif_invoices!inner(pharmacy_id)")
+      .eq("phif_invoices.pharmacy_id", pharmacyId)
+      .eq("source_classification", "actual-supplier")
+      .order("id").range(from, from + 999);
+    if (error) throw new Error("تعذر قراءة مرجع المواد العلمية للمخزون");
+    for (const item of data ?? []) {
+      const meta = item.metadata ?? {};
+      references.push({
+        brand_name: item.brand, active_ingredient: item.active_ingredient, strength: item.strength,
+        dosage_unit: meta.dosage_form ?? meta.form ?? meta.unit ?? meta.dosage_unit,
+        brand_product_id: meta.supplier_brand_name_id ?? meta.brand_product_id ?? meta.brand_id,
+        generic_ingredient_id: meta.generic_ingredient_id ?? meta.generic_id ?? meta.genaric_names_id,
+      });
+    }
+    if ((data?.length ?? 0) < 1000) break;
+  }
+  return references;
+}
 
 export const syncPhifStock = createServerFn({ method: "POST" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

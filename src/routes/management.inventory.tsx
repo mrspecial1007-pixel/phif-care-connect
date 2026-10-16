@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getPhifStockSummary, listPhifStockItems, syncPhifStock } from "@/lib/phif-stock.functions";
 import { stockAvailability, stockQuantityBreakdown } from "@/lib/phif-stock.helpers";
+import { formatStockExpiry as formatExpiry, stockExpiryState as expiryState, stockExpiryValue, stockScientificSubtitle } from "@/lib/phif-stock-details.helpers";
 import { CalendarDays, PackageSearch, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,25 +23,6 @@ export const Route = createFileRoute("/management/inventory")({
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "لا توجد مزامنة ناجحة بعد";
   return new Date(value).toLocaleString("ar-LY", { dateStyle: "medium", timeStyle: "short" });
-}
-
-function formatExpiry(value: string | null | undefined) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("ar-LY", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
-
-function expiryState(value: string | null | undefined) {
-  if (!value) return { status: "missing" as const, label: "الصلاحية غير متاحة", tone: "muted" as const };
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { status: "missing" as const, label: "الصلاحية غير واضحة", tone: "muted" as const };
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const days = Math.ceil((date.getTime() - today.getTime()) / 86400000);
-  if (days < 0) return { status: "expired" as const, label: "منتهي الصلاحية", tone: "danger" as const };
-  if (days <= 90) return { status: "soon" as const, label: `ينتهي خلال ${days} يوم`, tone: "warning" as const };
-  return { status: "valid" as const, label: "صالح", tone: "success" as const };
 }
 
 function money(value: unknown) {
@@ -97,7 +79,7 @@ function InventoryPage() {
       if (term && ![item.brand_name, item.active_ingredient, item.supplier_name, item.strength, item.dosage_unit, item.batch_number].some((value) => textIncludes(value, term))) return false;
       const availability = stockAvailability(item).status;
       if (stockFilter !== "all" && availability !== stockFilter) return false;
-      const expiry = expiryState(item.expiry_date).status;
+      const expiry = expiryState(stockExpiryValue(item)).status;
       if (expiryFilter !== "all" && expiry !== expiryFilter) return false;
       if (supplierFilter !== "all" && String(item.supplier_name ?? "") !== supplierFilter) return false;
       if (formFilter !== "all" && String(item.dosage_unit ?? item.source_quantity_unit ?? "") !== formFilter) return false;
@@ -108,7 +90,7 @@ function InventoryPage() {
   function exportInventory() {
     const rows = filteredItems.map((item: any, index: number) => {
       const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط");
-      const expiry = expiryState(item.expiry_date);
+      const expiry = expiryState(stockExpiryValue(item));
       return {
         "ر.م": index + 1,
         "الاسم الكامل": [item.brand_name, item.strength, item.dosage_unit].filter(Boolean).join(" "),
@@ -116,7 +98,7 @@ function InventoryPage() {
         "الكمية": quantity.label,
         "إجمالي الأشرطة/الوحدات": item.stock_quantity ?? "",
         "الوحدة": item.source_quantity_unit ?? item.dosage_unit ?? "",
-        "الصلاحية": item.expiry_date ?? "",
+        "الصلاحية": stockExpiryValue(item) ?? "",
         "حالة الصلاحية": expiry.label,
         "المورد": item.supplier_name ?? "",
         "الشكل الدوائي": item.dosage_unit ?? "",
@@ -255,8 +237,9 @@ function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
   const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط");
   const availability = stockAvailability(item);
   const quantityDisplay = compactQuantityDisplay(quantity);
-  const expiry = formatExpiry(item.expiry_date);
-  const expiryInfo = expiryState(item.expiry_date);
+  const expiry = formatExpiry(stockExpiryValue(item));
+  const expiryInfo = expiryState(stockExpiryValue(item));
+  const scientificSubtitle = stockScientificSubtitle(item);
   const displayTitle = stockCardTitle(item);
   const tone =
     availability.tone === "danger"
@@ -280,7 +263,7 @@ function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
       <div className="flex h-full items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div dir="auto" className="break-words text-[15px] font-semibold leading-5 text-foreground">{displayTitle}</div>
-          {item.active_ingredient && item.brand_name && <div dir="auto" className="mt-1 break-words text-xs text-muted-foreground">{item.active_ingredient}</div>}
+          {scientificSubtitle && <div dir="auto" className="mt-1 break-words text-xs text-muted-foreground">{scientificSubtitle}</div>}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {availability.status !== "available" && (
               <Badge variant={availability.tone === "danger" ? "destructive" : "secondary"} className="h-5 px-2 text-[11px]">
@@ -361,6 +344,7 @@ function StockDetailsSheet({ item, canViewCost, onClose }: { item: any | null; c
             <div className="mt-4 space-y-4">
               <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
                 <DetailRow label="الاسم التجاري" value={item.brand_name} />
+                <DetailRow label="المادة العلمية" value={item.active_ingredient} />
                 <DetailRow label="التركيز" value={item.strength} />
                 <DetailRow label="الوحدة" value={item.dosage_unit || item.source_quantity_unit} />
                 <DetailRow label="إجمالي الأشرطة الحالية" value={item.stock_quantity} />
@@ -371,7 +355,7 @@ function StockDetailsSheet({ item, canViewCost, onClose }: { item: any | null; c
                 <DetailRow label="المورد" value={item.supplier_name} />
                 <DetailRow label="الشركة المصنعة" value={item.company_name} />
                 <DetailRow label="رقم التشغيلة" value={item.batch_number} />
-                <DetailRow label="تاريخ الصلاحية" value={item.expiry_date} />
+                <DetailRow label="تاريخ الصلاحية" value={formatExpiry(stockExpiryValue(item)) ?? "الصلاحية غير مسجلة"} />
                 <DetailRow label="آخر تحديث للسجل" value={formatDateTime(item.synced_at)} />
                 <DetailRow label="آخر وقت مزامنة" value={formatDateTime(item.synced_at)} />
               </div>
