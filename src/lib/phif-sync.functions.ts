@@ -432,6 +432,15 @@ function isSessionFresh(session: BridgeSessionRecord | null | undefined) {
   return Date.parse(session.expires_at) > Date.now() + 60_000;
 }
 
+export function phifBridgeConnectionMessage(payload: any): string | null {
+  if (payload?.code === "PHIF_UPSTREAM_TIMEOUT") return "انتهت مهلة جلب حركات PHIF. حاول مرة أخرى.";
+  if (["PHIF_UPSTREAM_PROTOCOL_ERROR", "PHIF_UPSTREAM_CONNECTION_ERROR"].includes(payload?.code)
+    || /protocol error/i.test(String(payload?.error ?? ""))) {
+    return "تعذر الاتصال بمنظومة PHIF لجلب الحركات. توفر الجلسة لا يعني نجاح الاتصال؛ حاول مرة أخرى.";
+  }
+  return null;
+}
+
 async function bridgeJson(
   path: string,
   {
@@ -452,19 +461,31 @@ async function bridgeJson(
   if (pharmacyId) headers.set("X-Pharmacy-Id", pharmacyId);
   if (body !== undefined) headers.set("Content-Type", "application/json");
 
-  const res = await fetch(`${base}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("تعذر الاتصال بخدمة PHIF Bridge. حاول مرة أخرى أو تحقق من اتصال الخدمة.");
+  }
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    throw new Error("انقطع اتصال PHIF Bridge أثناء قراءة الاستجابة. حاول مرة أخرى.");
+  }
   let payload: any = {};
   try {
     payload = text ? JSON.parse(text) : {};
   } catch {
-    payload = { ok: false, error: text || `PHIF bridge request failed: ${res.status}` };
+    payload = { ok: false, error: `تعذر قراءة استجابة PHIF Bridge (HTTP ${res.status}). حاول مرة أخرى.` };
   }
   if (!res.ok) {
+    const connectionMessage = phifBridgeConnectionMessage(payload);
+    if (connectionMessage) throw new Error(connectionMessage);
     const diagnostic = payload?.diagnostic;
     if (diagnostic) {
       throw new Error(

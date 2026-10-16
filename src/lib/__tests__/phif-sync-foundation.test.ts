@@ -9,6 +9,7 @@ import {
   parsePhifTodayTransactions,
   parsePhifTransactionDetail,
   phifInvoiceItemDedupeKey,
+  phifBridgeConnectionMessage,
 } from "@/lib/phif-sync.functions";
 import {
   buildPhifDueSummaries,
@@ -28,6 +29,16 @@ import {
 function readProjectFile(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
+
+describe("PHIF bridge connection messages", () => {
+  it("handles typed and legacy protocol errors without exposing raw responses", () => {
+    expect(phifBridgeConnectionMessage({ code: "PHIF_UPSTREAM_PROTOCOL_ERROR" })).toContain("تعذر الاتصال");
+    expect(phifBridgeConnectionMessage({ error: "Protocol error" })).toContain("توفر الجلسة لا يعني نجاح الاتصال");
+    expect(phifBridgeConnectionMessage({ code: "PHIF_UPSTREAM_CONNECTION_ERROR" })).toContain("تعذر الاتصال");
+    expect(phifBridgeConnectionMessage({ code: "PHIF_UPSTREAM_TIMEOUT" })).toContain("مهلة");
+    expect(phifBridgeConnectionMessage({ error: "Bridge session expired" })).toBeNull();
+  });
+});
 
 function phifItem(
   phif_item_id: string,

@@ -12,7 +12,7 @@ const AUTH_POST_PATHS = new Set([
 ]);
 
 export async function phifSessionFetch(session, input, options = {}) {
-  const response = await fetchWithTimeout(options.fetchImpl ?? fetch, input, {
+  const response = await fetchWithTimeout(options.fetchImpl, input, {
     ...options,
     headers: withSessionCookies(session, options.headers),
     redirect: "manual",
@@ -25,7 +25,7 @@ export function hasPhifSessionCookies(session) {
   return session.cookieJar.size > 0;
 }
 
-export async function getPhifSessionStatus(session, { fetchImpl = fetch, timeoutMs = 15000 } = {}) {
+export async function getPhifSessionStatus(session, { fetchImpl, timeoutMs = 15000 } = {}) {
   const response = await phifSessionFetch(session, new URL("/home", PHIF_BASE_URL), {
     method: "GET",
     headers: { Accept: "text/html,application/xhtml+xml" },
@@ -60,7 +60,7 @@ export async function proxyPhifLoginRequest(req, res, localUrl, session, options
       method: req.method,
       body,
       headers: forwardHeaders(req.headers, targetUrl),
-      fetchImpl: options.fetchImpl ?? fetch,
+      fetchImpl: options.fetchImpl,
       timeoutMs: options.timeoutMs ?? 15000,
     });
   } catch {

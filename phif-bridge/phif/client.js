@@ -1,3 +1,5 @@
+import { phifHttp2Fetch } from "./http2Transport.js";
+
 export const PHIF_BASE_URL = "https://his.phif.gov.ly";
 
 const ALLOWED_GET_PATHS = [
@@ -15,7 +17,7 @@ const ALLOWED_POST_FORM_PATHS = [
 ];
 
 export class PhifClient {
-  constructor({ fetchImpl = fetch, baseUrl = PHIF_BASE_URL, timeoutMs = 15000 } = {}) {
+  constructor({ fetchImpl = phifHttp2Fetch, baseUrl = PHIF_BASE_URL, timeoutMs = 15000 } = {}) {
     this.fetchImpl = fetchImpl;
     this.baseUrl = baseUrl;
     this.timeoutMs = timeoutMs;
@@ -136,10 +138,30 @@ export function isAllowedPostFormPath(path) {
 }
 
 export async function fetchWithTimeout(fetchImpl, input, init, timeoutMs) {
+  const transport = fetchImpl || phifHttp2Fetch;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetchImpl(input, { ...init, signal: controller.signal });
+    return await transport(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    const transportCode = String(error?.cause?.code ?? error?.code ?? "");
+    const timeoutFailure = controller.signal.aborted;
+    const protocolFailure = /^ERR_HTTP2_/.test(transportCode) || /protocol error/i.test(error?.message ?? "");
+    const connectionFailure = /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ERR_TLS_|ERR_SSL_|CERT_|UNABLE_TO_|DEPTH_ZERO_|SELF_SIGNED_)/.test(transportCode);
+    if (!timeoutFailure && !protocolFailure && !connectionFailure) throw error;
+    const code = timeoutFailure ? "PHIF_UPSTREAM_TIMEOUT" : protocolFailure ? "PHIF_UPSTREAM_PROTOCOL_ERROR" : "PHIF_UPSTREAM_CONNECTION_ERROR";
+    const safeError = Object.assign(new Error(timeoutFailure
+      ? "انتهت مهلة الاتصال بمنظومة PHIF. حاول مرة أخرى."
+      : "تعذر الاتصال بمنظومة PHIF لجلب البيانات. حاول مرة أخرى."), { code });
+    const pathname = new URL(input).pathname;
+    console.warn("[phif-upstream-transport]", JSON.stringify({
+      code,
+      transportCode: /^[A-Z0-9_]+$/.test(transportCode) ? transportCode : null,
+      method: init?.method === "POST" ? "POST" : "GET",
+      path: pathname.startsWith("/getTransaction/") ? "/getTransaction/:invoice_key"
+        : ["/login", "/home", "/showPharmacyFilterTransactions", "/pharmacyFilteredtransactions", "/PosTransaction", "/toDaysTransaction", "/get-pharmacy-stock"].includes(pathname) ? pathname : "/phif-resource",
+    }));
+    throw safeError;
   } finally {
     clearTimeout(timeout);
   }
@@ -245,7 +267,13 @@ function allowedRedirectUrl(location) {
     const url = new URL(location, PHIF_BASE_URL);
     if (url.hostname !== "his.phif.gov.ly") return null;
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (isAllowedReadPath(`${url.pathname}${url.search}`)) return url;
+    if (url.username || url.password || (url.port && url.port !== (url.protocol === "http:" ? "80" : "443"))) return null;
+    if (isAllowedReadPath(`${url.pathname}${url.search}`)) {
+      // PHIF emits HTTP result links; HTTP/2 over port 80 fails before its HTTPS redirect.
+      url.protocol = "https:";
+      url.port = "";
+      return url;
+    }
   } catch {
     return null;
   }

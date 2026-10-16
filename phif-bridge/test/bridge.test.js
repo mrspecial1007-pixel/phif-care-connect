@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer as createHttp2Server } from "node:http2";
+import { gzipSync } from "node:zlib";
 import { BridgeSessionStore, publicSession } from "../sessionStore.js";
-import { isAllowedPostFormPath, isAllowedReadPath, PhifClient } from "../phif/client.js";
-import { forwardHeaders, isAllowedProxyGet, isAllowedProxyRequest, proxyPhifLoginRequest, rewriteHtml, toLocalProxyLocation } from "../phif/sessionBridge.js";
+import { fetchWithTimeout, isAllowedPostFormPath, isAllowedReadPath, PhifClient } from "../phif/client.js";
+import { phifHttp2Fetch } from "../phif/http2Transport.js";
+import { forwardHeaders, isAllowedProxyGet, isAllowedProxyRequest, phifSessionFetch, proxyPhifLoginRequest, rewriteHtml, toLocalProxyLocation } from "../phif/sessionBridge.js";
 import { parseFilterTransactionForm, parseHistoricalTransactions, parseInvoiceDetails, parseTodayTransactions } from "../phif/parsers.js";
 import { createPhifBridgeServer } from "../server.js";
 
@@ -144,6 +147,128 @@ test("successful PHIF home load renders browser-safe success page without API se
   assert.equal(res.headers.Location, undefined);
   assert.match(res.body, /تم تسجيل الدخول إلى PHIF بنجاح/);
   assert.doesNotMatch(res.body, /PHIF_BRIDGE_SECRET|session-123|pharmacy-a|cookie/i);
+});
+
+test("HTTP/2 transport supports login page GET, compressed bodies, and response cookies", async () => {
+  const server = createHttp2Server();
+  server.on("stream", (stream, headers) => {
+    assert.equal(headers[":method"], "GET");
+    assert.equal(headers[":path"], "/login");
+    stream.respond({
+      ":status": 200,
+      "content-type": "text/html; charset=utf-8",
+      "content-encoding": "gzip",
+      "set-cookie": ["XSRF-TOKEN=token; Path=/", "phifreg_session=session; Path=/"],
+    });
+    stream.end(gzipSync("<html><form action=\"/login\"></form></html>"));
+  });
+  await using app = await listenHttp2(server);
+
+  const response = await phifHttp2Fetch(`${app.url}/login`, {
+    method: "GET",
+    headers: { Accept: "text/html" },
+  });
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("set-cookie"), /XSRF-TOKEN=/);
+  assert.equal(await response.text(), "<html><form action=\"/login\"></form></html>");
+});
+
+test("HTTP/2 transport preserves POST bodies and manual redirects", async () => {
+  let receivedBody = "";
+  const server = createHttp2Server();
+  server.on("stream", (stream, headers) => {
+    assert.equal(headers[":method"], "POST");
+    assert.equal(headers[":path"], "/login");
+    stream.on("data", (chunk) => {
+      receivedBody += chunk.toString("utf8");
+    });
+    stream.on("end", () => {
+      stream.respond({ ":status": 302, location: "/home" });
+      stream.end();
+    });
+  });
+  await using app = await listenHttp2(server);
+
+  const response = await phifHttp2Fetch(`${app.url}/login`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ username: "user", password: "pass" }),
+  });
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "/home");
+  assert.equal(receivedBody, "username=user&password=pass");
+});
+
+test("HTTP/2 transport honors aborted Bridge requests", async () => {
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    () => phifHttp2Fetch("http://127.0.0.1:1/login", { method: "GET", signal: controller.signal }),
+    /aborted/i,
+  );
+});
+
+test("HTTP/2 stalled requests time out and release their connections", async () => {
+  const server = createHttp2Server();
+  server.on("stream", (stream) => { stream.on("error", () => {}); });
+  await using app = await listenHttp2(server);
+  await assert.rejects(
+    () => fetchWithTimeout(undefined, `${app.url}/login`, { method: "GET" }, 40),
+    error => error.code === "PHIF_UPSTREAM_TIMEOUT",
+  );
+});
+
+test("HTTP/2 connection failures are safe upstream errors", async () => {
+  const server = createHttp2Server();
+  const app = await listenHttp2(server);
+  await app[Symbol.asyncDispose]();
+  await assert.rejects(
+    () => fetchWithTimeout(undefined, `${app.url}/login`, { method: "GET" }, 1000),
+    error => error.code === "PHIF_UPSTREAM_CONNECTION_ERROR",
+  );
+});
+
+test("transaction transport errors return 502 with a safe code rather than raw protocol details", async () => {
+  const store = new BridgeSessionStore();
+  const session = store.create("pharmacy-a");
+  const server = createPhifBridgeServer({
+    secret: SECRET, store,
+    fetchImpl: async () => { throw Object.assign(new Error("Protocol error private upstream details"), { code: "ERR_HTTP2_ERROR" }); },
+  });
+  await using app = await listen(server);
+  const { status, body } = await fetchJson(`${app.url}/api/bridge-sessions/${session.bridge_session_id}/historical-transactions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-phif-bridge-secret": SECRET, "x-pharmacy-id": "pharmacy-a" },
+    body: JSON.stringify({ dateFrom: "2026-09-20", dateTo: "2026-09-20" }),
+  });
+  assert.equal(status, 502);
+  assert.equal(body.code, "PHIF_UPSTREAM_PROTOCOL_ERROR");
+  assert.equal(body.stage, "upstream-transport");
+  assert.doesNotMatch(JSON.stringify(body), /Protocol error|private upstream details|cookie|token/i);
+});
+
+test("PHIF session fetch keeps cookies isolated in the session jar", async () => {
+  const session = { cookieJar: new Map() };
+  await phifSessionFetch(session, "https://his.phif.gov.ly/login", {
+    fetchImpl: async () => new Response("ok", {
+      status: 200,
+      headers: { "set-cookie": "phifreg_session=stored-cookie; Path=/" },
+    }),
+  });
+
+  let forwardedCookie = "";
+  await phifSessionFetch(session, "https://his.phif.gov.ly/home", {
+    fetchImpl: async (_input, options) => {
+      forwardedCookie = new Headers(options.headers).get("cookie") || "";
+      return new Response("ok", { status: 200 });
+    },
+  });
+
+  assert.equal(session.cookieJar.get("phifreg_session"), "stored-cookie");
+  assert.match(forwardedCookie, /phifreg_session=stored-cookie/);
 });
 
 test("API requires bridge secret and matching pharmacy", async () => {
@@ -474,7 +599,7 @@ test("historical transaction endpoint follows PHIF result redirect safely", asyn
   ]);
 });
 
-test("historical transaction endpoint follows PHIF http-to-https result redirect chain", async () => {
+test("historical transactions upgrade PHIF HTTP redirects before HTTP/2 and retain rotated session cookies", async () => {
   const store = new BridgeSessionStore();
   const session = store.create("pharmacy-a");
   const redirectedUrls = [];
@@ -495,17 +620,20 @@ test("historical transaction endpoint follows PHIF http-to-https result redirect
       if (url.pathname === "/showPharmacyFilterTransactions" && options.method === "POST") {
         return new Response("", {
           status: 302,
-          headers: { location: "http://his.phif.gov.ly/pharmacyFilteredtransactions" },
+          headers: [
+            ["location", "http://his.phif.gov.ly/pharmacyFilteredtransactions"],
+            ["set-cookie", "XSRF-TOKEN=rotated-test-token; Path=/"],
+            ["set-cookie", "phifreg_session=rotated-test-session; Path=/"],
+          ],
         });
       }
       if (url.pathname === "/pharmacyFilteredtransactions" && options.method === "GET") {
         redirectedUrls.push(url.href);
         if (url.protocol === "http:") {
-          return new Response("", {
-            status: 301,
-            headers: { location: "https://his.phif.gov.ly:443/pharmacyFilteredtransactions" },
-          });
+          throw Object.assign(new Error("Protocol error"), { code: "ERR_HTTP2_ERROR" });
         }
+        assert.match(new Headers(options.headers).get("cookie"), /phifreg_session=rotated-test-session/);
+        assert.match(new Headers(options.headers).get("cookie"), /XSRF-TOKEN=rotated-test-token/);
         return new Response('<table id="datatable1"><tbody></tbody></table>', {
           status: 200,
           headers: { "content-type": "text/html" },
@@ -549,9 +677,23 @@ test("historical transaction endpoint follows PHIF http-to-https result redirect
     "2026-4261754-2919972",
   ]);
   assert.deepEqual(redirectedUrls, [
-    "http://his.phif.gov.ly/pharmacyFilteredtransactions",
     "https://his.phif.gov.ly/pharmacyFilteredtransactions",
   ]);
+});
+
+test("historical redirects reject external hosts, credentials, ports and non-allowlisted paths", async () => {
+  for (const location of [
+    "https://example.com/pharmacyFilteredtransactions",
+    "http://his.phif.gov.ly:8080/pharmacyFilteredtransactions",
+    "https://user:password@his.phif.gov.ly/pharmacyFilteredtransactions",
+    "http://his.phif.gov.ly/cashing",
+  ]) {
+    let calls = 0;
+    const client = new PhifClient({ fetchImpl: async () => { calls++; return new Response(null, { status: 302, headers: { location } }); } });
+    const result = await client.postForm("/showPharmacyFilterTransactions", { dateFrom: "2026-09-20", dateTo: "2026-09-20" });
+    assert.equal(result.ok, false);
+    assert.equal(calls, 1);
+  }
 });
 
 test("historical upstream errors return safe diagnostics without raw PHIF HTML", async () => {
@@ -652,6 +794,17 @@ test("invoice details parser includes PHIF supplier only invoices", () => {
 });
 
 async function listen(server) {
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    [Symbol.asyncDispose]: async () => {
+      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    },
+  };
+}
+
+async function listenHttp2(server) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   return {

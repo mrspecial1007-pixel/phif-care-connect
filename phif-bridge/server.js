@@ -10,7 +10,7 @@ const DEFAULT_PORT = 5174;
 export function createPhifBridgeServer({
   secret = process.env.PHIF_BRIDGE_SECRET,
   store = new BridgeSessionStore(),
-  fetchImpl = fetch,
+  fetchImpl,
   timeoutMs = Number(process.env.PHIF_BRIDGE_TIMEOUT_MS || 15000),
 } = {}) {
   const server = createServer(async (req, res) => {
@@ -30,6 +30,9 @@ export function createPhifBridgeServer({
       }
       json(res, 404, { ok: false, error: "Not found" });
     } catch (error) {
+      if (["PHIF_UPSTREAM_TIMEOUT", "PHIF_UPSTREAM_PROTOCOL_ERROR", "PHIF_UPSTREAM_CONNECTION_ERROR"].includes(error?.code)) {
+        return json(res, 502, { ok: false, code: error.code, error: error.message, stage: "upstream-transport" });
+      }
       json(res, 500, { ok: false, error: error?.message || "Unexpected bridge error" });
     }
   });
