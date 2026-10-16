@@ -28,7 +28,7 @@ function formatExpiry(value: string | null | undefined) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("ar-LY", { month: "2-digit", year: "numeric" });
+  return date.toLocaleDateString("ar-LY", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function expiryState(value: string | null | undefined) {
@@ -232,14 +232,32 @@ function CompactStat({ label, value }: { label: string; value: string | number }
   );
 }
 
+function stockCardTitle(item: any) {
+  const parts = [item.brand_name || item.active_ingredient || "صنف غير مسمى"];
+  const aliases: Record<string, string> = {
+    tablet: "tab", tablets: "tab", tabs: "tab",
+    capsules: "cap", capsule: "cap", caps: "cap",
+    injection: "inj", injections: "inj",
+  };
+  const tokens = (value: string) => value.toLowerCase()
+    .match(/[\p{L}]+|\d+(?:\.\d+)?|\//gu)?.map(token => aliases[token] ?? token) ?? [];
+  for (const value of [item.strength, item.dosage_unit]) {
+    if (!value) continue;
+    const titleTokens = tokens(parts.join(" "));
+    const valueTokens = tokens(String(value));
+    const alreadyShown = valueTokens.length > 0 && titleTokens.some((_, index) => valueTokens.every((token, offset) => titleTokens[index + offset] === token));
+    if (!alreadyShown) parts.push(String(value));
+  }
+  return parts.join(" ");
+}
+
 function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
   const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط");
   const availability = stockAvailability(item);
   const quantityDisplay = compactQuantityDisplay(quantity);
   const expiry = formatExpiry(item.expiry_date);
   const expiryInfo = expiryState(item.expiry_date);
-  const displayTitle = [item.brand_name || item.active_ingredient || "صنف غير مسمى", item.strength, item.dosage_unit].filter(Boolean).join(" ");
-  const displayMeta = [item.active_ingredient, item.supplier_name].filter(Boolean).join(" · ") || "بدون مادة علمية أو مورد محفوظ";
+  const displayTitle = stockCardTitle(item);
   const tone =
     availability.tone === "danger"
       ? "border-red-200 bg-red-50/80"
@@ -261,21 +279,19 @@ function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
     >
       <div className="flex h-full items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="line-clamp-2 break-words text-[15px] font-semibold leading-5 text-foreground">{displayTitle}</div>
-          <div className="mt-1 break-words text-xs font-medium text-muted-foreground">{displayMeta}</div>
+          <div dir="auto" className="break-words text-[15px] font-semibold leading-5 text-foreground">{displayTitle}</div>
+          {item.active_ingredient && item.brand_name && <div dir="auto" className="mt-1 break-words text-xs text-muted-foreground">{item.active_ingredient}</div>}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {availability.status !== "available" && (
               <Badge variant={availability.tone === "danger" ? "destructive" : "secondary"} className="h-5 px-2 text-[11px]">
                 {availability.label}
               </Badge>
             )}
-            {expiry && (
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${expiryInfo.tone === "danger" ? "bg-red-100 text-red-700" : expiryInfo.tone === "warning" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
-                <CalendarDays className="h-3 w-3" />
-                {expiry} · {expiryInfo.label}
-              </span>
-            )}
-            {item.batch_number && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">تشغيلة {item.batch_number}</span>}
+            <span className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-0.5 text-[11px] ${expiryInfo.tone === "danger" ? "bg-red-100 text-red-700" : expiryInfo.tone === "warning" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+              <CalendarDays className="h-3 w-3 shrink-0" />
+              <span>{expiry ? `الصلاحية: ${expiry} · ${expiryInfo.label}` : "الصلاحية غير مسجلة"}</span>
+            </span>
+            {item.batch_number && <span className="max-w-full break-words rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">تشغيلة {item.batch_number}</span>}
           </div>
         </div>
 

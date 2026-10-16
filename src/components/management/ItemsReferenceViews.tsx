@@ -70,7 +70,12 @@ export function ItemsReferencePage() {
           <Card className="p-3 transition-colors hover:bg-accent/40">
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
               <div className="min-w-0 space-y-2">
-                <div><h2 className="truncate font-bold" dir="ltr">{item.ingredient}</h2><p className="mt-0.5 text-sm text-muted-foreground">{[item.strength, item.form].filter(Boolean).join(" · ") || "—"}</p></div>
+                <div>
+                  <h2 className="break-words font-bold leading-6" dir="auto">
+                    <bdi>{item.ingredient}</bdi>{item.strength && <> <span dir="ltr" className="inline-block max-w-full rounded-md border border-teal-200 bg-teal-50 px-1.5 py-0.5 align-middle text-xs font-semibold text-teal-800 [overflow-wrap:anywhere]">{item.strength}</span></>}
+                  </h2>
+                  {item.form && <p className="mt-0.5 text-xs text-muted-foreground">{item.form}</p>}
+                </div>
                 <SourceBadges sources={item.sources} />
               </div>
               <div className="flex shrink-0 items-center gap-2"><span className="text-xs font-medium">{item.beneficiaries} مستفيد</span><ChevronLeft className="size-4 text-muted-foreground" /></div>
