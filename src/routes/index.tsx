@@ -103,7 +103,7 @@ function Dashboard() {
       return a.patient_name.localeCompare(b.patient_name, "ar");
     });
 
-    return sorted.slice(0, 500);
+    return sorted;
   }, [rows, q, filter]);
 
   const chips = [

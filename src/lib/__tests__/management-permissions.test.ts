@@ -107,7 +107,7 @@ describe("Tiryaq management and permissions", () => {
     expect(patientRoute).toContain("days === 3");
     expect(patientRoute).toContain("return r.remaining_days === null || r.remaining_days >= -3");
     expect(reads).toContain("pickDisplayDueTrack");
-    expect(reads).toContain("track.remaining_days >= -3");
+    expect(reads).toContain("track.remaining_days >= -2");
   });
 
   it("calculates management finance values from invoice items without treating them as cash", () => {

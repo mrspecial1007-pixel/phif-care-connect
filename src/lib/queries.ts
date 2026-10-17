@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { currentSession } from "@/lib/auth.functions";
+import { daysUntilDate } from "@/lib/date";
 import {
   listPatientStatuses,
   getPatient,
@@ -84,9 +85,26 @@ export type PatientStatusRow = {
 export function usePatientStatuses() {
   return useQuery({
     queryKey: ["patient_status"],
-    queryFn: async (): Promise<PatientStatusRow[]> =>
-      (await listPatientStatuses()) as unknown as PatientStatusRow[],
+    queryFn: async (): Promise<PatientStatusRow[]> => {
+      const rows = (await listPatientStatuses()) as unknown as PatientStatusRow[];
+      return rows.map((row) => {
+        if (!row.phif_due_summaries?.length) return row;
+        const summaries = row.phif_due_summaries.map((summary) => ({
+          ...summary, days_until_due: daysUntilDate(summary.next_due_date),
+        }));
+        const tracks = (row.tracks ?? []).map((track) => ({
+          ...track, remaining_days: daysUntilDate(track.next_due_date),
+        }));
+        const display = tracks.find((track) => track.remaining_days !== null && track.remaining_days >= -2) ?? tracks[0];
+        return { ...row, tracks, active_tracks: tracks, phif_due_summaries: summaries,
+          next_due_date: display?.next_due_date ?? null,
+          remaining_days: display?.remaining_days ?? null };
+      });
+    },
     staleTime: 15_000,
+    refetchInterval: 60_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 }
 

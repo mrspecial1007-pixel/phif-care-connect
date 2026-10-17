@@ -93,8 +93,8 @@ export function phifDueSummariesToTracks(phifDueSummaries: any[] = []) {
     .sort((a, b) => String(a.next_due_date).localeCompare(String(b.next_due_date)));
 }
 
-function pickDisplayDueTrack(tracks: any[] = []) {
-  return tracks.find((track) => typeof track.remaining_days === "number" && track.remaining_days >= -3)
+export function pickDisplayDueTrack(tracks: any[] = []) {
+  return tracks.find((track) => typeof track.remaining_days === "number" && track.remaining_days >= -2)
     ?? tracks[0]
     ?? null;
 }
@@ -185,11 +185,7 @@ async function loadPatientPhifProfile(admin: any, pharmacyId: string, patientId:
   const invoiceIds = (invoices ?? []).map((invoice: any) => invoice.id);
   if (invoiceIds.length === 0) return buildPhifMedicationProfileFromRows([], [], manualTransactions);
 
-  const { data: items, error: itemError } = await admin
-    .from("phif_invoice_items")
-    .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata, created_at")
-    .in("phif_invoice_id", invoiceIds);
-  if (itemError) throw new Error(itemError.message);
+  const items = await loadPhifStatusItems(admin, invoiceIds);
 
   return buildPhifMedicationProfileFromRows(invoices ?? [], items ?? [], manualTransactions);
 }
@@ -228,6 +224,49 @@ async function loadPatientInsuranceCardsByIds(admin: any, patients: { id: string
   return byPatient;
 }
 
+/** Invoice IDs must come from the session-pharmacy-scoped invoice read. */
+export async function loadPhifStatusItems(admin: any, invoiceIds: string[]) {
+  const items: any[] = [];
+  for (let index = 0; index < invoiceIds.length; index += 100) {
+    const batch = invoiceIds.slice(index, index + 100);
+    let from = 0;
+    const seen = new Set<string>();
+    for (;;) {
+      let page: any[] = [];
+      let total: number | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const { data, error, count } = await admin
+            .from("phif_invoice_items")
+            .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata, created_at", { count: "exact" })
+            .in("phif_invoice_id", batch)
+            .order("id", { ascending: true })
+            .range(from, from + 999);
+          if (error) throw new Error(error.message);
+          page = data ?? [];
+          total = count;
+          break;
+        } catch (error) {
+          if (attempt === 2 || !/fetch failed|network|timeout/i.test(String(error))) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        }
+      }
+      if (page.length === 0) {
+        if (total !== null && from < total) throw new Error("Incomplete PHIF item read");
+        break;
+      }
+      for (const item of page) {
+        if (!item.id || seen.has(item.id)) throw new Error("Unstable PHIF item pagination");
+        seen.add(item.id);
+      }
+      items.push(...page);
+      from += page.length;
+      if (total !== null && from >= total) break;
+    }
+  }
+  return items;
+}
+
 async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[]) {
   const patients = rows.map((row) => ({
     id: row.patient_id,
@@ -249,6 +288,7 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
       .from("phif_invoices")
       .select("id, invoice_key, invoice_number, insurance_card_number, beneficiary_name, dispensing_date, dispensing_time, status, synced_at, patient_id, review_status")
       .eq("pharmacy_id", pharmacyId)
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
     const page = data ?? [];
@@ -257,25 +297,7 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
   }
 
   const invoiceIds = invoices.map((invoice) => invoice.id);
-  const items: any[] = [];
-  for (let index = 0; index < invoiceIds.length; index += 100) {
-    const batch = invoiceIds.slice(index, index + 100);
-    if (batch.length === 0) continue;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const { data, error } = await admin
-          .from("phif_invoice_items")
-          .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata, created_at")
-          .in("phif_invoice_id", batch);
-        if (error) throw new Error(error.message);
-        items.push(...(data ?? []));
-        break;
-      } catch (error) {
-        if (attempt === 2 || !/fetch failed|network|timeout/i.test(String(error))) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
-      }
-    }
-  }
+  const items = await loadPhifStatusItems(admin, invoiceIds);
 
   const byPatient = new Map<string, { invoices: any[]; items: any[] }>();
   for (const patient of patients) byPatient.set(patient.id, { invoices: [], items: [] });
@@ -347,7 +369,7 @@ export const listPatientStatuses = createServerFn({ method: "GET" }).handler(asy
       .at(-1) ?? null;
 
     return {
-      ...row,
+      ...resetManualOperationalStatus(row),
       insurance_cards,
       next_due_date: nearestTrack?.next_due_date ?? null,
       remaining_days: nearestTrack?.remaining_days ?? null,
