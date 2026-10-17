@@ -236,16 +236,38 @@ async function loadCurrentStockForReport(supabaseAdmin: any, pharmacyId: string)
   return (rows ?? []) as ReportStock[];
 }
 
-async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
-  const { data: rows, error } = await supabaseAdmin
-    .from("phif_stock_items")
-    .select("id, source_stock_id, generic_ingredient_id, supplier_id, supplier_name, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, cost_price, sale_price, synced_at")
-    .eq("pharmacy_id", pharmacyId)
-    .eq("is_current", true)
-    .order("synced_at", { ascending: false })
-    .limit(5000);
-  if (error) throw new Error(error.message);
-  return rows ?? [];
+export async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {
+  const stocks: any[] = [];
+  const seen = new Set<string>();
+  let expectedCount: number | null = null;
+  for (let from = 0; ; ) {
+    const { data: rows, error, count } = await supabaseAdmin
+      .from("phif_stock_items")
+      .select("id, source_stock_id, generic_ingredient_id, supplier_id, supplier_name, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, cost_price, sale_price, synced_at", { count: "exact" })
+      .eq("pharmacy_id", pharmacyId)
+      .eq("is_current", true)
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (error) throw new Error(error.message);
+    if (typeof count === "number") {
+      if (expectedCount !== null && count !== expectedCount) throw new Error("تغير المخزون أثناء القراءة. أعد المحاولة.");
+      expectedCount = count;
+    }
+    const page = rows ?? [];
+    if (page.length === 0) {
+      if (expectedCount !== null && from < expectedCount) throw new Error("تعذر تحميل مخزون PHIF كاملاً. أعد المحاولة.");
+      break;
+    }
+    for (const row of page) {
+      if (!row.id || seen.has(row.id)) throw new Error("تعذر التحقق من اكتمال مخزون PHIF. أعد المحاولة.");
+      seen.add(row.id);
+      stocks.push(row);
+    }
+    // Advance by received rows: a server-side row cap can be lower than the requested page.
+    from += page.length;
+    if (expectedCount !== null && from >= expectedCount) break;
+  }
+  return stocks;
 }
 
 function internalPurchaseValue(item: any): number | null {
@@ -833,13 +855,7 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
       items.push(...(rows ?? []));
     }
 
-    const { data: stockRows, error: stockError } = await supabaseAdmin
-      .from("phif_stock_items")
-      .select("id, source_stock_id, generic_ingredient_id, supplier_id, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, cost_price, sale_price, synced_at")
-      .eq("pharmacy_id", pharmacy_id)
-      .not("cost_price", "is", null)
-      .order("synced_at", { ascending: false });
-    if (stockError) throw new Error(stockError.message);
+    const stockRows = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
 
     const invoiceById = new Map((invoices ?? []).map((invoice: any) => [invoice.id, invoice]));
     const details = redactProfitRows(items.map((item) => {
