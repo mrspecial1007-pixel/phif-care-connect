@@ -35,6 +35,8 @@ import { EditDispenseDialog } from "@/components/EditDispenseDialog";
 import { toast } from "sonner";
 import { DispenseDialog, RemainingConfirmDialog } from "@/components/DispenseFlow";
 import { PhoneSheet } from "@/components/PhoneSheet";
+import { MedicationFollowUpControl } from "@/components/MedicationFollowUpControl";
+import { FOLLOW_UP_MIGRATION_MESSAGE } from "@/lib/phif-medication-follow-up";
 import { daysUntilDate, todayISOLocal } from "@/lib/date";
 import {
   ArrowRight,
@@ -100,11 +102,13 @@ function Detail() {
     queryFn: () => getPatientPhifInvoices({ data: { patientId: id } }),
     staleTime: 30_000,
   });
-  const { data: phifMedicationProfile } = useQuery({
+  const { data: phifMedicationProfile, isLoading: profileLoading, error: profileError, refetch: refetchProfile } = useQuery({
     enabled: !!id && hasTiryaqPhifAccess,
     queryKey: ["patient_phif_medication_profile", id],
     queryFn: () => getPhifMedicationProfile({ data: { patientId: id } }),
     staleTime: 30_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
   const status = statuses?.find((s) => s.patient_id === id);
 
@@ -532,7 +536,11 @@ function Detail() {
       )}
 
       {hasTiryaqPhifAccess && (
-        <CompactPhifMedicationProfileCard profile={phifMedicationProfile} />
+        profileError ? <Card className="space-y-2 p-3" role="alert">
+          <p className="text-sm text-destructive">تعذر تحميل الملف الدوائي وحالات المتابعة.</p>
+          <Button variant="outline" onClick={() => refetchProfile()}>إعادة المحاولة</Button>
+        </Card> : profileLoading ? <Card className="p-3 text-sm text-muted-foreground">جار تحميل الملف الدوائي...</Card> :
+        <CompactPhifMedicationProfileCard profile={phifMedicationProfile} patientId={id} />
       )}
 
       {hasTiryaqPhifAccess && (
@@ -882,24 +890,31 @@ function InsuranceCardsPanel({
   );
 }
 
-function CompactPhifMedicationProfileCard({ profile }: { profile: any }) {
+function CompactPhifMedicationProfileCard({ profile, patientId }: { profile: any; patientId: string }) {
   const items = profile?.items ?? [];
+  const activeItems = items.filter((item: any) => item.follow_up_status !== "stopped");
+  const stoppedItems = items.filter((item: any) => item.follow_up_status === "stopped");
+  const newDispensingCount = stoppedItems.filter((item: any) => item.new_dispensing_while_stopped).length;
   const reconciliation = profile?.reconciliation ?? [];
   return (
     <Card className="p-3">
       <details className="group">
         <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
           <h2 className="min-w-0 text-sm font-semibold">
-            الملف الدوائي - PHIF · {items.length} أصناف
+            الملف الدوائي - PHIF · {activeItems.length} أصناف نشطة
+            {stoppedItems.length > 0 ? ` · ${stoppedItems.length} موقوفة` : ""}
             {profile?.nearest_due_date ? ` · أقرب استحقاق ${fmtDate(profile.nearest_due_date)}` : ""}
           </h2>
           <Badge variant="secondary" className="group-open:hidden">عرض التفاصيل</Badge>
           <Badge variant="outline" className="hidden group-open:inline-flex">إخفاء التفاصيل</Badge>
+          {newDispensingCount > 0 && <Badge variant="outline" className="border-amber-500 text-amber-800">صرف جديد لـ{newDispensingCount} صنف موقوف · للمراجعة</Badge>}
         </summary>
 
         <div className="mt-3 space-y-3">
-          <div className="space-y-2">
-            {items.map((item: any) => (
+          {profile?.follow_up_available === false && <p role="status" className="text-xs text-amber-800">{FOLLOW_UP_MIGRATION_MESSAGE}</p>}
+          {[{ name: "الأدوية النشطة", items: activeItems }, { name: "الأدوية الموقوفة", items: stoppedItems }].map((group) => <div key={group.name} className="space-y-2">
+            {group.items.length > 0 && <h3 className="text-xs font-semibold text-muted-foreground">{group.name}</h3>}
+            {group.items.map((item: any) => (
               <details
                 key={item.identity_key}
                 className={`group/item rounded-lg border p-2.5 ${item.needs_review ? "border-warning/30 bg-warning/10" : "bg-background"}`}
@@ -913,7 +928,7 @@ function CompactPhifMedicationProfileCard({ profile }: { profile: any }) {
                       آخر صرف: {fmtDate(item.latest_dispensing_date)} · الكمية: {item.latest_quantity === null ? "—" : String(item.latest_quantity)}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      الاستحقاق: {fmtDate(item.next_due_date)} · {formatDueDelta(item.days_until_due)}
+                      {item.follow_up_status === "stopped" ? `المتابعة موقوفة منذ ${fmtDate(item.stopped_at)}` : `الاستحقاق: ${fmtDate(item.next_due_date)} · ${formatDueDelta(item.days_until_due)}`}
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
@@ -923,17 +938,20 @@ function CompactPhifMedicationProfileCard({ profile }: { profile: any }) {
                 </summary>
 
                 <div className="mt-3 space-y-2 border-t pt-2">
+                  {item.follow_up_status === "stopped" && <p className="break-words text-xs text-muted-foreground">سبب الإيقاف: {item.stopped_reason}</p>}
+                  {item.new_dispensing_while_stopped && <p role="alert" className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">ورد صرف PHIF جديد لهذا الصنف بعد إيقاف متابعته. يحتاج مراجعة؛ لم تُعد المتابعة تلقائيًا.</p>}
+                  <MedicationFollowUpControl patientId={patientId} item={item} available={profile?.follow_up_available === true} />
                   {item.review_reasons?.length > 0 && (
                     <div className="text-xs text-warning">{item.review_reasons.join("، ")}</div>
                   )}
 
                   <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
                     <Stat label="آخر صرف PHIF" value={fmtDate(item.latest_dispensing_date)} />
-                    <Stat label="الاستحقاق القادم" value={fmtDate(item.next_due_date)} />
+                    <Stat label="الاستحقاق القادم" value={item.follow_up_status === "stopped" ? "المتابعة موقوفة" : fmtDate(item.next_due_date)} />
                     <Stat
                       label="الأيام"
-                      value={formatDueDelta(item.days_until_due)}
-                      tone={item.days_until_due === null ? "muted" : item.days_until_due < 0 ? "danger" : item.days_until_due <= 3 ? "warning" : "muted"}
+                      value={item.follow_up_status === "stopped" ? "—" : formatDueDelta(item.days_until_due)}
+                      tone={item.follow_up_status === "stopped" || item.days_until_due === null ? "muted" : item.days_until_due < 0 ? "danger" : item.days_until_due <= 3 ? "warning" : "muted"}
                     />
                     <Stat label="الكمية" value={item.latest_quantity === null ? "—" : String(item.latest_quantity)} />
                   </div>
@@ -960,10 +978,10 @@ function CompactPhifMedicationProfileCard({ profile }: { profile: any }) {
               </details>
             ))}
 
-            {items.length === 0 && (
+            {items.length === 0 && group.name === "الأدوية النشطة" && (
               <div className="py-4 text-center text-sm text-muted-foreground">لا توجد أصناف PHIF مرتبطة بهذا المستفيد بعد</div>
             )}
-          </div>
+          </div>)}
 
           <div className="border-t pt-3">
             <div className="mb-2 flex items-center justify-between gap-2">

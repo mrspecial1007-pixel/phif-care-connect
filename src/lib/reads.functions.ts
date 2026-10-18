@@ -21,6 +21,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authorizePatientForSessionPharmacy, patientAccessSetsForSession, TIRYAQ_PHARMACY_NAME } from "@/lib/pharmacy-isolation";
 import { buildPhifMedicationProfileFromRows } from "@/lib/phif-invoices.functions";
+import { loadMedicationFollowUps } from "@/lib/phif-medication-follow-up";
 
 const idSchema = z.object({ id: z.string().uuid() });
 
@@ -185,9 +186,12 @@ async function loadPatientPhifProfile(admin: any, pharmacyId: string, patientId:
   const invoiceIds = (invoices ?? []).map((invoice: any) => invoice.id);
   if (invoiceIds.length === 0) return buildPhifMedicationProfileFromRows([], [], manualTransactions);
 
-  const items = await loadPhifStatusItems(admin, invoiceIds);
+  const [items, followUps] = await Promise.all([
+    loadPhifStatusItems(admin, invoiceIds),
+    loadMedicationFollowUps(admin, pharmacyId, [patientId]),
+  ]);
 
-  return buildPhifMedicationProfileFromRows(invoices ?? [], items ?? [], manualTransactions);
+  return buildPhifMedicationProfileFromRows(invoices ?? [], items, manualTransactions, followUps.rows);
 }
 
 async function loadPatientInsuranceCards(admin: any, patientId: string, currentCard?: string | null) {
@@ -297,7 +301,10 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
   }
 
   const invoiceIds = invoices.map((invoice) => invoice.id);
-  const items = await loadPhifStatusItems(admin, invoiceIds);
+  const [items, followUps] = await Promise.all([
+    loadPhifStatusItems(admin, invoiceIds),
+    loadMedicationFollowUps(admin, pharmacyId, patients.map((patient) => patient.id)),
+  ]);
 
   const byPatient = new Map<string, { invoices: any[]; items: any[] }>();
   for (const patient of patients) byPatient.set(patient.id, { invoices: [], items: [] });
@@ -319,7 +326,7 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
 
   const profiles = new Map<string, ReturnType<typeof buildPhifMedicationProfileFromRows>>();
   for (const [patientId, group] of byPatient) {
-    profiles.set(patientId, buildPhifMedicationProfileFromRows(group.invoices, group.items, []));
+    profiles.set(patientId, buildPhifMedicationProfileFromRows(group.invoices, group.items, [], followUps.rows.filter((row) => row.patient_id === patientId)));
   }
   return profiles;
 }

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { loadMedicationFollowUps, medicationFollowUpState, FOLLOW_UP_MIGRATION_MESSAGE, type MedicationFollowUp } from "@/lib/phif-medication-follow-up";
 
 const TIRYAQ_PHARMACY_NAME = "صيدلية الترياق الشافي";
 
@@ -115,6 +116,10 @@ export type PhifMedicationProfileItem = {
   needs_review: boolean;
   review_reasons: string[];
   movements: PhifMedicationProfileMovement[];
+  follow_up_status?: "active" | "stopped";
+  stopped_reason?: string | null;
+  stopped_at?: string | null;
+  new_dispensing_while_stopped?: boolean;
 };
 
 export type PhifDispensingReconciliationRow = {
@@ -135,6 +140,7 @@ export type PhifMedicationProfile = {
   nearest_due_item_count: number;
   due_summaries: PhifDueSummary[];
   reconciliation: PhifDispensingReconciliationRow[];
+  follow_up_available?: boolean;
 };
 
 export type PhifDueSummary = {
@@ -519,6 +525,7 @@ export function buildPhifMedicationProfileFromRows(
   invoices: any[],
   items: any[],
   manualTransactions: any[] = [],
+  followUps: MedicationFollowUp[] = [],
 ): PhifMedicationProfile {
   const invoicesById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
   const grouped = new Map<string, { sample: any; movements: PhifMedicationProfileMovement[]; reasons: Set<string>; phifItemIds: Set<string> }>();
@@ -565,6 +572,7 @@ export function buildPhifMedicationProfileFromRows(
     const dosageForm = pickMetadataString(group.sample.metadata, ["dosage_form", "dosageForm", "form", "pharmaceuticalForm"]);
     return {
       identity_key,
+      ...medicationFollowUpState(identity_key, movements.map((movement) => movement.invoice_id), followUps),
       brand: group.sample.brand ?? null,
       active_ingredient: group.sample.active_ingredient ?? null,
       strength: group.sample.strength ?? null,
@@ -581,9 +589,10 @@ export function buildPhifMedicationProfileFromRows(
   });
 
   profileItems.sort((a, b) => String(a.next_due_date ?? "9999-12-31").localeCompare(String(b.next_due_date ?? "9999-12-31")));
-  const nearestDueDate = profileItems.find((item) => item.next_due_date)?.next_due_date ?? null;
+  const activeItems = profileItems.filter((item) => item.follow_up_status !== "stopped");
+  const nearestDueDate = activeItems.find((item) => item.next_due_date)?.next_due_date ?? null;
   const nearestDueItems = nearestDueDate
-    ? profileItems
+    ? activeItems
         .filter((item) => item.next_due_date === nearestDueDate)
         .map((item) => medicationDisplayName(item) || "صنف PHIF")
     : [];
@@ -600,10 +609,10 @@ export function buildPhifMedicationProfileFromRows(
   };
 }
 
-export function buildPhifDueSummaries(items: { next_due_date?: string | null }[]): PhifDueSummary[] {
+export function buildPhifDueSummaries(items: { next_due_date?: string | null; follow_up_status?: "active" | "stopped" }[]): PhifDueSummary[] {
   const counts = new Map<string, number>();
   for (const item of items) {
-    if (!item.next_due_date) continue;
+    if (!item.next_due_date || item.follow_up_status === "stopped") continue;
     counts.set(item.next_due_date, (counts.get(item.next_due_date) ?? 0) + 1);
   }
   return [...counts.entries()]
@@ -1148,7 +1157,7 @@ export const listPatientPhifInvoices = createServerFn({ method: "POST" })
 
 export const getPatientPhifMedicationProfile = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => patientInvoicesSchema.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<PhifMedicationProfile> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { authorizePatientForSessionPharmacy } = await import("@/lib/pharmacy-isolation");
     const { pharmacy_id } = await requireTiryaqPhifArchiveAccess();
@@ -1184,11 +1193,48 @@ export const getPatientPhifMedicationProfile = createServerFn({ method: "POST" }
       return buildPhifMedicationProfileFromRows([], [], manualTransactions ?? []);
     }
 
-    const { data: items, error: itemError } = await db
-      .from("phif_invoice_items")
-      .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata, created_at")
-      .in("phif_invoice_id", invoiceIds);
-    if (itemError) throw new Error(itemError.message);
+    const { loadPhifStatusItems } = await import("@/lib/reads.functions");
+    const [items, followUps] = await Promise.all([
+      loadPhifStatusItems(db, invoiceIds),
+      loadMedicationFollowUps(db, pharmacy_id, [data.patientId]),
+    ]);
+    return { ...buildPhifMedicationProfileFromRows(invoices ?? [], items, manualTransactions ?? [], followUps.rows),
+      follow_up_available: followUps.available };
+  });
 
-    return buildPhifMedicationProfileFromRows(invoices ?? [], items ?? [], manualTransactions ?? []);
+export const medicationFollowUpInput = z.object({
+  patientId: z.string().uuid(),
+  identityKey: z.string().trim().min(1).max(2000),
+  isStopped: z.boolean(),
+  reason: z.string().trim().max(500).optional(),
+}).refine((value) => !value.isStopped || !!value.reason, { message: "أدخل سبب إيقاف متابعة الصنف", path: ["reason"] });
+
+export const setPatientMedicationFollowUp = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => medicationFollowUpInput.parse(data))
+  .handler(async ({ data }) => {
+    const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
+    const { authorizePatientForSessionPharmacy } = await import("@/lib/pharmacy-isolation");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { pharmacy_id } = await requireTiryaqPermission("dispensing_write");
+    const db = supabaseAdmin as any;
+    if (!(await authorizePatientForSessionPharmacy(db, pharmacy_id, data.patientId))) {
+      throw new Error("المستفيد غير متاح في الصيدلية الحالية");
+    }
+    const profile = await getPatientPhifMedicationProfile({ data: { patientId: data.patientId } });
+    if (profile.follow_up_available !== true) throw new Error(FOLLOW_UP_MIGRATION_MESSAGE);
+    const item = profile.items.find((item) => item.identity_key === data.identityKey);
+    if (!item) throw new Error("الصنف غير موجود في ملف المستفيد");
+    const { error } = await db.rpc("set_phif_medication_follow_up", {
+      p_pharmacy_id: pharmacy_id,
+      p_patient_id: data.patientId,
+      p_identity_key: item.identity_key,
+      p_is_stopped: data.isStopped,
+      p_reason: data.reason ?? null,
+      p_invoice_ids: [...new Set(item.movements.map((movement) => movement.invoice_id))],
+    });
+    if (error) {
+      if (["PGRST202", "PGRST205", "42P01"].includes(error.code)) throw new Error(FOLLOW_UP_MIGRATION_MESSAGE);
+      throw new Error("تعذر حفظ حالة متابعة الصنف. لم يتم تأكيد التغيير، حاول مجددًا.");
+    }
+    return { ok: true as const };
   });
