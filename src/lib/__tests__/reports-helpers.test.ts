@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildMonthlyReport, officialReportPayload, type ReportInvoice, type ReportItem } from "@/lib/reports.helpers";
+import { buildMonthlyReport, officialReportPayload, reportItemBoxQuantity, type ReportInvoice, type ReportItem } from "@/lib/reports.helpers";
 
 const invoices: ReportInvoice[] = [
   {
@@ -153,10 +153,55 @@ describe("monthly PHIF reports", () => {
     expect(serialized).toContain("0061600113888");
   });
 
-  it("uses stock-style quantity labels in report rows when possible", () => {
+  it("reports missing packaging explicitly instead of assuming a box size", () => {
     const result = report();
     const amlodipine = result.top_drugs.find((row) => row.active_ingredient === "AMLODIPINE");
     expect(amlodipine?.formatted_quantity).toContain("60");
+    expect(amlodipine?.formatted_quantity).toContain("تعذر التحويل إلى علب");
+    expect(amlodipine?.box_quantity).toBeNull();
+  });
+
+  it("converts tablets by total units per box, not strips per box", () => {
+    const row = { ...items[0], quantity: 60, metadata: { unit: "TABLETS", package_quantity: 30, strips_quantity: 3 } };
+    expect(reportItemBoxQuantity(row)).toBe(2);
+    expect(reportItemBoxQuantity({ ...row, quantity: 15 })).toBe(0.5);
+    expect(reportItemBoxQuantity({ ...row, quantity: 0 })).toBe(0);
+    expect(reportItemBoxQuantity({ ...row, metadata: { unit: "STRIPS", strips_quantity: 3 } })).toBe(20);
+    expect(reportItemBoxQuantity({ ...row, metadata: { unit: "BOX" } })).toBe(60);
+    expect(reportItemBoxQuantity({ ...row, quantity: null })).toBeNull();
+    expect(reportItemBoxQuantity({ ...row, metadata: { unit: "TAB", package_quantity: 0 } })).toBeNull();
+  });
+
+  it("sums boxes per invoice item before grouping brands with different packaging", () => {
+    const result = buildMonthlyReport({ dateFrom: "2026-09-01", dateTo: "2026-09-30", source: "all", groupBy: "scientific", sortBy: "quantity", topLimit: "all", invoices,
+      items: [
+        { ...items[0], quantity: 30, metadata: { dosage_form: "TABS", package_quantity: 30 } },
+        { ...items[1], quantity: 60, metadata: { dosage_form: "TABS", package_quantity: 60 } },
+      ] });
+    expect(result.top_drugs).toHaveLength(1);
+    expect(result.top_drugs[0]).toMatchObject({ quantity: 90, box_quantity: 2, formatted_quantity: "2 علبة", total_value: 30 });
+    expect(officialReportPayload(result).top_drugs[0].box_quantity).toBe(2);
+  });
+
+  it("uses matching stock package data without using scientific alternatives or costs", () => {
+    const row = { ...items[0], brand: "Brand A 5MG", quantity: 60, metadata: { unit: "TAB" } };
+    const stock = { brand_name: "Brand A 5MG TABS", strength: "5MG", dosage_unit: "TABLETS", package_quantity: 30, strips_quantity: 3, cost_price: 999 };
+    expect(reportItemBoxQuantity(row, [stock])).toBe(2);
+    expect(reportItemBoxQuantity(row, [{ ...stock, brand_name: "Brand B" }])).toBeNull();
+    expect(reportItemBoxQuantity(row, [{ ...stock, strength: "10MG" }])).toBeNull();
+    expect(reportItemBoxQuantity(row, [{ ...stock, dosage_unit: "CAPS" }])).toBeNull();
+    expect(reportItemBoxQuantity(row, [stock, { ...stock, package_quantity: 60 }])).toBeNull();
+    expect(reportItemBoxQuantity(row, [stock, { ...stock, cost_price: 123 }])).toBe(2);
+  });
+
+  it("never labels incomplete conversion as a complete box total", () => {
+    const result = buildMonthlyReport({ dateFrom: "2026-09-01", dateTo: "2026-09-30", source: "all", groupBy: "scientific", sortBy: "quantity", topLimit: "all", invoices,
+      items: [{ ...items[0], metadata: { dosage_form: "TABS", package_quantity: 30 } }, items[1]] });
+    expect(result.top_drugs[0]).toMatchObject({ box_quantity: null, known_box_quantity: 1, quantity_conversion_complete: false });
+    expect(result.top_drugs[0].formatted_quantity).toContain("1 علبة");
+    expect(result.top_drugs[0].formatted_quantity).toContain("30 TABS");
+    const view = readFileSync(join(process.cwd(), "src/components/management/ReportsViews.tsx"), "utf8");
+    expect(view).toContain("الكمية_بالعلبة: r.box_quantity");
   });
 
   it("keeps report routes independent and guarded by source financial permissions", () => {

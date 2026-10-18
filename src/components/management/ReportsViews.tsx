@@ -74,7 +74,7 @@ export function ReportsSummaryPage() {
       const add = (name: string, rows: any[]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ ملاحظة: "لا توجد بيانات" }]), name);
       add("الملخص", [{ البند: "الفواتير", القيمة: payload.summary.invoice_count }, { البند: "المستفيدون", القيمة: payload.summary.unique_patient_count }, { البند: "قيمة الصرف", القيمة: payload.summary.total_dispensed_value }]);
       add("المستفيدون", payload.beneficiary_stats.beneficiaries.map((r: any) => ({ الاسم: r.name, البطاقة: r.card, الفواتير: r.invoice_count, القيمة: r.total_value })));
-      add("الأصناف", payload.top_drugs.map((r: any) => ({ العلمي: r.active_ingredient, التجاري: r.brand, التركيز: r.strength, المصدر: sourceLabel(r.source), الكمية: r.quantity, القيمة: r.total_value })));
+      add("الأصناف", payload.top_drugs.map((r: any) => ({ العلمي: r.active_ingredient, التجاري: r.brand, التركيز: r.strength, المصدر: sourceLabel(r.source), الكمية_بالعلبة: r.box_quantity, بيان_الكمية: r.formatted_quantity, الكمية_الأصلية: r.quantity, الوحدة_الأصلية: r.unit, القيمة: r.total_value })));
       add("اليومي", payload.daily);
       add("الجودة", [payload.quality]);
        XLSX.writeFile(wb, `phif-report-${period.range.dateFrom}-${period.range.dateTo}.xlsx`);

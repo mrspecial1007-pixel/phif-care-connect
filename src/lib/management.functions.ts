@@ -226,14 +226,22 @@ async function loadFirstDispensingByCard(
 }
 
 async function loadCurrentStockForReport(supabaseAdmin: any, pharmacyId: string) {
-  const { data: rows, error } = await supabaseAdmin
+  const stocks: ReportStock[] = [];
+  for (let from = 0; ; ) {
+    const { data: rows, error } = await supabaseAdmin
     .from("phif_stock_items")
-    .select("source_stock_id, brand_name, active_ingredient, strength, dosage_unit, stock_quantity, source_quantity_unit, synced_at")
+    .select("source_stock_id, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, package_quantity, strips_quantity, stock_quantity, source_quantity_unit, synced_at")
     .eq("pharmacy_id", pharmacyId)
     .eq("is_current", true)
-    .limit(1000);
-  if (error) throw new Error(error.message);
-  return (rows ?? []) as ReportStock[];
+    .order("id", { ascending: true })
+    .range(from, from + 999);
+    if (error) throw new Error(error.message);
+    const page = rows ?? [];
+    if (!page.length) break;
+    stocks.push(...page);
+    from += page.length;
+  }
+  return stocks;
 }
 
 export async function loadStockWithCosts(supabaseAdmin: any, pharmacyId: string) {

@@ -138,6 +138,50 @@ export function reportItemQuantityLabel(item: ReportItem, stock?: ReportStock | 
   return stockQuantityBreakdown(item.quantity, strips, unit).label;
 }
 
+function packageUnit(value: unknown) {
+  const unit = normalizeText(value);
+  if (["tab", "tabs", "tablet", "tablets", "قرص", "أقراص"].includes(unit)) return "tablet";
+  if (["cap", "caps", "capsule", "capsules", "كبسولة", "كبسولات"].includes(unit)) return "capsule";
+  if (["strip", "strips", "شريط", "أشرطة"].includes(unit)) return "strip";
+  if (["box", "boxes", "pack", "packs", "علبة", "علب"].includes(unit)) return "box";
+  return unit;
+}
+
+/** Converts invoice units, not stock quantities (which are stored as strips). */
+export function reportItemBoxQuantity(item: ReportItem, stocks: ReportStock[] = []): number | null {
+  const unit = packageUnit(unitForItem(item));
+  const quantity = Number(item.quantity);
+  if (item.quantity === null || item.quantity === undefined || String(item.quantity).trim() === "" || !Number.isFinite(quantity) || quantity < 0) return null;
+  if (unit === "box") return quantity;
+  if (!["tablet", "capsule", "strip"].includes(unit)) return null;
+  const metadata = item.metadata ?? {};
+  const fields = item.phif_financial_fields ?? {};
+  const names = unit === "strip" ? ["strips_quantity", "stripsQuantity"] : ["package_quantity", "packageQuantity"];
+  const explicit = names.flatMap((name) => [metadata[name], fields[name]])
+    .filter((value) => value !== undefined && value !== null && value !== "");
+  if (explicit.length) {
+    const sizes = explicit.map(Number);
+    return sizes.every((size) => size > 0 && Number.isInteger(size) && size === sizes[0]) ? quantity / sizes[0] : null;
+  }
+  const productName = (name: unknown, strength: unknown, form: unknown) => {
+    const words = normalizeText(name).replace(/(\d)\s+(mg|mcg|ml|iu)\b/g, "$1$2");
+    const dose = normalizeStrength(strength);
+    return words.split(" ").filter((word) => word !== dose && packageUnit(word) !== packageUnit(form)).join(" ");
+  };
+  const brand = productName(item.brand, item.strength, unitForItem(item));
+  const strength = normalizeStrength(item.strength);
+  const form = packageUnit(dosageForm(item) || unitForItem(item));
+  if (!brand || !strength) return null;
+  const brandId = metadata.supplier_brand_name_id ?? metadata.brand_product_id ?? metadata.brand_id;
+  const candidates = stocks.filter((stock) => {
+    if (packageUnit(stock.dosage_unit) !== form || normalizeStrength(stock.strength) !== strength) return false;
+    if (brandId && stock.brand_product_id && String(brandId) !== String(stock.brand_product_id)) return false;
+    return productName(stock.brand_name, stock.strength, stock.dosage_unit) === brand;
+  });
+  const sizes = candidates.map((stock) => Number(unit === "strip" ? stock.strips_quantity : stock.package_quantity));
+  return sizes.length > 0 && sizes.every((size) => size > 0 && Number.isInteger(size) && size === sizes[0]) ? quantity / sizes[0] : null;
+}
+
 function fullMonthRange(dateFrom: string, dateTo: string) {
   const start = new Date(`${dateFrom}T00:00:00Z`);
   const end = new Date(`${dateTo}T00:00:00Z`);
@@ -247,6 +291,8 @@ export function buildMonthlyReport(input: BuildReportInput) {
       source,
       unit: unit || null,
       quantity: 0,
+      box_quantity: 0,
+      unconverted_quantities: new Map<string, number>(),
       unique_patients: new Set<string>(),
       dispense_count: 0,
       total_value: 0,
@@ -255,6 +301,9 @@ export function buildMonthlyReport(input: BuildReportInput) {
       products: new Map<string, { brand: string; quantity: number; value: number }>(),
     };
     group.quantity += quantity;
+    const boxes = reportItemBoxQuantity(item, input.stockItems);
+    if (boxes !== null) group.box_quantity += boxes;
+    else group.unconverted_quantities.set(unit || "وحدة غير محددة", (group.unconverted_quantities.get(unit || "وحدة غير محددة") ?? 0) + quantity);
     group.dispense_count += 1;
     group.total_value += value;
     if (card) group.unique_patients.add(card);
@@ -337,17 +386,28 @@ export function buildMonthlyReport(input: BuildReportInput) {
     brand: group.brand,
     source: group.source,
     quantity: group.quantity,
+    box_quantity: group.unconverted_quantities.size ? null : round(group.box_quantity),
+    known_box_quantity: round(group.box_quantity),
+    quantity_conversion_complete: group.unconverted_quantities.size === 0,
     unit: group.unit,
     unique_patient_count: group.unique_patients.size,
     dispense_count: group.dispense_count,
     total_value: group.total_value,
-    formatted_quantity: reportItemQuantityLabel({ phif_invoice_id: "summary", quantity: group.quantity, metadata: group.sample?.metadata ?? {} } as ReportItem),
+    formatted_quantity: [
+      group.box_quantity > 0 || !group.unconverted_quantities.size ? `${round(group.box_quantity)} علبة` : null,
+      ...[...group.unconverted_quantities.entries()].map(([unit, qty]) => `${qty} ${unit} (تعذر التحويل إلى علب: بيانات العبوة غير مكتملة أو متعارضة)`),
+    ].filter(Boolean).join(" · "),
     products: [...group.products.values()],
   })).sort((a, b) => {
     if (input.sortBy === "beneficiaries") return b.unique_patient_count - a.unique_patient_count;
     if (input.sortBy === "dispenses") return b.dispense_count - a.dispense_count;
     if (input.sortBy === "value") return b.total_value - a.total_value;
-    return b.quantity - a.quantity;
+    if (a.box_quantity === null || b.box_quantity === null) {
+      if (a.box_quantity !== null) return -1;
+      if (b.box_quantity !== null) return 1;
+      return b.quantity - a.quantity;
+    }
+    return b.box_quantity - a.box_quantity;
   });
 
   const limitedTopDrugs = input.topLimit === "all" ? topDrugs : topDrugs.slice(0, input.topLimit);
