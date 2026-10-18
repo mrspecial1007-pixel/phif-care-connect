@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildMonthlyReport, officialReportPayload, reportItemBoxQuantity, type ReportInvoice, type ReportItem } from "@/lib/reports.helpers";
+import { buildMonthlyReport, officialReportPayload, reportItemBoxQuantity, reportItemBoxConversion, type ReportInvoice, type ReportItem } from "@/lib/reports.helpers";
 
 const invoices: ReportInvoice[] = [
   {
@@ -157,7 +157,7 @@ describe("monthly PHIF reports", () => {
     const result = report();
     const amlodipine = result.top_drugs.find((row) => row.active_ingredient === "AMLODIPINE");
     expect(amlodipine?.formatted_quantity).toContain("60");
-    expect(amlodipine?.formatted_quantity).toContain("تعذر التحويل إلى علب");
+    expect(amlodipine?.formatted_quantity).toContain("بيانات عبوة ناقصة");
     expect(amlodipine?.box_quantity).toBeNull();
   });
 
@@ -184,11 +184,11 @@ describe("monthly PHIF reports", () => {
   });
 
   it("uses matching stock package data without using scientific alternatives or costs", () => {
-    const row = { ...items[0], brand: "Brand A 5MG", quantity: 60, metadata: { unit: "TAB" } };
-    const stock = { brand_name: "Brand A 5MG TABS", strength: "5MG", dosage_unit: "TABLETS", package_quantity: 30, strips_quantity: 3, cost_price: 999 };
+    const row = { ...items[0], source_classification: "actual-supplier", brand: "Forxiga 10MG", strength: "10MG", quantity: 60, metadata: { unit: "TAB" } };
+    const stock = { brand_name: "Forxiga 10MG TABS", strength: "10MG", dosage_unit: "TABLETS", package_quantity: 30, strips_quantity: 3, cost_price: 999 };
     expect(reportItemBoxQuantity(row, [stock])).toBe(2);
-    expect(reportItemBoxQuantity(row, [{ ...stock, brand_name: "Brand B" }])).toBeNull();
-    expect(reportItemBoxQuantity(row, [{ ...stock, strength: "10MG" }])).toBeNull();
+    expect(reportItemBoxQuantity(row, [{ ...stock, brand_name: "Dapasan" }])).toBeNull();
+    expect(reportItemBoxQuantity(row, [{ ...stock, strength: "5MG" }])).toBeNull();
     expect(reportItemBoxQuantity(row, [{ ...stock, dosage_unit: "CAPS" }])).toBeNull();
     expect(reportItemBoxQuantity(row, [stock, { ...stock, package_quantity: 60 }])).toBeNull();
     expect(reportItemBoxQuantity(row, [stock, { ...stock, cost_price: 123 }])).toBe(2);
@@ -199,9 +199,73 @@ describe("monthly PHIF reports", () => {
       items: [{ ...items[0], metadata: { dosage_form: "TABS", package_quantity: 30 } }, items[1]] });
     expect(result.top_drugs[0]).toMatchObject({ box_quantity: null, known_box_quantity: 1, quantity_conversion_complete: false });
     expect(result.top_drugs[0].formatted_quantity).toContain("1 علبة");
-    expect(result.top_drugs[0].formatted_quantity).toContain("30 TABS");
+    expect(result.top_drugs[0].formatted_quantity).toContain("30 قرص");
     const view = readFileSync(join(process.cwd(), "src/components/management/ReportsViews.tsx"), "utf8");
     expect(view).toContain("الكمية_بالعلبة: r.box_quantity");
+  });
+
+  it("reproduces saved empty metadata: Aspirem 28 tablets is half a 56-tablet box", () => {
+    const row = { ...items[0], brand: "Aspirem EC", active_ingredient: "ACETYLSALICYLIC ACID", strength: "75MG", quantity: 28, source_classification: "actual-supplier", metadata: {} };
+    const stock = { brand_name: "Aspirem EC", strength: "75MG", dosage_unit: "TABS", source_quantity_unit: "TABS", package_quantity: "56", strips_quantity: "2", brand_product_id: "1002" };
+    expect(reportItemBoxConversion(row, [stock, { ...stock }])).toEqual({ boxes: 0.5, unit: "tablet", reason: null });
+    const report = buildMonthlyReport({ dateFrom: "2026-09-01", dateTo: "2026-09-30", source: "all", groupBy: "scientific", sortBy: "quantity", topLimit: "all", invoices, items: [row], stockItems: [stock] });
+    expect(report.top_drugs[0].formatted_quantity).toBe("0.5 علبة");
+    expect(row.metadata).toEqual({});
+  });
+
+  it("reuses full brand, compound strength and form matching with real Forxiga and TAZIN fields", () => {
+    const rows = [
+      { brand: "Forxiga", strength: "10mg", quantity: 28, stock: { brand_name: "Forxiga", strength: "10mg", dosage_unit: "TABS", package_quantity: "28", strips_quantity: "2" } },
+      { brand: "TAZIN 0.40mg", strength: "400 MCG", quantity: 30, stock: { brand_name: "TAZIN 0.40mg", strength: "400 MCG", dosage_unit: "CAPS", package_quantity: "30", strips_quantity: "3" } },
+    ];
+    for (const row of rows) expect(reportItemBoxQuantity({ ...items[0], ...row, source_classification: "actual-supplier", metadata: {} }, [row.stock])).toBe(1);
+    const compound = { ...items[0], brand: "TENSTAR", strength: "160/25MG", source_classification: "actual-supplier", metadata: {} };
+    expect(reportItemBoxQuantity(compound, [{ brand_name: "TENSTAR", strength: "160MG", dosage_unit: "TABS", package_quantity: 30 }])).toBeNull();
+  });
+
+  it("distinguishes unknown units, missing packaging and conflicting product matches", () => {
+    const row = { ...items[0], brand: "Aspirem EC", strength: "75MG", source_classification: "actual-supplier", metadata: {} };
+    const stock = { brand_name: "Aspirem EC", strength: "75MG", dosage_unit: "TABS", package_quantity: 56 };
+    expect(reportItemBoxConversion(row).reason).toBe("unknown_unit");
+    expect(reportItemBoxConversion(row, [{ ...stock, package_quantity: null }]).reason).toBe("missing_package");
+    expect(reportItemBoxConversion(row, [stock, { ...stock, package_quantity: 28 }]).reason).toBe("matching_conflict");
+    expect(reportItemBoxConversion({ ...row, metadata: { unit: "TAB" } }, [{ ...stock, dosage_unit: "CAPS" }]).reason).toBe("matching_conflict");
+    expect(reportItemBoxConversion({ ...row, metadata: { unit: "CAP", dosage_form: "TABLETS" } }, [stock]).reason).toBe("matching_conflict");
+    expect(reportItemBoxConversion({ ...row, metadata: { unit: "TAB", package_quantity: 28 }, phif_financial_fields: { package_quantity: 56 } }).reason).toBe("matching_conflict");
+  });
+
+  it("normalizes recorded unit aliases and keeps quantity units distinct from form and purchase units", () => {
+    for (const unit of ["tab", "TABS", "TABLET", "TABLETS", "T.A.B.S", " قرص "]) {
+      expect(reportItemBoxQuantity({ ...items[0], quantity: 60, metadata: { unit, package_quantity: "30" } })).toBe(2);
+    }
+    expect(reportItemBoxQuantity({ ...items[0], quantity: 6, metadata: { quantityUnit: "STRIPS", dosage_form: "TAB", strips_quantity: "3" } })).toBe(2);
+    const row = { ...items[0], brand: "Aspirem EC", strength: "75MG", quantity: 28, source_classification: "actual-supplier", metadata: {} };
+    expect(reportItemBoxQuantity(row, [
+      { brand_name: "Aspirem EC", strength: "75MG", dosage_unit: "TABLETS", package_quantity: "56.000", strips_quantity: "2" },
+      { brand_name: "Aspirem EC", strength: "75MG", dosage_unit: "TABS", package_quantity: "56", strips_quantity: "2.0" },
+    ])).toBe(0.5);
+    expect(reportItemBoxConversion({ ...items[0], metadata: {}, phif_financial_fields: { internal_purchase_cost_unit: "TAB", purchase_price_unit: "TAB", internal_purchase_unit: "TAB" } }).reason).toBe("unknown_unit");
+  });
+
+  it("does not borrow an Actual substitute's package for PHIF Supplier or confuse pens with dosage units", () => {
+    const phif = { ...items[0], brand: "ACETYLSALICYLIC ACID", strength: "75MG", quantity: 28, metadata: {} };
+    const stocks = [{ brand_name: "ACETYLSALICYLIC ACID", strength: "75MG", dosage_unit: "TABS", package_quantity: 56 }];
+    expect(reportItemBoxQuantity(phif, stocks)).toBeNull();
+    const pen = { ...items[0], brand: "APIDRA", strength: "100IU", source_classification: "actual-supplier", metadata: {} };
+    expect(reportItemBoxConversion(pen, [{ brand_name: "APIDRA", strength: "100IU", dosage_unit: "PEN", package_quantity: 300 }]).reason).toBe("unknown_unit");
+  });
+
+  it("reads explicit package suffixes observed in saved invoice brand names without guessing doses", () => {
+    const samples = [
+      ["XARELTO 15 MG TABS -28 TABS", 28],
+      ["JARDIANCE 10 MG , FICTA BLI - 30 Tabs", 30],
+      ["SYNJARDY 12.5 /1000MG, FICTA-60 TABS", 60],
+    ] as const;
+    for (const [brand, quantity] of samples) expect(reportItemBoxQuantity({ ...items[0], brand, quantity, metadata: {} })).toBe(1);
+    for (const brand of ["B12 TABS", "ASPIRIN 75MG TABLETS", "MEDICINE 5x10 TABS", "MEDICINE 10/30 TABS", "APIDRA 5X3ML INJ"]) {
+      expect(reportItemBoxQuantity({ ...items[0], brand, quantity: 30, metadata: {} })).toBeNull();
+    }
+    expect(reportItemBoxConversion({ ...items[0], brand: samples[0][0], metadata: { unit: "TAB", package_quantity: 30 } }).reason).toBe("matching_conflict");
   });
 
   it("keeps report routes independent and guarded by source financial permissions", () => {

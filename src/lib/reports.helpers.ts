@@ -1,4 +1,4 @@
-import { invoiceItemValue, stockQuantityBreakdown } from "@/lib/phif-stock.helpers";
+import { invoiceItemValue, stockQuantityBreakdown, matchActualInvoiceItemToStock } from "@/lib/phif-stock.helpers";
 
 export type ReportSource = "all" | "actual" | "phif";
 export type DrugGrouping = "scientific" | "brand";
@@ -139,7 +139,7 @@ export function reportItemQuantityLabel(item: ReportItem, stock?: ReportStock | 
 }
 
 function packageUnit(value: unknown) {
-  const unit = normalizeText(value);
+  const unit = normalizeText(value).replace(/[._-]/g, "").trim();
   if (["tab", "tabs", "tablet", "tablets", "قرص", "أقراص"].includes(unit)) return "tablet";
   if (["cap", "caps", "capsule", "capsules", "كبسولة", "كبسولات"].includes(unit)) return "capsule";
   if (["strip", "strips", "شريط", "أشرطة"].includes(unit)) return "strip";
@@ -147,39 +147,80 @@ function packageUnit(value: unknown) {
   return unit;
 }
 
+export type BoxConversionReason = "unknown_unit" | "missing_package" | "matching_conflict";
+export type ReportBoxConversion = { boxes: number | null; unit: string | null; reason: BoxConversionReason | null };
+
+const boxConversionLabels: Record<BoxConversionReason, string> = {
+  unknown_unit: "وحدة غير معروفة",
+  missing_package: "بيانات عبوة ناقصة",
+  matching_conflict: "تعارض في المطابقة",
+};
+
+function invoiceTitlePackage(brand: unknown) {
+  const name = normalizeText(brand);
+  // A recorded suffix such as "-28 TABS" is an explicit package count, not
+  // a dose. Mixed expressions (5x10, 10/30) need a separate verified model.
+  if (/\d\s*[x×/]\s*\d+\s*(tabs?|tablets?|caps?|capsules?)\b/i.test(name)) return null;
+  const match = /(?:\s|[-,])([1-9]\d{0,3})\s*(tabs?|tablets?|caps?|capsules?)\s*$/.exec(name);
+  return match ? { size: Number(match[1]), unit: packageUnit(match[2]) } : null;
+}
+
 /** Converts invoice units, not stock quantities (which are stored as strips). */
-export function reportItemBoxQuantity(item: ReportItem, stocks: ReportStock[] = []): number | null {
-  const unit = packageUnit(unitForItem(item));
-  const quantity = Number(item.quantity);
-  if (item.quantity === null || item.quantity === undefined || String(item.quantity).trim() === "" || !Number.isFinite(quantity) || quantity < 0) return null;
-  if (unit === "box") return quantity;
-  if (!["tablet", "capsule", "strip"].includes(unit)) return null;
+export function reportItemBoxConversion(item: ReportItem, stocks: ReportStock[] = []): ReportBoxConversion {
   const metadata = item.metadata ?? {};
   const fields = item.phif_financial_fields ?? {};
+  // Purchase-price units describe internal costs, not the dispensed quantity.
+  const declaredUnits = [
+    [metadata.quantity_unit, metadata.quantityUnit, fields.quantity_unit, fields.quantityUnit],
+    [metadata.unit, fields.unit], [metadata.dosage_unit, fields.dosage_unit],
+  ].map((values) => values.filter((value) => typeof value === "string" && value.trim()).map(packageUnit));
+  const unitValues = declaredUnits.find((values) => values.length) ?? [];
+  const titlePackage = invoiceTitlePackage(item.brand);
+  let unit = unitValues[0] || packageUnit(dosageForm(item)) || titlePackage?.unit || "";
+  const fail = (reason: BoxConversionReason): ReportBoxConversion => ({ boxes: null, unit: unit || null, reason });
+  const success = (boxes: number): ReportBoxConversion => ({ boxes, unit, reason: null });
+  if (new Set(unitValues).size > 1) return fail("matching_conflict");
+  const quantity = Number(item.quantity);
+  if (item.quantity === null || item.quantity === undefined || String(item.quantity).trim() === "" || !Number.isFinite(quantity) || quantity < 0) return fail("unknown_unit");
+  if (unit === "box") return success(quantity);
+  if (titlePackage && ["tablet", "capsule"].includes(unit) && unit !== titlePackage.unit) return fail("matching_conflict");
+
+  const declaredForm = packageUnit(dosageForm(item));
+  if (["tablet", "capsule"].includes(unit) && ["tablet", "capsule"].includes(declaredForm) && unit !== declaredForm) return fail("matching_conflict");
+  const matchingUnit = declaredForm || (unit === "strip" ? "" : unit);
+  const match = item.source_classification === "actual-supplier" && normalizeStrength(item.strength)
+    ? matchActualInvoiceItemToStock({ ...item, metadata: { ...metadata, ...(matchingUnit ? { unit: matchingUnit } : {}) } },
+      stocks.map((stock) => ({ ...stock, dosage_unit: packageUnit(stock.dosage_unit),
+        package_quantity: stock.package_quantity ? Number(stock.package_quantity) : stock.package_quantity,
+        strips_quantity: stock.strips_quantity ? Number(stock.strips_quantity) : stock.strips_quantity,
+        cost_price: undefined, sale_price: undefined }))) : null;
+  if (!unit) {
+    if (match?.status !== "matched") return fail(match?.reason === "ambiguous_match" ? "matching_conflict" : "unknown_unit");
+    // Saved PHIF tablet/capsule quantities are individual dosage units; the
+    // matched product supplies the missing form. Never apply this to pens/IU.
+    const form = packageUnit(match.stock?.dosage_unit);
+    if (form !== "tablet" && form !== "capsule") return fail("unknown_unit");
+    unit = form;
+  }
+  if (!["tablet", "capsule", "strip"].includes(unit)) return fail("unknown_unit");
   const names = unit === "strip" ? ["strips_quantity", "stripsQuantity"] : ["package_quantity", "packageQuantity"];
   const explicit = names.flatMap((name) => [metadata[name], fields[name]])
     .filter((value) => value !== undefined && value !== null && value !== "");
+  if (titlePackage?.unit === unit) explicit.push(titlePackage.size);
   if (explicit.length) {
     const sizes = explicit.map(Number);
-    return sizes.every((size) => size > 0 && Number.isInteger(size) && size === sizes[0]) ? quantity / sizes[0] : null;
+    if (new Set(sizes).size > 1) return fail("matching_conflict");
+    return sizes.every((size) => size > 0 && Number.isInteger(size)) ? success(quantity / sizes[0]) : fail("missing_package");
   }
-  const productName = (name: unknown, strength: unknown, form: unknown) => {
-    const words = normalizeText(name).replace(/(\d)\s+(mg|mcg|ml|iu)\b/g, "$1$2");
-    const dose = normalizeStrength(strength);
-    return words.split(" ").filter((word) => word !== dose && packageUnit(word) !== packageUnit(form)).join(" ");
-  };
-  const brand = productName(item.brand, item.strength, unitForItem(item));
-  const strength = normalizeStrength(item.strength);
-  const form = packageUnit(dosageForm(item) || unitForItem(item));
-  if (!brand || !strength) return null;
-  const brandId = metadata.supplier_brand_name_id ?? metadata.brand_product_id ?? metadata.brand_id;
-  const candidates = stocks.filter((stock) => {
-    if (packageUnit(stock.dosage_unit) !== form || normalizeStrength(stock.strength) !== strength) return false;
-    if (brandId && stock.brand_product_id && String(brandId) !== String(stock.brand_product_id)) return false;
-    return productName(stock.brand_name, stock.strength, stock.dosage_unit) === brand;
-  });
-  const sizes = candidates.map((stock) => Number(unit === "strip" ? stock.strips_quantity : stock.package_quantity));
-  return sizes.length > 0 && sizes.every((size) => size > 0 && Number.isInteger(size) && size === sizes[0]) ? quantity / sizes[0] : null;
+  if (match?.status !== "matched") {
+    return fail(match && ["ambiguous_match", "strength_mismatch", "unit_mismatch"].includes(match.reason) ? "matching_conflict" : "missing_package");
+  }
+  const size = Number(unit === "strip" ? match.stock?.strips_quantity : match.stock?.package_quantity);
+  return size > 0 && Number.isInteger(size) ? success(quantity / size) : fail("missing_package");
+}
+
+export function reportItemBoxQuantity(item: ReportItem, stocks: ReportStock[] = []): number | null {
+  return reportItemBoxConversion(item, stocks).boxes;
 }
 
 function fullMonthRange(dateFrom: string, dateTo: string) {
@@ -292,7 +333,7 @@ export function buildMonthlyReport(input: BuildReportInput) {
       unit: unit || null,
       quantity: 0,
       box_quantity: 0,
-      unconverted_quantities: new Map<string, number>(),
+      unconverted_quantities: new Map<string, { quantity: number; unit: string | null; reason: BoxConversionReason }>(),
       unique_patients: new Set<string>(),
       dispense_count: 0,
       total_value: 0,
@@ -301,9 +342,15 @@ export function buildMonthlyReport(input: BuildReportInput) {
       products: new Map<string, { brand: string; quantity: number; value: number }>(),
     };
     group.quantity += quantity;
-    const boxes = reportItemBoxQuantity(item, input.stockItems);
+    const conversion = reportItemBoxConversion(item, input.stockItems);
+    const boxes = conversion.boxes;
     if (boxes !== null) group.box_quantity += boxes;
-    else group.unconverted_quantities.set(unit || "وحدة غير محددة", (group.unconverted_quantities.get(unit || "وحدة غير محددة") ?? 0) + quantity);
+    else {
+      const reason = conversion.reason ?? "unknown_unit";
+      const issueKey = `${reason}|${conversion.unit ?? ""}`;
+      const existing = group.unconverted_quantities.get(issueKey);
+      group.unconverted_quantities.set(issueKey, { quantity: (existing?.quantity ?? 0) + quantity, unit: conversion.unit, reason });
+    }
     group.dispense_count += 1;
     group.total_value += value;
     if (card) group.unique_patients.add(card);
@@ -389,13 +436,17 @@ export function buildMonthlyReport(input: BuildReportInput) {
     box_quantity: group.unconverted_quantities.size ? null : round(group.box_quantity),
     known_box_quantity: round(group.box_quantity),
     quantity_conversion_complete: group.unconverted_quantities.size === 0,
+    quantity_conversion_issues: [...group.unconverted_quantities.values()],
     unit: group.unit,
     unique_patient_count: group.unique_patients.size,
     dispense_count: group.dispense_count,
     total_value: group.total_value,
     formatted_quantity: [
       group.box_quantity > 0 || !group.unconverted_quantities.size ? `${round(group.box_quantity)} علبة` : null,
-      ...[...group.unconverted_quantities.entries()].map(([unit, qty]) => `${qty} ${unit} (تعذر التحويل إلى علب: بيانات العبوة غير مكتملة أو متعارضة)`),
+      ...[...group.unconverted_quantities.values()].map((issue) => {
+        const unitLabel = ({ tablet: "قرص", capsule: "كبسولة", strip: "شريط" } as Record<string, string>)[issue.unit ?? ""] ?? issue.unit ?? "وحدة";
+        return `${issue.quantity} ${unitLabel} (${boxConversionLabels[issue.reason]})`;
+      }),
     ].filter(Boolean).join(" · "),
     products: [...group.products.values()],
   })).sort((a, b) => {
@@ -494,6 +545,7 @@ export function buildMonthlyReport(input: BuildReportInput) {
     reconciliation,
     official_notes: [
       "يعتمد التقرير على فواتير PHIF المحفوظة وبنودها فقط.",
+      "تحويل العلب يستخدم بيانات التعبئة المحفوظة في البند، أو المنتج التجاري المطابق في المخزون الحالي؛ لا يثبت حجم العبوة التاريخية عند غيابه من الفاتورة.",
       "لا يتضمن التقرير الرسمي أسعار شراء الصيدلية أو الأرباح أو أي بيانات تقنية داخلية.",
     ],
   };
