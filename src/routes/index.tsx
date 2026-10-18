@@ -1,13 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
-import { usePatientStatuses } from "@/lib/queries";
+import { usePatientStatuses, useSession } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useMemo, useState } from "react";
-import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff, Star } from "lucide-react";
+import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff, Star, CalendarDays, CalendarRange } from "lucide-react";
 import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard, statusMeta } from "@/components/PatientCard";
+import { todayISOLocal } from "@/lib/date";
+import { buildPhifPreparationIndex, validPreparationRange } from "@/lib/phif-preparation.helpers";
 
 export const Route = createFileRoute("/")({
   component: () => <Gate><Dashboard /></Gate>,
@@ -16,8 +20,16 @@ export const Route = createFileRoute("/")({
 
 function Dashboard() {
   const { data: rows, isLoading, error, refetch } = usePatientStatuses();
+  const { data: session } = useSession();
+  const isTiryaq = session?.pharmacy?.name === "صيدلية الترياق الشافي";
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite" | "old_follow_up">("active");
+  const [filter, setFilter] = useState<"all" | "active" | "preparation" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite" | "old_follow_up">("active");
+  const [preparationMode, setPreparationMode] = useState<"single" | "range">("single");
+  const [preparationFrom, setPreparationFrom] = useState(todayISOLocal);
+  const [preparationTo, setPreparationTo] = useState(todayISOLocal);
+  const preparationEnd = preparationMode === "single" ? preparationFrom : preparationTo;
+  const preparationValid = validPreparationRange(preparationFrom, preparationEnd);
+  const preparation = useMemo(() => buildPhifPreparationIndex(rows ?? [], preparationFrom, preparationEnd), [rows, preparationFrom, preparationEnd]);
 
   const stats = useMemo(() => {
     const r = rows ?? [];
@@ -46,6 +58,7 @@ function Dashboard() {
         (r.national_id ?? "").includes(q.trim()) ||
         (r.phone ?? "").includes(q.trim());
       if (!matchSearch) return false;
+      if (filter === "preparation") return isTiryaq && preparation.has(r.patient_id);
       if (searching) return true;
       if (filter === "shared" && !r.is_shared) return false;
       if (filter === "review" && r.review_status !== "needs_review") return false;
@@ -70,6 +83,11 @@ function Dashboard() {
     });
 
     const sorted = [...list].sort((a, b) => {
+      if (filter === "preparation") {
+        const first = preparation.get(a.patient_id)!.dueDates[0].date;
+        const second = preparation.get(b.patient_id)!.dueDates[0].date;
+        return first.localeCompare(second) || a.patient_name.localeCompare(b.patient_name, "ar");
+      }
       const getPriority = (row: any) => {
         const days = row.remaining_days;
         if (days === -1) return 0;
@@ -103,12 +121,13 @@ function Dashboard() {
       return a.patient_name.localeCompare(b.patient_name, "ar");
     });
 
-    return sorted;
-  }, [rows, q, filter]);
+    return filter === "preparation" ? [...new Map(sorted.map((row) => [row.patient_id, row])).values()] : sorted;
+  }, [rows, q, filter, preparation, isTiryaq]);
 
   const chips = [
     { k: "active", label: "نشط" },
     { k: "all", label: "الكل" },
+    { k: "preparation", label: "تجهيز" },
     { k: "overdue", label: "متأخر" },
     { k: "old_follow_up", label: "متابعة قديمة" },
     { k: "suspended", label: "معلقة" },
@@ -146,9 +165,11 @@ function Dashboard() {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {chips.map((c) => (
+        {chips.filter((c) => c.k !== "preparation" || isTiryaq).map((c) => (
           <button
             key={c.k}
+            type="button"
+            aria-pressed={filter === c.k}
             onClick={() => setFilter(c.k as any)}
             className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border flex items-center gap-1 ${
               filter === c.k ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground"
@@ -160,6 +181,31 @@ function Dashboard() {
         ))}
       </div>
 
+      {filter === "preparation" && isTiryaq && (
+        <section aria-label="فترة التجهيز" className="min-w-0 space-y-3 border-y py-3">
+          <ToggleGroup type="single" value={preparationMode} onValueChange={(value) => {
+            if (value !== "single" && value !== "range") return;
+            setPreparationMode(value);
+            if (value === "range" && preparationTo < preparationFrom) setPreparationTo(preparationFrom);
+          }} variant="outline" size="sm" className="grid max-w-sm grid-cols-2" aria-label="اختيار يوم أو نطاق تواريخ">
+            <ToggleGroupItem value="single"><CalendarDays className="ml-1 h-4 w-4" />يوم واحد</ToggleGroupItem>
+            <ToggleGroupItem value="range"><CalendarRange className="ml-1 h-4 w-4" />من - إلى</ToggleGroupItem>
+          </ToggleGroup>
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1">
+              <Label htmlFor="preparation-from">{preparationMode === "single" ? "تاريخ الاستحقاق" : "من تاريخ"}</Label>
+              <Input id="preparation-from" type="date" value={preparationFrom} onChange={(event) => setPreparationFrom(event.target.value)} className="min-w-0 max-w-full" aria-invalid={!preparationValid} />
+            </div>
+            {preparationMode === "range" && <div className="min-w-0 space-y-1">
+              <Label htmlFor="preparation-to">إلى تاريخ</Label>
+              <Input id="preparation-to" type="date" value={preparationTo} min={preparationFrom || undefined} onChange={(event) => setPreparationTo(event.target.value)} className="min-w-0 max-w-full" aria-invalid={!preparationValid} />
+            </div>}
+          </div>
+          {!preparationValid ? <p role="alert" className="text-sm text-destructive">اختر تاريخًا صحيحًا، على أن تكون نهاية الفترة مساوية لبدايتها أو بعدها.</p> :
+            !isLoading && !error && <p role="status" className="text-sm text-muted-foreground">{filtered.length} مستفيد · {filtered.reduce((sum, row) => sum + (preparation.get(row.patient_id)?.itemCount ?? 0), 0)} صنف للتجهيز</p>}
+        </section>
+      )}
+
       {error ? (
         <div role="alert" className="space-y-3 py-10 text-center text-destructive">
           <p>تعذر تحميل المستفيدين. تحقق من الاتصال وحاول مجددًا.</p>
@@ -167,10 +213,10 @@ function Dashboard() {
         </div>
       ) : isLoading ? (
         <div className="text-center py-10 text-muted-foreground">جاري التحميل…</div>
-      ) : (
+      ) : filter === "preparation" && !preparationValid ? null : (
         <div className="grid gap-2">
           {filtered.map((r) => (
-            <PatientCard key={r.patient_id} row={r} />
+            <PatientCard key={r.patient_id} row={r} preparation={filter === "preparation" ? preparation.get(r.patient_id) : undefined} />
           ))}
           {filtered.length === 0 && (
             <div className="text-center py-10 text-muted-foreground">لا توجد نتائج</div>

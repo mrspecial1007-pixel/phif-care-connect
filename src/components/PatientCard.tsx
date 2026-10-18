@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Phone, Share2, AlertTriangle, CheckCircle2, Clock, Star } from "lucide-react";
+import { Phone, Share2, AlertTriangle, CheckCircle2, Clock, Star, ClipboardList } from "lucide-react";
 import { useState, type MouseEvent } from "react";
 import type { PatientStatusRow } from "@/lib/queries";
 import { PhoneSheet } from "./PhoneSheet";
@@ -13,6 +13,7 @@ import { upsertPatient } from "@/lib/dispensing.functions";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { daysUntilDate } from "@/lib/date";
+import type { PhifPreparationSummary } from "@/lib/phif-preparation.helpers";
 
 const TIRYAQ_PHARMACY_NAME = "صيدلية الترياق الشافي";
 
@@ -64,7 +65,7 @@ function borderTone(key: string) {
   }
 }
 
-export function PatientCard({ row }: { row: PatientStatusRow }) {
+export function PatientCard({ row, preparation }: { row: PatientStatusRow; preparation?: PhifPreparationSummary }) {
   const meta = statusMeta(row);
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [dispOpen, setDispOpen] = useState(false);
@@ -105,9 +106,12 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
     }
   };
 
-  const visibleTracks = (row.tracks ?? [])
+  const displayTracks = preparation ? preparation.dueDates.map((due) => ({
+    next_due_date: due.date, source: "phif", phif_item_count: due.itemCount,
+  })) : (row.tracks ?? []);
+  const visibleTracks = displayTracks
     .map((track) => ({ track, days: trackRemainingDays(track) }))
-    .filter((t) => t.days !== null) as { track: { source?: string; phif_item_count?: number }; days: number }[];
+    .filter((t) => t.days !== null) as { track: { source?: string; phif_item_count?: number; next_due_date?: string | null }; days: number }[];
 
   const daysNode = row.is_follow_up_suspended ? null : visibleTracks.length > 0 ? (
     <div className="mt-2 space-y-1">
@@ -131,6 +135,7 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
                days < 0 ? `متأخر ${Math.abs(days)} ${Math.abs(days) === 1 ? "يوم" : "أيام"}` :
                `متبقي ${days} ${days === 1 ? "يوم" : "يومًا"}`}
               {track.source?.includes("phif") && track.phif_item_count ? ` · PHIF (${track.phif_item_count})` : ""}
+              {preparation && track.next_due_date ? ` · ${track.next_due_date.split("-").reverse().join("/")}` : ""}
             </span>
           </div>
         );
@@ -188,6 +193,9 @@ export function PatientCard({ row }: { row: PatientStatusRow }) {
                   {row.phone}
                 </button>
               )}
+              {preparation && <Badge variant="outline" className="mt-2 border-cyan-300 text-cyan-800 dark:text-cyan-300">
+                <ClipboardList className="ml-1 h-3.5 w-3.5" />للتجهيز: {preparation.itemCount} صنف
+              </Badge>}
               {daysNode}
             </div>
             <div className="flex flex-col gap-1 items-end shrink-0">
