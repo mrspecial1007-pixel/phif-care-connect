@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { QuickSupplierCosts } from "@/components/management/QuickSupplierCosts";
+import { QuickCostItemSummary, QuickSupplierCosts } from "@/components/management/QuickSupplierCosts";
 import { buildManagementAuditReport } from "@/lib/management.functions";
-import { quickCostInput, saveQuickCostEntry, supplierQuickCostGroups, supplierQuickCostIdentity, type QuickCostEntry } from "@/lib/phif-supplier-quick-cost.helpers";
+import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuantityLabel, quickCostInput, saveQuickCostEntry, supplierQuickCostGroups, supplierQuickCostIdentity, type QuickCostEntry } from "@/lib/phif-supplier-quick-cost.helpers";
 
 const identity = { id: "raw-1", brand: "DRUG", active_ingredient: "Ingredient", strength: "160/25MG", metadata: { unit: "BOX", dosage_form: "TABS", package_quantity: "30", strips_quantity: "3" } };
 const entry: QuickCostEntry = { item_id: "i1", invoice_id: "a", source: "phif", quick_cost_identity: supplierQuickCostIdentity(identity), active_ingredient: "Ingredient", strength: "160/25MG", quantity: 3, invoice_quantity_unit: "BOX", unit_purchase_price: null, match_status: "needs_purchase_price", can_edit_purchase_price: true };
@@ -42,6 +42,48 @@ describe("PHIF Supplier quick invoice-item costs", () => {
       { ...identity, metadata: { ...identity.metadata, strips_quantity: "2" } },
     ]) expect(supplierQuickCostIdentity(variant)).not.toBe(base);
     expect(supplierQuickCostIdentity({ ...identity, id: "a", metadata: {} })).not.toBe(supplierQuickCostIdentity({ ...identity, id: "b", metadata: {} }));
+  });
+
+  it("reads explicit invoice units, skips empty aliases and never uses saved purchase units as dispensing evidence", () => {
+    for (const value of ["TAB", "TABS", "TABLET", "tablets", "قرص", "أقراص"]) expect(normalizeSupplierUnit(value)).toBe("TAB");
+    expect(supplierInvoiceUnit({ metadata: { unit: "", quantity_unit: "tablets" } })).toEqual({ unit: "TAB", issue: null });
+    expect(supplierInvoiceUnit({ metadata: { quantityUnit: "strips", unit: "TABLETS" } }).unit).toBe("STRIP");
+    expect(supplierInvoiceUnit({ phif_financial_fields: { unit: "BOX" } }).unit).toBe("BOX");
+    expect(supplierInvoiceUnit({ metadata: {}, phif_financial_fields: { internal_purchase_cost_unit: "TAB" } })).toEqual({ unit: null, issue: "missing" });
+    expect(supplierInvoiceUnit({ metadata: { quantity_unit: "TAB" }, phif_financial_fields: { quantity_unit: "BOX" } })).toEqual({ unit: null, issue: "conflict" });
+    expect(supplierInvoiceUnit({ metadata: { unit: "MG" } })).toEqual({ unit: null, issue: "unknown" });
+    expect(supplierInvoiceForm({ metadata: { quantity_unit: "BOX" } })).toBeNull();
+    expect(supplierInvoiceForm({ metadata: { quantity_unit: "TABLETS" } })).toBe("TAB");
+    expect(supplierQuickCostIdentity({ ...identity, metadata: { quantityUnit: "boxes", dosageForm: "tablets", packageQuantity: "30", stripsQuantity: "3" } })).toBe(supplierQuickCostIdentity(identity));
+  });
+
+  it("shows real quantity units without converting quantities or assuming tablets", () => {
+    expect(supplierQuantityLabel(30, "TABLETS")).toBe("30 قرصًا");
+    expect(supplierQuantityLabel(3, "BOX")).toBe("3 علب");
+    expect(supplierQuantityLabel(3, "STRIPS")).toBe("3 أشرطة");
+    expect(supplierQuantityLabel(30, "CAPSULES")).toBe("30 كبسولة");
+    expect(supplierQuantityLabel(5, "PENS")).toBe("5 أقلام");
+    expect(supplierQuantityLabel(30, null)).toBe("30");
+    expect(supplierQuantityLabel(null, "TAB")).toBe("—");
+  });
+
+  it("renders prominent item, compound strength and sale value with a single expandable data warning", () => {
+    const raw = { ...entry, active_ingredient: "Amlodipine + Valsartan", strength: "10MG/160MG", invoice_number: "1525611", dispensing_date: "2026-04-01", quantity: 30, invoice_quantity_unit: undefined, invoice_value: 90, quick_cost_identity: '["unresolved","i1"]' };
+    const html = renderToStaticMarkup(createElement(QuickCostItemSummary, { item: raw, position: 1, count: 1 }));
+    expect(html).toContain("text-xl font-bold");
+    expect(html).toContain("text-2xl font-bold");
+    expect(html).toContain("text-blue-950");
+    expect(html).toContain("10MG/160MG");
+    expect(html).toContain("90.000");
+    expect(html.match(/<summary/g)).toHaveLength(1);
+    expect(html).not.toContain("30 قرص");
+    expect(html).not.toContain("30 وحدة غير مسجلة");
+    expect(html).not.toContain("شكل دوائي غير مسجل");
+    const confirmed = renderToStaticMarkup(createElement(QuickCostItemSummary, { item: { ...raw, invoice_quantity_unit: "TAB", invoice_dosage_form: "TAB", quick_cost_identity: "confirmed" }, position: 1, count: 1 }));
+    expect(confirmed).toContain("30 قرصًا");
+    expect(confirmed).not.toContain("<details");
+    expect(quickCostInput(raw, "total_dispensed_cost", "60", false).purchaseCostValue).toBe(60);
+    expect(() => quickCostInput(raw, "unit_price", "2", false)).toThrow("وحدة");
   });
 
   it("starts incomplete groups and invoice items first, without modifying incoming report rows", () => {
@@ -110,6 +152,18 @@ describe("PHIF Supplier quick invoice-item costs", () => {
       expect(report.financial.summary.complete_invoices).toBe(1);
       expect(report.financial.summary.phif_missing_cost_items).toBe(0);
     }
+  });
+
+  it("keeps total-cost invoices complete without units, but requires a verified unit for unit-price costs", () => {
+    const invoice = { id: "a", dispensing_date: "2026-04-01", invoice_number: "1525611" };
+    const item = { id: "i1", phif_invoice_id: "a", source_classification: "phif-supplier", active_ingredient: "Amlodipine + Valsartan", strength: "10MG/160MG", quantity: 30, metadata: {}, phif_financial_fields: { total_amount: 90, internal_purchase_cost_mode: "total_dispensed_cost", internal_purchase_cost_value: 60 } };
+    const report = (row: any) => buildManagementAuditReport({ invoices: [invoice], items: [row], stocks: [] }).financial;
+    expect(report(item).summary.complete_invoices).toBe(1);
+    const unitPrice = { ...item, phif_financial_fields: { ...item.phif_financial_fields, internal_purchase_cost_mode: "unit_price", internal_purchase_cost_value: 2, internal_purchase_cost_unit: "TABS" } };
+    expect(report(unitPrice).incomplete_invoices[0].unit_review_count).toBe(1);
+    expect(report({ ...unitPrice, metadata: { quantityUnit: "TABLETS" } }).summary.complete_invoices).toBe(1);
+    expect(report({ ...unitPrice, metadata: { quantity_unit: "BOX" } }).summary.complete_invoices).toBe(0);
+    expect(report({ ...unitPrice, metadata: { unit: "TABS" }, phif_financial_fields: { ...unitPrice.phif_financial_fields, unit: "BOX" } }).summary.complete_invoices).toBe(0);
   });
 
   it("uses the existing save endpoint, refreshes reports, and keeps default total mode with overwrite confirmation", () => {

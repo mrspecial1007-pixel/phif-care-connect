@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatMoney } from "@/components/management/InvoiceSummaryCard";
-import { quickCostComplete, quickCostInput, saveQuickCostEntry, supplierQuickCostGroups, type QuickCostEntry, type SupplierCostInput, type SupplierCostMode } from "@/lib/phif-supplier-quick-cost.helpers";
+import { normalizeSupplierUnit, quickCostComplete, quickCostInput, saveQuickCostEntry, supplierQuantityLabel, supplierQuickCostGroups, type QuickCostEntry, type SupplierCostInput, type SupplierCostMode } from "@/lib/phif-supplier-quick-cost.helpers";
 
 export function QuickSupplierCosts({ invoices, onSave, disabled = false }: {
   invoices: { items: QuickCostEntry[] }[]; onSave: (input: SupplierCostInput) => Promise<unknown>; disabled?: boolean;
@@ -69,17 +69,9 @@ export function QuickSupplierCosts({ invoices, onSave, disabled = false }: {
           {item ? <>
             <Label htmlFor="quick-cost-drug">الصنف</Label>
             <select id="quick-cost-drug" disabled={working} className="h-10 w-full min-w-0 rounded-md border bg-background px-2 text-sm" value={currentGroup?.key ?? ""} onChange={event => setCursor(queue.findIndex(row => row.quick_cost_identity === event.target.value))}>
-              {groups.filter(group => queue.some(row => row.quick_cost_identity === group.key)).map(group => <option key={group.key} value={group.key}>{group.label} · {group.entries[0].strength || "تركيز غير مسجل"} · {group.entries[0].invoice_dosage_form || "شكل غير مسجل"} · {group.entries[0].invoice_quantity_unit || "وحدة غير مسجلة"}{group.entries[0].invoice_package_quantity ? ` · عبوة ${group.entries[0].invoice_package_quantity}` : ""}</option>)}
+              {groups.filter(group => queue.some(row => row.quick_cost_identity === group.key)).map(group => <option key={group.key} value={group.key}>{[group.label, group.entries[0].strength, group.entries[0].invoice_dosage_form, group.entries[0].invoice_package_quantity ? `عبوة ${group.entries[0].invoice_package_quantity}` : null].filter(Boolean).join(" · ")}</option>)}
             </select>
-            <div className="space-y-1 border-y py-3">
-              <h3 dir="auto" className="break-words text-sm font-semibold">{item.active_ingredient || item.brand || item.item_name} · {item.strength || "تركيز غير مسجل"}</h3>
-              <p className="break-words text-xs text-muted-foreground">{item.invoice_dosage_form || "شكل دوائي غير مسجل"}{item.invoice_package_quantity ? ` · حجم العبوة: ${item.invoice_package_quantity}` : ""}{item.invoice_strips_quantity ? ` · أشرطة العبوة: ${item.invoice_strips_quantity}` : ""}</p>
-              {item.quick_cost_identity?.startsWith('["unresolved"') && <p className="text-xs text-amber-700">هوية الصنف غير مكتملة؛ يعرض هذا البند منفصلًا للمراجعة.</p>}
-              <p className="text-xs text-muted-foreground">البند {itemPosition} من {groupQueue.length} لهذا الصنف</p>
-              <div className="flex flex-wrap justify-between gap-2 text-sm"><span>فاتورة <bdi>{item.invoice_number || "—"}</bdi></span><span>{item.dispensing_date?.slice(0, 10) || "تاريخ غير مسجل"}</span></div>
-              <p className="text-sm">الكمية المصروفة: <bdi>{item.quantity ?? "—"}</bdi> {item.invoice_quantity_unit || "وحدة غير مسجلة"}</p>
-              <p className="text-xs text-muted-foreground">قيمة البيع: {item.revenue_hidden ? "محجوب" : formatMoney(item.invoice_value)}</p>
-            </div>
+            <QuickCostItemSummary item={item} position={itemPosition} count={groupQueue.length} />
             <QuickCostForm key={item.item_id} item={item} lock={lock.current} onBusy={setWorking} onSave={onSave} onNext={input => { setSaved(previous => ({ ...previous, [input.itemId]: input })); setCursor(index => index + 1); }} />
           </> : <p className="py-5 text-center text-sm" role="status">{queue.length ? "انتهت الجولة" : "لا توجد بنود متاحة في هذا العرض"}</p>}
           <div className="flex justify-between gap-2 border-t pt-3">
@@ -90,6 +82,31 @@ export function QuickSupplierCosts({ invoices, onSave, disabled = false }: {
       </SheetContent>
     </Sheet>
   </>;
+}
+
+export function QuickCostItemSummary({ item, position, count }: { item: QuickCostEntry; position: number; count: number }) {
+  const unknownUnit = !normalizeSupplierUnit(item.invoice_quantity_unit);
+  const unresolved = item.quick_cost_identity?.startsWith('["unresolved"');
+  return <div className="space-y-2 border-y py-3">
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <h3 dir="auto" className="min-w-0 break-words text-xl font-bold leading-7 text-foreground">{item.active_ingredient || item.brand || item.item_name || "صنف غير محدد"}</h3>
+      {item.strength && <span dir="ltr" className="max-w-full break-words rounded-md bg-teal-50 px-2 py-0.5 text-sm font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-200">{item.strength}</span>}
+    </div>
+    <div className="grid grid-cols-2 gap-3 py-1">
+      <div className="min-w-0"><p className="text-xs text-muted-foreground">الكمية المصروفة</p><p className="mt-1 break-words text-lg font-bold leading-7">{supplierQuantityLabel(item.quantity, item.invoice_quantity_unit)}</p></div>
+      <div className="min-w-0"><p className="text-xs text-muted-foreground">قيمة البيع</p><p className="mt-1 break-words text-2xl font-bold leading-7 text-blue-950 dark:text-blue-100">{item.revenue_hidden ? "محجوب" : formatMoney(item.invoice_value)}</p></div>
+    </div>
+    {(item.invoice_package_quantity || item.invoice_strips_quantity) && <p className="text-xs text-muted-foreground">{[item.invoice_package_quantity ? `حجم العبوة: ${item.invoice_package_quantity}` : null, item.invoice_strips_quantity ? `أشرطة العبوة: ${item.invoice_strips_quantity}` : null].filter(Boolean).join(" · ")}</p>}
+    <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground"><span>فاتورة <bdi>{item.invoice_number || "—"}</bdi> · <bdi>{item.dispensing_date?.slice(0, 10) || "—"}</bdi></span><span>البند {position} من {count}</span></div>
+    {(unknownUnit || !item.invoice_dosage_form || unresolved) && <details className="rounded-md bg-amber-50/70 px-2 py-1.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+      <summary className="cursor-pointer font-medium">بيانات تحتاج تأكيد</summary>
+      <ul className="mt-2 list-inside list-disc space-y-1 leading-5">
+        {unknownUnit && <li>{item.invoice_unit_issue === "conflict" ? "بيانات وحدة الصرف متعارضة." : "لا توجد وحدة صرف موثقة في بيانات الفاتورة."} يمكن إدخال التكلفة الإجمالية دون تحويل الكمية.</li>}
+        {!item.invoice_dosage_form && <li>الشكل الدوائي غير متوفر في بيانات الفاتورة.</li>}
+        {unresolved && <li>يبقى هذا البند مستقلًا لأن بيانات الهوية لا تكفي لدمجه بأمان.</li>}
+      </ul>
+    </details>}
+  </div>;
 }
 
 function QuickCostForm({ item, lock, onBusy, onSave, onNext }: {
@@ -126,7 +143,7 @@ function QuickCostForm({ item, lock, onBusy, onSave, onNext }: {
     <Label htmlFor="quick-cost-mode">طريقة الاحتساب</Label>
     <select id="quick-cost-mode" className="h-10 w-full rounded-md border bg-background px-2 text-sm" disabled={saving} value={mode} onChange={event => { setMode(event.target.value as SupplierCostMode); setValue(""); setConfirmed(false); field.current?.focus(); }}>
       <option value="total_dispensed_cost">تكلفة الكمية المصروفة</option>
-      <option value="unit_price" disabled={!item.invoice_quantity_unit || !(Number(item.quantity) > 0)}>سعر الوحدة{item.invoice_quantity_unit ? ` (${item.invoice_quantity_unit})` : " — الوحدة غير مسجلة"}</option>
+      <option value="unit_price" disabled={!normalizeSupplierUnit(item.invoice_quantity_unit) || !(Number(item.quantity) > 0)}>سعر الوحدة{normalizeSupplierUnit(item.invoice_quantity_unit) ? ` (${item.invoice_quantity_unit})` : " — تحتاج تأكيد"}</option>
     </select>
     <Label htmlFor="quick-cost-value">{mode === "total_dispensed_cost" ? "تكلفة كامل الكمية المصروفة في هذه الفاتورة (د.ل)" : `سعر الوحدة (${item.invoice_quantity_unit}) بالدينار الليبي`}</Label>
     <Input ref={field} data-cost-input id="quick-cost-value" type="number" min="0" step="any" inputMode="decimal" dir="ltr" disabled={saving} value={value} onChange={event => { setValue(event.target.value); setConfirmed(false); }} aria-invalid={Boolean(error)} aria-describedby={error ? "quick-cost-error" : undefined} />

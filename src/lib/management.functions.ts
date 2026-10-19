@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
+import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
 import { z } from "zod";
 import {
   calculateActualGrossMargin,
@@ -318,10 +318,10 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
   if (source === "phif") {
     const override = internalPurchaseValue(item);
     const quantity = reportNumberValue(item.quantity);
-    const unit = itemUnit(item);
+    const unit = supplierInvoiceUnit(item).unit;
     const purchaseUnit = savedPurchaseUnit(item);
     const purchaseMode = savedPurchaseMode(item);
-    const unitVerified = purchaseMode === "total_dispensed_cost" || Boolean(purchaseUnit && (!unit || unit.toLowerCase() === purchaseUnit.toLowerCase()));
+    const unitVerified = purchaseMode === "total_dispensed_cost" || Boolean(unit && normalizeSupplierUnit(purchaseUnit) === unit);
     const purchaseCost = override !== null && unitVerified
       ? purchaseMode === "total_dispensed_cost"
         ? override
@@ -384,8 +384,9 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         brand: item.brand ?? null,
         quantity: item.quantity,
         quick_cost_identity: profit.source === "phif" ? supplierQuickCostIdentity(item) : null,
-        invoice_quantity_unit: itemUnit(item),
-        invoice_dosage_form: item.metadata?.dosage_form ?? item.metadata?.dosageForm ?? item.metadata?.form ?? item.metadata?.pharmaceuticalForm ?? itemUnit(item),
+        invoice_quantity_unit: profit.source === "phif" ? supplierInvoiceUnit(item).unit : itemUnit(item),
+        invoice_unit_issue: profit.source === "phif" ? supplierInvoiceUnit(item).issue : null,
+        invoice_dosage_form: profit.source === "phif" ? supplierInvoiceForm(item) : item.metadata?.dosage_form ?? item.metadata?.dosageForm ?? item.metadata?.form ?? item.metadata?.pharmaceuticalForm ?? itemUnit(item),
         invoice_package_quantity: item.metadata?.package_quantity ?? item.metadata?.packageQuantity ?? null,
         invoice_strips_quantity: item.metadata?.strips_quantity ?? item.metadata?.stripsQuantity ?? null,
          quantity_label: reportItemQuantityLabel(item, profit.stock),
@@ -1160,10 +1161,10 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
     if (data.purchaseCostMode === "unit_price" && reportNumberValue(item.quantity) <= 0) {
       throw new Error("Invoice item quantity is required for unit-price purchase cost");
     }
-    const recordedUnit = String(item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? (item.metadata.unit ?? item.metadata.dosage_unit ?? item.metadata.quantity_unit ?? "") : "").trim();
+    const recordedUnit = supplierInvoiceUnit(item).unit;
     const purchaseUnit = data.purchaseCostUnit ?? data.purchaseUnit;
     if (data.purchaseCostMode === "unit_price" && !purchaseUnit) throw new Error("Purchase cost unit is required");
-    if (data.purchaseCostMode === "unit_price" && recordedUnit && purchaseUnit && recordedUnit.toLowerCase() !== purchaseUnit.toLowerCase()) {
+    if (data.purchaseCostMode === "unit_price" && (!recordedUnit || normalizeSupplierUnit(purchaseUnit) !== recordedUnit)) {
       throw new Error("Purchase cost unit does not match invoice item unit");
     }
     const { data: invoice, error: invoiceError } = await supabaseAdmin
