@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
-import { treasuryReportForRole } from "@/lib/treasury-financials.helpers";
+import { treasuryFinanceAccess, treasuryReportForSession } from "@/lib/treasury-financials.helpers";
 import { z } from "zod";
 import {
   calculateActualGrossMargin,
@@ -1017,11 +1017,7 @@ async function buildProfitAnalysisReport(data: z.infer<typeof rangeSchema>, trea
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const session = await requireTiryaqPermission("reports_read");
     const { pharmacy_id } = session;
-    const access = financeAccess(session);
-    if (treasury && session.session.data.user_role !== "admin") {
-      access.actual.profit = false;
-      access.phif.profit = false;
-    }
+    const access = treasury ? treasuryFinanceAccess(session, financeAccess(session)) : financeAccess(session);
     const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data, access);
     const invoiceMap = new Map<string, any>();
     const beneficiaryMap = new Map<string, any>();
@@ -1139,7 +1135,7 @@ async function buildProfitAnalysisReport(data: z.infer<typeof rangeSchema>, trea
       top_profit_beneficiaries: [...beneficiaries].sort((a, b) => b.known_profit - a.known_profit).slice(0, 20),
       invoices: invoiceRows.sort((a, b) => String(b.dispensing_date ?? "").localeCompare(String(a.dispensing_date ?? ""))),
     };
-    return treasury ? treasuryReportForRole(report, session.session.data.user_role, {
+    return treasury ? treasuryReportForSession(report, session, {
       actual: rows.filter(row => row.source === "actual").every(isFinanciallyCompleteRow),
       phif: rows.filter(row => row.source === "phif").every(isFinanciallyCompleteRow),
     }) : report;

@@ -1,8 +1,34 @@
+import { TIRYAQ_PHARMACY_NAME } from "@/lib/pharmacy-isolation";
+
 type Completeness = { actual: boolean; phif: boolean };
+type TreasurySession = {
+  pharmacy_id: string;
+  pharmacy_name: string;
+  session: { data: { user_id?: string | null; user_role?: string; user_permissions?: Record<string, boolean> } };
+};
+
+// Called only with the verified context returned by requireTiryaqPermission.
+export function isTreasuryManager(context: TreasurySession | null | undefined) {
+  if (!context?.pharmacy_id || context.pharmacy_name !== TIRYAQ_PHARMACY_NAME || !context.session?.data) return false;
+  const { user_id, user_role, user_permissions } = context.session.data;
+  return user_role === "admin"
+    || (user_role === "legacy" && user_permissions?.users_manage === true)
+    || (!user_id && !user_role);
+}
+
+type SourceReadAccess = { items: boolean; movements: boolean; revenue: boolean; cost: boolean; profit: boolean };
+
+export function treasuryFinanceAccess<T extends { actual: SourceReadAccess; phif: SourceReadAccess }>(context: TreasurySession, access: T) {
+  const manager = isTreasuryManager(context);
+  const sourceAccess = (source: SourceReadAccess) => manager
+    ? { ...source, items: true, movements: true, revenue: true, cost: true, profit: true }
+    : { ...source, profit: false };
+  return { ...access, actual: { ...access.actual, ...sourceAccess(access.actual) }, phif: { ...access.phif, ...sourceAccess(access.phif) } };
+}
 
 /** Uses the existing report's calculated profits; never estimates missing item costs. */
-export function treasuryReportForRole(report: any, role: unknown, complete: Completeness) {
-  if (role === "admin") {
+export function treasuryReportForSession(report: any, context: TreasurySession | null | undefined, complete: Completeness) {
+  if (isTreasuryManager(context)) {
     const actualProfit = complete.actual ? report.source_split.actual.known_profit : null;
     const phifProfit = complete.phif ? report.source_split.phif.known_profit : null;
     const claimComplete = complete.actual && complete.phif;
