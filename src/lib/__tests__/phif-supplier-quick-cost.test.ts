@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { QuickCostItemSummary, QuickSupplierCosts } from "@/components/management/QuickSupplierCosts";
+import { QuickCostForm, QuickCostItemSummary, QuickSupplierCosts } from "@/components/management/QuickSupplierCosts";
 import { buildManagementAuditReport } from "@/lib/management.functions";
-import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuantityLabel, quickCostInput, saveQuickCostEntry, supplierQuickCostGroups, supplierQuickCostIdentity, type QuickCostEntry } from "@/lib/phif-supplier-quick-cost.helpers";
+import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuantityLabel, quickCostDraft, quickCostInput, quickCostUnchanged, saveQuickCostEntry, supplierQuickCostGroups, supplierQuickCostIdentity, type QuickCostEntry } from "@/lib/phif-supplier-quick-cost.helpers";
 
 const identity = { id: "raw-1", brand: "DRUG", active_ingredient: "Ingredient", strength: "160/25MG", metadata: { unit: "BOX", dosage_form: "TABS", package_quantity: "30", strips_quantity: "3" } };
 const entry: QuickCostEntry = { item_id: "i1", invoice_id: "a", source: "phif", quick_cost_identity: supplierQuickCostIdentity(identity), active_ingredient: "Ingredient", strength: "160/25MG", quantity: 3, invoice_quantity_unit: "BOX", unit_purchase_price: null, match_status: "needs_purchase_price", can_edit_purchase_price: true };
@@ -82,8 +82,8 @@ describe("PHIF Supplier quick invoice-item costs", () => {
     const confirmed = renderToStaticMarkup(createElement(QuickCostItemSummary, { item: { ...raw, invoice_quantity_unit: "TAB", invoice_dosage_form: "TAB", quick_cost_identity: "confirmed" }, position: 1, count: 1 }));
     expect(confirmed).toContain("30 قرصًا");
     expect(confirmed).not.toContain("<details");
-    expect(quickCostInput(raw, "total_dispensed_cost", "60", false).purchaseCostValue).toBe(60);
-    expect(() => quickCostInput(raw, "unit_price", "2", false)).toThrow("وحدة");
+    expect(quickCostInput(raw, "total_dispensed_cost", "60").purchaseCostValue).toBe(60);
+    expect(() => quickCostInput(raw, "unit_price", "2")).toThrow("وحدة");
   });
 
   it("starts incomplete groups and invoice items first, without modifying incoming report rows", () => {
@@ -97,26 +97,92 @@ describe("PHIF Supplier quick invoice-item costs", () => {
   });
 
   it("sends total cost unchanged and unit cost with the original invoice quantity unit", () => {
-    expect(quickCostInput(entry, "total_dispensed_cost", "60", false)).toEqual({ itemId: "i1", purchaseCostMode: "total_dispensed_cost", purchaseCostValue: 60 });
-    expect(quickCostInput(entry, "unit_price", "20", false)).toEqual({ itemId: "i1", purchaseCostMode: "unit_price", purchaseCostValue: 20, purchaseCostUnit: "BOX" });
-    expect(quickCostInput({ ...entry, unit: "OLD-SAVED-UNIT" }, "unit_price", "20", false).purchaseCostUnit).toBe("BOX");
-    expect(quickCostInput({ ...entry, item_id: "i2" }, "total_dispensed_cost", "12", false).itemId).toBe("i2");
-    expect(() => quickCostInput({ ...entry, invoice_quantity_unit: undefined }, "unit_price", "20", false)).toThrow("وحدة");
-    expect(() => quickCostInput({ ...entry, quantity: 0 }, "unit_price", "20", false)).toThrow("كمية");
+    expect(quickCostInput(entry, "total_dispensed_cost", "60")).toEqual({ itemId: "i1", purchaseCostMode: "total_dispensed_cost", purchaseCostValue: 60 });
+    expect(quickCostInput(entry, "unit_price", "20")).toEqual({ itemId: "i1", purchaseCostMode: "unit_price", purchaseCostValue: 20, purchaseCostUnit: "BOX" });
+    expect(quickCostInput({ ...entry, unit: "OLD-SAVED-UNIT" }, "unit_price", "20").purchaseCostUnit).toBe("BOX");
+    expect(quickCostInput({ ...entry, item_id: "i2" }, "total_dispensed_cost", "12").itemId).toBe("i2");
+    expect(() => quickCostInput({ ...entry, invoice_quantity_unit: undefined }, "unit_price", "20")).toThrow("وحدة");
+    expect(() => quickCostInput({ ...entry, quantity: 0 }, "unit_price", "20")).toThrow("كمية");
   });
 
-  it("requires explicit confirmation even for an existing zero cost and respects server permissions", () => {
-    expect(() => quickCostInput({ ...entry, unit_purchase_price: 0 }, "total_dispensed_cost", "60", false)).toThrow("أكد");
-    expect(quickCostInput({ ...entry, unit_purchase_price: 0 }, "total_dispensed_cost", "60", true).purchaseCostValue).toBe(60);
+  it("allows direct changes to existing costs, including zero, while respecting server permissions", () => {
+    expect(quickCostInput({ ...entry, unit_purchase_price: 0 }, "total_dispensed_cost", "60").purchaseCostValue).toBe(60);
     for (const item of [{ ...entry, source: "actual" }, { ...entry, can_edit_purchase_price: false }, { ...entry, cost_hidden: true }]) {
-      expect(() => quickCostInput(item, "total_dispensed_cost", "60", true)).toThrow("صلاحية");
+      expect(() => quickCostInput(item, "total_dispensed_cost", "60")).toThrow("صلاحية");
     }
-    for (const raw of ["", " ", "-1", "NaN", "Infinity"]) expect(() => quickCostInput(entry, "total_dispensed_cost", raw, false)).toThrow();
+    for (const raw of ["", " ", "-1", "NaN", "Infinity"]) expect(() => quickCostInput(entry, "total_dispensed_cost", raw)).toThrow();
+  });
+
+  it("restores each item's saved amount and mode without converting values between modes or items", () => {
+    expect(quickCostDraft(entry)).toEqual({ mode: "total_dispensed_cost", value: "" });
+    expect(quickCostDraft({ ...entry, unit_purchase_price: 60, purchase_cost_mode: "total_dispensed_cost" })).toEqual({ mode: "total_dispensed_cost", value: "60" });
+    expect(quickCostDraft({ ...entry, item_id: "i2", unit_purchase_price: 20, purchase_cost_mode: "unit_price" })).toEqual({ mode: "unit_price", value: "20" });
+    expect(quickCostDraft({ ...entry, unit_purchase_price: 0, purchase_cost_mode: "unit_price" })).toEqual({ mode: "unit_price", value: "0" });
+    const saved = { ...entry, unit_purchase_price: 60, purchase_cost_mode: "total_dispensed_cost" as const };
+    expect(quickCostUnchanged(saved, quickCostInput(saved, "total_dispensed_cost", "60.000"))).toBe(true);
+    expect(quickCostUnchanged(saved, quickCostInput(saved, "unit_price", "60"))).toBe(false);
+    expect(quickCostUnchanged(saved, quickCostInput(saved, "total_dispensed_cost", "61"))).toBe(false);
+    expect(quickCostUnchanged({ ...saved, item_id: "other" }, quickCostInput(saved, "total_dispensed_cost", "60"))).toBe(false);
+    expect(quickCostUnchanged(entry, quickCostInput(entry, "total_dispensed_cost", "0"))).toBe(false);
+    const unit = { ...entry, unit_purchase_price: 20, purchase_cost_mode: "unit_price" as const, unit: "boxes" };
+    expect(quickCostUnchanged(unit, quickCostInput(unit, "unit_price", "20"))).toBe(true);
+    expect(quickCostUnchanged({ ...unit, unit: "STRIP" }, quickCostInput(unit, "unit_price", "20"))).toBe(false);
+  });
+
+  it("prefills the actual form with saved unit price and mode, without confirmation or a separate saved banner", () => {
+    const render = (item: QuickCostEntry) => renderToStaticMarkup(createElement(QuickCostForm, {
+      item, lock: { busy: false }, onBusy: () => {}, onNext: () => {}, onSave: async () => { throw new Error("Render cannot save"); },
+    }));
+    const html = render({ ...entry, quantity: 1, invoice_quantity_unit: "PEN", unit: "PEN", purchase_cost_mode: "unit_price", unit_purchase_price: 20 });
+    expect(html).toContain('value="20"');
+    expect(html).toMatch(/<option value="unit_price" selected=""/);
+    expect(html).not.toContain("checkbox");
+    expect(html).not.toContain("المحفوظ:");
+    expect(html).toContain("حفظ والتالي");
+    const missing = render({ ...entry, invoice_quantity_unit: undefined, purchase_cost_mode: "unit_price", unit_purchase_price: 20 });
+    expect(missing).not.toContain("undefined");
+    expect(missing).toContain("غير موثقة");
+    expect(missing).toMatch(/<option value="unit_price" disabled="" selected=""/);
+    expect(render(entry)).toMatch(/<option value="total_dispensed_cost" selected=""/);
+  });
+
+  it("skips unchanged updates, advances once, and never reports them as a new save", async () => {
+    const lock = { busy: false };
+    const current = { ...entry, unit_purchase_price: 60, purchase_cost_mode: "total_dispensed_cost" as const };
+    const input = quickCostInput(current, "total_dispensed_cost", "60");
+    const changes: boolean[] = [];
+    let writes = 0;
+    const save = async () => { writes++; };
+    const first = saveQuickCostEntry(lock, input, save, changed => changes.push(changed), current);
+    expect(await saveQuickCostEntry(lock, input, save, changed => changes.push(changed), current)).toBe(false);
+    await first;
+    expect(writes).toBe(0);
+    expect(changes).toEqual([false]);
+    await saveQuickCostEntry(lock, quickCostInput(current, "total_dispensed_cost", "65"), save, changed => changes.push(changed), current);
+    expect(writes).toBe(1);
+    expect(changes).toEqual([false, true]);
+  });
+
+  it("supports trustworthy single-unit pricing for pens, eye drops, vials, ampoules, bottles and tubes", () => {
+    for (const [recorded, canonical] of [["Pen", "PEN"], ["Eye Drops", "EYE_DROPS"], ["Vial", "VIAL"], ["Ampoule", "AMP"], ["Bottle", "BOTTLE"], ["Tube", "TUBE"]]) {
+      const unit = supplierInvoiceUnit({ metadata: { quantity_unit: recorded } }).unit;
+      expect(unit).toBe(canonical);
+      const item = { ...entry, quantity: 1, invoice_quantity_unit: unit! };
+      expect(quickCostInput(item, "unit_price", "20")).toEqual({ itemId: "i1", purchaseCostMode: "unit_price", purchaseCostValue: 20, purchaseCostUnit: canonical });
+      const report = buildManagementAuditReport({ invoices: [{ id: "a" }], stocks: [], items: [{ id: "i1", phif_invoice_id: "a", source_classification: "phif-supplier", quantity: 1,
+        metadata: { quantity_unit: recorded }, phif_financial_fields: { total_amount: 50, internal_purchase_cost_mode: "unit_price", internal_purchase_cost_value: 20, internal_purchase_cost_unit: canonical } }] });
+      expect(report.financial.summary.complete_invoices).toBe(1);
+    }
+    expect(supplierInvoiceUnit({ brand: "Product Pen Eye Drops Vial", metadata: { dosage_form: "Eye Drops" } }).unit).toBeNull();
+    expect(normalizeSupplierUnit("Eye Drops")).not.toBe(normalizeSupplierUnit("Bottle"));
+    expect(supplierQuantityLabel(1, "Eye Drops")).toBe("1 قطرة عين");
+    expect(() => quickCostInput({ ...entry, quantity: 1, invoice_quantity_unit: undefined }, "unit_price", "20")).toThrow("وحدة");
+    expect(quickCostInput({ ...entry, quantity: 1, invoice_quantity_unit: undefined }, "total_dispensed_cost", "20").purchaseCostValue).toBe(20);
   });
 
   it("waits for a successful save before advancing and blocks repeated Enter / clicks", async () => {
     const lock = { busy: false };
-    const input = quickCostInput(entry, "total_dispensed_cost", "60", false);
+    const input = quickCostInput(entry, "total_dispensed_cost", "60");
     let finish!: () => void;
     const pending = new Promise<void>(resolve => { finish = resolve; });
     const events: string[] = [];
@@ -132,7 +198,7 @@ describe("PHIF Supplier quick invoice-item costs", () => {
 
   it("keeps the same item and input on failure and permits retry", async () => {
     const lock = { busy: false };
-    const input = quickCostInput(entry, "total_dispensed_cost", "60", false);
+    const input = quickCostInput(entry, "total_dispensed_cost", "60");
     let advanced = 0;
     await expect(saveQuickCostEntry(lock, input, async () => { throw new Error("Save failed"); }, () => advanced++)).rejects.toThrow("Save failed");
     expect(advanced).toBe(0);
@@ -166,7 +232,7 @@ describe("PHIF Supplier quick invoice-item costs", () => {
     expect(report({ ...unitPrice, metadata: { unit: "TABS" }, phif_financial_fields: { ...unitPrice.phif_financial_fields, unit: "BOX" } }).summary.complete_invoices).toBe(0);
   });
 
-  it("uses the existing save endpoint, refreshes reports, and keeps default total mode with overwrite confirmation", () => {
+  it("uses the existing save endpoint, restores saved mode and cost, and removes confirmation and saved banners", () => {
     const route = readFileSync("src/routes/management.treasury.tsx", "utf8");
     const ui = readFileSync("src/components/management/QuickSupplierCosts.tsx", "utf8");
     const server = readFileSync("src/lib/management.functions.ts", "utf8");
@@ -176,8 +242,12 @@ describe("PHIF Supplier quick invoice-item costs", () => {
     expect(route).toContain('["management_profit_analysis"]');
     expect(server).toContain('requireTiryaqPermission("phif_purchase_price_write")');
     expect(server).toContain("quick_cost_identity: profit.source === \"phif\" ? supplierQuickCostIdentity(item) : null");
-    expect(ui).toContain('useState<SupplierCostMode>("total_dispensed_cost")');
-    expect(ui).toContain("أؤكد استبدال التكلفة المحفوظة لهذا البند فقط");
+    expect(ui).toContain("quickCostDraft(item).mode");
+    expect(ui).toContain("quickCostDraft(item).value");
+    expect(ui).not.toContain("أؤكد استبدال");
+    expect(ui).not.toContain("Checkbox");
+    expect(ui).not.toContain("المحفوظ:");
+    expect(ui).toContain('setMode(event.target.value as SupplierCostMode); setValue("")');
     expect(ui).toContain("حفظ والتالي");
     expect(ui).toContain("onSubmit={submit}");
     expect(ui).toContain("setError(failure instanceof Error");

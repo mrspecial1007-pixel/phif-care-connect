@@ -16,6 +16,7 @@ export function normalizeSupplierUnit(value: unknown): string | null {
     INJ: ["inj", "injection", "injections", "حقنة", "حقن"],
     AMP: ["amp", "amps", "ampoule", "ampoules", "ampule", "ampules", "أمبول", "امبول"],
     BOTTLE: ["bottle", "bottles", "زجاجة", "زجاجات"],
+    EYE_DROPS: ["eyedrop", "eyedrops", "ophthalmicdrops", "قطرةعين", "قطراتعين"],
     ML: ["ml", "مل"], TUBE: ["tube", "tubes", "أنبوب", "انبوب"],
   };
   return Object.entries(aliases).find(([unit, names]) => unit.toLowerCase() === key || names.includes(key))?.[0] ?? null;
@@ -43,7 +44,7 @@ export function supplierInvoiceForm(item: any) {
   const raw = meta.dosage_form ?? meta.dosageForm ?? meta.form ?? meta.pharmaceuticalForm;
   if (typeof raw === "string" && raw.trim()) return normalizeSupplierUnit(raw) ?? normalized(raw);
   const unit = supplierInvoiceUnit(item).unit;
-  return unit && ["TAB", "CAP", "INJ"].includes(unit) ? unit : null;
+  return unit && ["TAB", "CAP", "INJ", "EYE_DROPS"].includes(unit) ? unit : null;
 }
 
 export function supplierQuantityLabel(quantity: unknown, unit: unknown) {
@@ -56,6 +57,7 @@ export function supplierQuantityLabel(quantity: unknown, unit: unknown) {
     PEN: ["قلم", "أقلام", "قلمًا"], VIAL: ["فيال", "فيالات", "فيال"],
     INJ: ["حقنة", "حقن", "حقنة"], AMP: ["أمبول", "أمبولات", "أمبول"],
     BOTTLE: ["زجاجة", "زجاجات", "زجاجة"], ML: ["مل", "مل", "مل"], TUBE: ["أنبوب", "أنابيب", "أنبوبًا"],
+    EYE_DROPS: ["قطرة عين", "قطرات عين", "قطرة عين"],
   };
   if (!canonical || count === "—") return count;
   const forms = words[canonical];
@@ -106,9 +108,22 @@ export function supplierQuickCostGroups(invoices: { items: QuickCostEntry[] }[])
   })).sort((a, b) => Number(a.complete) - Number(b.complete) || a.label.localeCompare(b.label, "ar"));
 }
 
-export function quickCostInput(item: QuickCostEntry, mode: SupplierCostMode, raw: string, confirmed: boolean): SupplierCostInput {
+export function quickCostDraft(item: QuickCostEntry): { mode: SupplierCostMode; value: string } {
+  const saved = item.unit_purchase_price !== null && item.unit_purchase_price !== undefined;
+  return {
+    mode: saved && item.purchase_cost_mode === "unit_price" ? "unit_price" : "total_dispensed_cost",
+    value: saved ? String(item.unit_purchase_price) : "",
+  };
+}
+
+export function quickCostUnchanged(item: QuickCostEntry, input: SupplierCostInput) {
+  if (item.item_id !== input.itemId || item.unit_purchase_price === null || item.unit_purchase_price === undefined) return false;
+  if (item.purchase_cost_mode !== input.purchaseCostMode || Number(item.unit_purchase_price) !== input.purchaseCostValue) return false;
+  return input.purchaseCostMode === "total_dispensed_cost" || normalizeSupplierUnit(item.unit) === input.purchaseCostUnit;
+}
+
+export function quickCostInput(item: QuickCostEntry, mode: SupplierCostMode, raw: string): SupplierCostInput {
   if (item.source !== "phif" || !item.can_edit_purchase_price || item.cost_hidden) throw new Error("لا تملك صلاحية تعديل تكلفة هذا البند");
-  if (item.unit_purchase_price !== null && item.unit_purchase_price !== undefined && !confirmed) throw new Error("أكد استبدال التكلفة المحفوظة لهذا البند فقط");
   const value = Number(raw);
   if (!raw.trim() || !Number.isFinite(value) || value < 0) throw new Error("أدخل تكلفة صحيحة لا تقل عن صفر");
   const unit = normalizeSupplierUnit(item.invoice_quantity_unit);
@@ -117,12 +132,14 @@ export function quickCostInput(item: QuickCostEntry, mode: SupplierCostMode, raw
 }
 
 export async function saveQuickCostEntry(lock: { busy: boolean }, input: SupplierCostInput,
-  save: (input: SupplierCostInput) => Promise<unknown>, advance: () => void) {
+  save: (input: SupplierCostInput) => Promise<unknown>, advance: (changed: boolean) => void, current?: QuickCostEntry) {
   if (lock.busy) return false;
   lock.busy = true;
   try {
-    await save(input);
-    advance();
+    const changed = !current || !quickCostUnchanged(current, input);
+    if (changed) await save(input);
+    else await Promise.resolve();
+    advance(changed);
     return true;
   } finally {
     lock.busy = false;

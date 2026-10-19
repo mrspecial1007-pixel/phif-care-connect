@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ChevronLeft, ChevronRight, ListChecks, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatMoney } from "@/components/management/InvoiceSummaryCard";
-import { normalizeSupplierUnit, quickCostComplete, quickCostInput, saveQuickCostEntry, supplierQuantityLabel, supplierQuickCostGroups, type QuickCostEntry, type SupplierCostInput, type SupplierCostMode } from "@/lib/phif-supplier-quick-cost.helpers";
+import { normalizeSupplierUnit, quickCostComplete, quickCostDraft, quickCostInput, saveQuickCostEntry, supplierQuantityLabel, supplierQuickCostGroups, type QuickCostEntry, type SupplierCostInput, type SupplierCostMode } from "@/lib/phif-supplier-quick-cost.helpers";
 
 export function QuickSupplierCosts({ invoices, onSave, disabled = false }: {
   invoices: { items: QuickCostEntry[] }[]; onSave: (input: SupplierCostInput) => Promise<unknown>; disabled?: boolean;
@@ -29,7 +28,7 @@ export function QuickSupplierCosts({ invoices, onSave, disabled = false }: {
   const current = queue[cursor];
   const live = current ? entries.find(item => item.item_id === current.item_id) ?? current : null;
   const savedInput = live && saved[live.item_id];
-  const item = live && savedInput ? { ...live, unit_purchase_price: savedInput.purchaseCostValue, purchase_cost_mode: savedInput.purchaseCostMode } : live;
+  const item = live && savedInput ? { ...live, unit_purchase_price: savedInput.purchaseCostValue, purchase_cost_mode: savedInput.purchaseCostMode, unit: savedInput.purchaseCostUnit ?? live.invoice_quantity_unit } : live;
   const currentGroup = groups.find(group => group.key === item?.quick_cost_identity);
   const groupQueue = current ? queue.filter(row => row.quick_cost_identity === current.quick_cost_identity) : [];
   const itemPosition = current ? groupQueue.findIndex(row => row.item_id === current.item_id) + 1 : 0;
@@ -72,7 +71,7 @@ export function QuickSupplierCosts({ invoices, onSave, disabled = false }: {
               {groups.filter(group => queue.some(row => row.quick_cost_identity === group.key)).map(group => <option key={group.key} value={group.key}>{[group.label, group.entries[0].strength, group.entries[0].invoice_dosage_form, group.entries[0].invoice_package_quantity ? `عبوة ${group.entries[0].invoice_package_quantity}` : null].filter(Boolean).join(" · ")}</option>)}
             </select>
             <QuickCostItemSummary item={item} position={itemPosition} count={groupQueue.length} />
-            <QuickCostForm key={item.item_id} item={item} lock={lock.current} onBusy={setWorking} onSave={onSave} onNext={input => { setSaved(previous => ({ ...previous, [input.itemId]: input })); setCursor(index => index + 1); }} />
+            <QuickCostForm key={item.item_id} item={item} lock={lock.current} onBusy={setWorking} onSave={onSave} onNext={(input, changed) => { if (changed) setSaved(previous => ({ ...previous, [input.itemId]: input })); setCursor(index => index + 1); }} />
           </> : <p className="py-5 text-center text-sm" role="status">{queue.length ? "انتهت الجولة" : "لا توجد بنود متاحة في هذا العرض"}</p>}
           <div className="flex justify-between gap-2 border-t pt-3">
             <Button variant="outline" disabled={working || cursor === 0} onClick={() => setCursor(index => index - 1)}><ChevronRight className="ml-1 h-4 w-4" />السابق</Button>
@@ -109,28 +108,25 @@ export function QuickCostItemSummary({ item, position, count }: { item: QuickCos
   </div>;
 }
 
-function QuickCostForm({ item, lock, onBusy, onSave, onNext }: {
+export function QuickCostForm({ item, lock, onBusy, onSave, onNext }: {
   item: QuickCostEntry; lock: { busy: boolean }; onBusy: (busy: boolean) => void;
-  onSave: (input: SupplierCostInput) => Promise<unknown>; onNext: (input: SupplierCostInput) => void;
+  onSave: (input: SupplierCostInput) => Promise<unknown>; onNext: (input: SupplierCostInput, changed: boolean) => void;
 }) {
-  const [mode, setMode] = useState<SupplierCostMode>("total_dispensed_cost");
-  const [value, setValue] = useState(item.purchase_cost_mode === "total_dispensed_cost" ? String(item.unit_purchase_price ?? "") : "");
-  const [confirmed, setConfirmed] = useState(false);
+  const [mode, setMode] = useState<SupplierCostMode>(() => quickCostDraft(item).mode);
+  const [value, setValue] = useState(() => quickCostDraft(item).value);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const field = useRef<HTMLInputElement>(null);
-  const hasSaved = item.unit_purchase_price !== null && item.unit_purchase_price !== undefined;
   useEffect(() => { field.current?.focus(); field.current?.select(); }, [item.item_id]);
-  useEffect(() => { setConfirmed(false); }, [item.unit_purchase_price, item.purchase_cost_mode]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (lock.busy) return;
     setError("");
     try {
-      const input = quickCostInput(item, mode, value, confirmed);
+      const input = quickCostInput(item, mode, value);
       setSaving(true); onBusy(true);
-      await saveQuickCostEntry(lock, input, onSave, () => onNext(input));
+      await saveQuickCostEntry(lock, input, onSave, changed => onNext(input, changed), item);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "تعذر حفظ التكلفة. حاول مرة أخرى.");
     } finally {
@@ -139,16 +135,14 @@ function QuickCostForm({ item, lock, onBusy, onSave, onNext }: {
   }
 
   return <form onSubmit={submit} className="space-y-3">
-    {hasSaved && <p className="rounded-md bg-muted/50 p-2 text-xs">المحفوظ: {formatMoney(item.unit_purchase_price)} · {item.purchase_cost_mode === "unit_price" ? `سعر الوحدة (${item.unit || "—"})` : "تكلفة الكمية المصروفة"}</p>}
     <Label htmlFor="quick-cost-mode">طريقة الاحتساب</Label>
-    <select id="quick-cost-mode" className="h-10 w-full rounded-md border bg-background px-2 text-sm" disabled={saving} value={mode} onChange={event => { setMode(event.target.value as SupplierCostMode); setValue(""); setConfirmed(false); field.current?.focus(); }}>
+    <select id="quick-cost-mode" className="h-10 w-full rounded-md border bg-background px-2 text-sm" disabled={saving} value={mode} onChange={event => { setMode(event.target.value as SupplierCostMode); setValue(""); field.current?.focus(); }}>
       <option value="total_dispensed_cost">تكلفة الكمية المصروفة</option>
       <option value="unit_price" disabled={!normalizeSupplierUnit(item.invoice_quantity_unit) || !(Number(item.quantity) > 0)}>سعر الوحدة{normalizeSupplierUnit(item.invoice_quantity_unit) ? ` (${item.invoice_quantity_unit})` : " — تحتاج تأكيد"}</option>
     </select>
-    <Label htmlFor="quick-cost-value">{mode === "total_dispensed_cost" ? "تكلفة كامل الكمية المصروفة في هذه الفاتورة (د.ل)" : `سعر الوحدة (${item.invoice_quantity_unit}) بالدينار الليبي`}</Label>
-    <Input ref={field} data-cost-input id="quick-cost-value" type="number" min="0" step="any" inputMode="decimal" dir="ltr" disabled={saving} value={value} onChange={event => { setValue(event.target.value); setConfirmed(false); }} aria-invalid={Boolean(error)} aria-describedby={error ? "quick-cost-error" : undefined} />
-    {hasSaved && <Label className="flex items-start gap-2 text-xs leading-5"><Checkbox checked={confirmed} disabled={saving} onCheckedChange={checked => setConfirmed(checked === true)} />أؤكد استبدال التكلفة المحفوظة لهذا البند فقط</Label>}
+    <Label htmlFor="quick-cost-value">{mode === "total_dispensed_cost" ? "تكلفة كامل الكمية المصروفة في هذه الفاتورة (د.ل)" : `سعر الوحدة (${item.invoice_quantity_unit || "غير موثقة"}) بالدينار الليبي`}</Label>
+    <Input ref={field} data-cost-input id="quick-cost-value" type="number" min="0" step="any" inputMode="decimal" dir="ltr" disabled={saving} value={value} onChange={event => setValue(event.target.value)} aria-invalid={Boolean(error)} aria-describedby={error ? "quick-cost-error" : undefined} />
     {error && <p id="quick-cost-error" role="alert" className="text-sm text-destructive">{error}</p>}
-    <Button type="submit" className="w-full" disabled={saving || (hasSaved && !confirmed)}><Save className="ml-2 h-4 w-4" />{saving ? "جارٍ الحفظ..." : "حفظ والتالي"}</Button>
+    <Button type="submit" className="w-full" disabled={saving}><Save className="ml-2 h-4 w-4" />{saving ? "جارٍ الحفظ..." : "حفظ والتالي"}</Button>
   </form>;
 }
