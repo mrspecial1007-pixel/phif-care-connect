@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { InvoiceSummaryCard, formatMoney } from "@/components/management/InvoiceSummaryCard";
 import { ReportBackLink } from "@/components/management/ReportBackLink";
+import { QuickSupplierCosts } from "@/components/management/QuickSupplierCosts";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -70,9 +71,13 @@ function TreasuryPage() {
 
   const saveMutation = useMutation({
     mutationFn: (input: { itemId: string; purchaseCostMode: "total_dispensed_cost" | "unit_price"; purchaseCostValue: number; purchaseCostUnit?: string }) => saveFn({ data: input }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["treasury_report"] });
-      queryClient.invalidateQueries({ queryKey: ["management_profit_analysis"] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["treasury_report"] }),
+        queryClient.invalidateQueries({ queryKey: ["management_profit_analysis"] }),
+        queryClient.invalidateQueries({ queryKey: ["report_item_tracking"] }),
+        queryClient.invalidateQueries({ queryKey: ["management_audit"] }),
+      ]);
       toast.success("تم حفظ سعر الشراء");
     },
     onError: (err) => toast.error((err as Error).message),
@@ -101,9 +106,9 @@ function TreasuryPage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Input aria-label="من تاريخ" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        <Input aria-label="إلى تاريخ" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-        <Select value={source} onValueChange={(value) => setSource(value as "all" | "actual" | "phif")}>
+        <Input aria-label="من تاريخ" type="date" value={dateFrom} disabled={saveMutation.isPending} onChange={(e) => setDateFrom(e.target.value)} />
+        <Input aria-label="إلى تاريخ" type="date" value={dateTo} disabled={saveMutation.isPending} onChange={(e) => setDateTo(e.target.value)} />
+        <Select value={source} disabled={saveMutation.isPending} onValueChange={(value) => setSource(value as "all" | "actual" | "phif")}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">كل المصادر</SelectItem>
@@ -112,6 +117,10 @@ function TreasuryPage() {
           </SelectContent>
         </Select>
       </div>
+
+      {dateFrom && dateTo && dateFrom <= dateTo && data && source !== "actual" && (
+        <QuickSupplierCosts key={`${dateFrom}:${dateTo}:${source}`} invoices={data.invoices} disabled={saveMutation.isPending} onSave={input => saveMutation.mutateAsync(input)} />
+      )}
 
       {error && <Card className="p-4 text-destructive">تعذر تحميل الخزينة: {(error as Error).message}</Card>}
 

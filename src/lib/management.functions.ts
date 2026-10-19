@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
 import { z } from "zod";
 import {
   calculateActualGrossMargin,
@@ -382,6 +383,11 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         strength: item.strength ?? null,
         brand: item.brand ?? null,
         quantity: item.quantity,
+        quick_cost_identity: profit.source === "phif" ? supplierQuickCostIdentity(item) : null,
+        invoice_quantity_unit: itemUnit(item),
+        invoice_dosage_form: item.metadata?.dosage_form ?? item.metadata?.dosageForm ?? item.metadata?.form ?? item.metadata?.pharmaceuticalForm ?? itemUnit(item),
+        invoice_package_quantity: item.metadata?.package_quantity ?? item.metadata?.packageQuantity ?? null,
+        invoice_strips_quantity: item.metadata?.strips_quantity ?? item.metadata?.stripsQuantity ?? null,
          quantity_label: reportItemQuantityLabel(item, profit.stock),
          identity_key: reportDrugIdentityKey(item, "scientific"),
           purchase_cost_mode: profit.source === "phif" ? savedPurchaseMode(item) : null,
