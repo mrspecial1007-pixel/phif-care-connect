@@ -8,11 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getPhifStockSummary, listPhifStockItems, syncPhifStock } from "@/lib/phif-stock.functions";
-import { stockAvailability, stockQuantityBreakdown } from "@/lib/phif-stock.helpers";
-import { formatStockExpiry as formatExpiry, stockExpiryState as expiryState, stockExpiryValue, stockScientificSubtitle } from "@/lib/phif-stock-details.helpers";
-import { CalendarDays, PackageSearch, RefreshCw, ShieldAlert } from "lucide-react";
+import { stockQuantityBreakdown } from "@/lib/phif-stock.helpers";
+import { filterInventoryItems, inventoryAvailability, inventoryExpiry, inventoryExportRows, type InventoryMode, type LowStockUnit } from "@/lib/phif-inventory.helpers";
+import { formatStockExpiry as formatExpiry, stockExpiryValue, stockScientificSubtitle } from "@/lib/phif-stock-details.helpers";
+import { CalendarDays, Download, PackageSearch, RefreshCw, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/management/inventory")({
@@ -32,14 +35,13 @@ function money(value: unknown) {
   return numeric.toLocaleString("ar-LY", { maximumFractionDigits: 3 });
 }
 
-function textIncludes(value: unknown, term: string) {
-  return String(value ?? "").toLowerCase().includes(term);
-}
-
 function InventoryPage() {
   const qc = useQueryClient();
   const [query, setQuery] = useState("");
-  const [stockFilter, setStockFilter] = useState("all");
+  const [stockFilter, setStockFilter] = useState<InventoryMode>("available");
+  const [lowThreshold, setLowThreshold] = useState("1");
+  const [lowUnit, setLowUnit] = useState<LowStockUnit>("boxes");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [expiryFilter, setExpiryFilter] = useState("all");
   const [supplierFilter, setSupplierFilter] = useState("all");
   const [formFilter, setFormFilter] = useState("all");
@@ -71,40 +73,17 @@ function InventoryPage() {
   const lastRun = summary.data?.last_run;
   const canViewCost = summary.data?.can_view_cost === true;
   const allItems = items.data ?? [];
+  const threshold = lowThreshold.trim() === "" || Number(lowThreshold) < 0 ? NaN : Number(lowThreshold);
+  const extraFilterCount = [expiryFilter, supplierFilter, formFilter].filter(value => value !== "all").length;
   const supplierOptions = useMemo(() => [...new Set(allItems.map((item: any) => String(item.supplier_name ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar")), [allItems]);
   const formOptions = useMemo(() => [...new Set(allItems.map((item: any) => String(item.dosage_unit ?? item.source_quantity_unit ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar")), [allItems]);
-  const filteredItems = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    return allItems.filter((item: any) => {
-      if (term && ![item.brand_name, item.active_ingredient, item.supplier_name, item.strength, item.dosage_unit, item.batch_number].some((value) => textIncludes(value, term))) return false;
-      const availability = stockAvailability(item).status;
-      if (stockFilter !== "all" && availability !== stockFilter) return false;
-      const expiry = expiryState(stockExpiryValue(item)).status;
-      if (expiryFilter !== "all" && expiry !== expiryFilter) return false;
-      if (supplierFilter !== "all" && String(item.supplier_name ?? "") !== supplierFilter) return false;
-      if (formFilter !== "all" && String(item.dosage_unit ?? item.source_quantity_unit ?? "") !== formFilter) return false;
-      return true;
-    });
-  }, [allItems, query, stockFilter, expiryFilter, supplierFilter, formFilter]);
+  const filteredItems = useMemo(() => filterInventoryItems(allItems, {
+    query, mode: stockFilter, lowThreshold: threshold, lowUnit,
+    expiry: expiryFilter, supplier: supplierFilter, form: formFilter,
+  }), [allItems, query, stockFilter, threshold, lowUnit, expiryFilter, supplierFilter, formFilter]);
 
   function exportInventory() {
-    const rows = filteredItems.map((item: any, index: number) => {
-      const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط");
-      const expiry = expiryState(stockExpiryValue(item));
-      return {
-        "ر.م": index + 1,
-        "الاسم الكامل": [item.brand_name, item.strength, item.dosage_unit].filter(Boolean).join(" "),
-        "الاسم العلمي": item.active_ingredient ?? "",
-        "الكمية": quantity.label,
-        "إجمالي الأشرطة/الوحدات": item.stock_quantity ?? "",
-        "الوحدة": item.source_quantity_unit ?? item.dosage_unit ?? "",
-        "الصلاحية": stockExpiryValue(item) ?? "",
-        "حالة الصلاحية": expiry.label,
-        "المورد": item.supplier_name ?? "",
-        "الشكل الدوائي": item.dosage_unit ?? "",
-        "رقم التشغيلة": item.batch_number ?? "",
-      };
-    });
+    const rows = inventoryExportRows(filteredItems);
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "PHIF Inventory");
@@ -152,6 +131,7 @@ function InventoryPage() {
             الأصناف الحالية
           </div>
           <Input
+            aria-label="بحث في المخزون"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="بحث بالاسم التجاري أو العلمي أو المورد أو التركيز"
@@ -159,43 +139,72 @@ function InventoryPage() {
             dir="rtl"
           />
           <Button type="button" variant="outline" onClick={exportInventory} disabled={filteredItems.length === 0}>
+            <Download className="h-4 w-4 ml-2" />
             تصدير Excel
           </Button>
         </div>
-        <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))]">
-          <select value={stockFilter} onChange={(event) => setStockFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
-            <option value="all">كل حالات المخزون</option>
-            <option value="available">متوفر</option>
-            <option value="low">منخفض</option>
-            <option value="out">نفد</option>
-          </select>
-          <select value={expiryFilter} onChange={(event) => setExpiryFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
-            <option value="all">كل الصلاحيات</option>
-            <option value="valid">صالحة</option>
-            <option value="soon">قريبة الانتهاء</option>
-            <option value="expired">منتهية</option>
-            <option value="missing">غير متاحة</option>
-          </select>
-          <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
-            <option value="all">كل الموردين</option>
-            {supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}
-          </select>
-          <select value={formFilter} onChange={(event) => setFormFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
-            <option value="all">كل الأشكال</option>
-            {formOptions.map((form) => <option key={form} value={form}>{form}</option>)}
-          </select>
+        <ToggleGroup type="single" value={stockFilter} onValueChange={(value) => value && setStockFilter(value as InventoryMode)} dir="rtl" aria-label="حالة المخزون" className="grid grid-cols-4 gap-1 rounded-lg border bg-muted/40 p-1">
+          {([["available", "المتوفر"], ["low", "المنخفض"], ["out", "النافد"], ["all", "الكل"]] as const).map(([value, label]) => (
+            <ToggleGroupItem key={value} value={value} className="min-w-0 px-1 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">{label}</ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">{filteredItems.length.toLocaleString("ar-LY")} من {allItems.length.toLocaleString("ar-LY")} سجل تشغيلة</span>
+          <Button variant="outline" size="sm" onClick={() => setFiltersOpen(true)}>
+            <SlidersHorizontal className="ml-2 h-4 w-4" />فلاتر إضافية{extraFilterCount > 0 && <Badge variant="secondary" className="mr-2">{extraFilterCount}</Badge>}
+          </Button>
         </div>
+        {stockFilter === "low" && (
+          <div className="rounded-lg border bg-amber-50/50 p-3 space-y-2">
+            <Label htmlFor="low-stock-threshold">حد الكمية المنخفضة لكل تشغيلة</Label>
+            <div className="flex gap-2">
+              <Input id="low-stock-threshold" type="number" min="0" step="any" value={lowThreshold} onChange={event => setLowThreshold(event.target.value)} className="min-w-0 flex-1" aria-invalid={!Number.isFinite(threshold)} />
+              <select aria-label="وحدة حد المخزون المنخفض" value={lowUnit} onChange={event => setLowUnit(event.target.value as LowStockUnit)} className="h-10 rounded-md border bg-background px-2 text-sm">
+                <option value="boxes">علبة</option><option value="units">وحدة مخزون</option>
+              </select>
+            </div>
+            {!Number.isFinite(threshold) && <p role="alert" className="text-xs text-destructive">أدخل حدًا صحيحًا لا يقل عن صفر</p>}
+            {lowUnit === "boxes" && <p className="text-xs text-muted-foreground">السجلات دون بيانات تعبئة لا تُصنّف منخفضة بالعلب.</p>}
+          </div>
+        )}
+        <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto sm:mx-auto sm:max-w-lg" dir="rtl">
+            <SheetHeader className="text-right"><SheetTitle>فلاتر إضافية</SheetTitle></SheetHeader>
+            <div className="mt-4 grid gap-3">
+              <Label htmlFor="stock-expiry-filter">الصلاحية</Label>
+              <select id="stock-expiry-filter" value={expiryFilter} onChange={(event) => setExpiryFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+                <option value="all">كل الصلاحيات</option>
+                <option value="valid">صالحة</option>
+                <option value="soon">قريبة الانتهاء</option>
+                <option value="expired">منتهية</option>
+                <option value="missing">غير مسجلة / تحتاج مراجعة</option>
+              </select>
+              <Label htmlFor="stock-supplier-filter">المورد</Label>
+              <select id="stock-supplier-filter" value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+                <option value="all">كل الموردين</option>
+                {supplierOptions.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}
+              </select>
+              <Label htmlFor="stock-form-filter">الشكل الدوائي</Label>
+              <select id="stock-form-filter" value={formFilter} onChange={(event) => setFormFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+                <option value="all">كل الأشكال</option>
+                {formOptions.map((form) => <option key={form} value={form}>{form}</option>)}
+              </select>
+              <div className="flex gap-2 pt-2">
+                <Button className="flex-1" onClick={() => setFiltersOpen(false)}>عرض النتائج</Button>
+                <Button variant="outline" onClick={() => { setExpiryFilter("all"); setSupplierFilter("all"); setFormFilter("all"); }}>مسح الفلاتر</Button>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {items.isLoading && <div className="p-4 text-center text-muted-foreground">جاري التحميل...</div>}
-        {!items.isLoading && filteredItems.length === 0 && (
+        {items.isError && <div role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">تعذر تحميل المخزون. <Button variant="link" onClick={() => items.refetch()}>إعادة المحاولة</Button></div>}
+        {!items.isLoading && !items.isError && filteredItems.length === 0 && (
           <div className="p-6 text-center text-muted-foreground">لا توجد سجلات مخزون مطابقة</div>
-        )}
-        {!items.isLoading && filteredItems.length > 0 && (
-          <div className="text-xs text-muted-foreground">عرض {filteredItems.length.toLocaleString("ar-LY")} من {allItems.length.toLocaleString("ar-LY")} صنف</div>
         )}
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {filteredItems.map((item: any) => (
-            <StockCard key={item.id} item={item} onOpen={() => setSelected(item)} />
+            <StockCard key={item.id} item={item} threshold={threshold} lowUnit={lowUnit} onOpen={() => setSelected(item)} />
           ))}
         </div>
       </div>
@@ -233,12 +242,12 @@ function stockCardTitle(item: any) {
   return parts.join(" ");
 }
 
-function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
-  const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط");
-  const availability = stockAvailability(item);
-  const quantityDisplay = compactQuantityDisplay(quantity);
+function StockCard({ item, threshold, lowUnit, onOpen }: { item: any; threshold: number; lowUnit: LowStockUnit; onOpen: () => void }) {
+  const quantity = stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "وحدة");
+  const availability = inventoryAvailability(item, threshold, lowUnit);
+  const quantityDisplay = availability.status === "unknown" ? { primary: "غير مسجلة", secondary: null } : compactQuantityDisplay(quantity);
   const expiry = formatExpiry(stockExpiryValue(item));
-  const expiryInfo = expiryState(stockExpiryValue(item));
+  const expiryInfo = inventoryExpiry(item);
   const scientificSubtitle = stockScientificSubtitle(item);
   const displayTitle = stockCardTitle(item);
   const tone =
@@ -258,34 +267,34 @@ function StockCard({ item, onOpen }: { item: any; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className={`min-h-[94px] rounded-lg border px-3 py-2.5 text-right shadow-sm transition hover:border-primary/50 hover:shadow-md ${tone}`}
+      className={`min-w-0 rounded-lg border p-3 text-right shadow-sm transition hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${tone}`}
     >
-      <div className="flex h-full items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div dir="auto" className="break-words text-[15px] font-semibold leading-5 text-foreground">{displayTitle}</div>
           {scientificSubtitle && <div dir="auto" className="mt-1 break-words text-xs text-muted-foreground">{scientificSubtitle}</div>}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {availability.status !== "available" && (
-              <Badge variant={availability.tone === "danger" ? "destructive" : "secondary"} className="h-5 px-2 text-[11px]">
-                {availability.label}
-              </Badge>
-            )}
-            <span className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-0.5 text-[11px] ${expiryInfo.tone === "danger" ? "bg-red-100 text-red-700" : expiryInfo.tone === "warning" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
-              <CalendarDays className="h-3 w-3 shrink-0" />
-              <span>{expiry ? `الصلاحية: ${expiry} · ${expiryInfo.label}` : "الصلاحية غير مسجلة"}</span>
-            </span>
-            {item.batch_number && <span className="max-w-full break-words rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">تشغيلة {item.batch_number}</span>}
-          </div>
+          {availability.status !== "available" && (
+            <Badge variant={availability.tone === "danger" ? "destructive" : "secondary"} className="mt-2 h-5 px-2 text-[11px]">
+              {availability.label}
+            </Badge>
+          )}
         </div>
 
-        <div className="shrink-0 text-left">
-          <div className={`whitespace-nowrap text-lg font-extrabold leading-6 ${quantityTone}`}>{quantityDisplay.primary}</div>
+        <div className="max-w-[42%] shrink-0 text-left">
+          <div className={`break-words text-lg font-bold leading-6 ${quantityTone}`}>{quantityDisplay.primary}</div>
           {quantityDisplay.secondary && (
             <div className="mt-1 inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">
               {quantityDisplay.secondary}
             </div>
           )}
         </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-current/10 pt-2 text-xs">
+        <span className="min-w-0 break-all text-muted-foreground">التشغيلة: <bdi>{item.batch_number || "غير مسجلة"}</bdi></span>
+        <span className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 ${expiryInfo.tone === "danger" ? "bg-red-100 text-red-700" : expiryInfo.tone === "warning" ? "bg-amber-100 text-amber-700" : expiryInfo.tone === "success" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+          <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+          <span>{expiry ? `${expiry} · ${expiryInfo.label}` : expiryInfo.label}</span>
+        </span>
       </div>
     </button>
   );
@@ -328,7 +337,7 @@ function DetailRow({ label, value }: { label: string; value: any }) {
 }
 
 function StockDetailsSheet({ item, canViewCost, onClose }: { item: any | null; canViewCost: boolean; onClose: () => void }) {
-  const quantity = item ? stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "شريط") : null;
+  const quantity = item ? stockQuantityBreakdown(item.stock_quantity, item.strips_quantity, item.source_quantity_unit ?? "وحدة") : null;
   const cost = Number(item?.cost_price ?? NaN);
   const sale = Number(item?.sale_price ?? NaN);
   const spread = Number.isFinite(cost) && Number.isFinite(sale) ? sale - cost : null;
@@ -355,7 +364,7 @@ function StockDetailsSheet({ item, canViewCost, onClose }: { item: any | null; c
                 <DetailRow label="المورد" value={item.supplier_name} />
                 <DetailRow label="الشركة المصنعة" value={item.company_name} />
                 <DetailRow label="رقم التشغيلة" value={item.batch_number} />
-                <DetailRow label="تاريخ الصلاحية" value={formatExpiry(stockExpiryValue(item)) ?? "الصلاحية غير مسجلة"} />
+                <DetailRow label="تاريخ الصلاحية" value={formatExpiry(stockExpiryValue(item)) ?? inventoryExpiry(item).label} />
                 <DetailRow label="آخر تحديث للسجل" value={formatDateTime(item.synced_at)} />
                 <DetailRow label="آخر وقت مزامنة" value={formatDateTime(item.synced_at)} />
               </div>

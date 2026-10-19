@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { hasPermission } from "@/lib/user-permissions";
-import { enrichStockIngredients, parseStockExpiry } from "@/lib/phif-stock-details.helpers";
+import { enrichStockIngredients, parseStockExpiry, extractStockBatchExpiry, stockBatchSource } from "@/lib/phif-stock-details.helpers";
 
 const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:5174";
 const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com";
@@ -74,12 +74,11 @@ export function normalizePhifStockRows(payload: unknown): NormalizedPhifStockRow
 
   return rows.map((row: any) => {
     const brand = nested(row, ["supplier_brand_name", "supplierBrandName", "brand"]);
-    const batch = nested(row, ["patsh_numbers", "patch_numbers", "batch", "batch_number"]);
+    const batch = stockBatchSource(row).batch;
     const supplier = nested(row, ["medical_supplier", "medical_suppliers", "supplier"]);
     const generic = nested(row, ["genaric_name", "generic_name", "generic"]);
     const brandGeneric = nested(brand, ["genaric_name", "generic_name", "generic"]);
-    const expiryKeys = ["expiry_date", "expire_date", "expiration_date", "expireDate"];
-    const expiry = parseStockExpiry(pickString(batch, expiryKeys) ?? pickString(row, expiryKeys));
+    const expiry = extractStockBatchExpiry(row);
     const source_stock_id = pickString(row, ["id", "stock_id", "stockId"]);
     if (!source_stock_id) return null;
 
@@ -101,7 +100,8 @@ export function normalizePhifStockRows(payload: unknown): NormalizedPhifStockRow
       strips_quantity: pickDecimalString(brand, ["strips_quantity", "stripsQuantity"]),
       stock_quantity: pickDecimalString(row, ["quantity", "qty"]),
       source_quantity_unit: pickString(brand, ["unit", "quantity_unit"]),
-      batch_number: pickString(batch, ["batch_number", "patsh_number", "patch_number", "number", "name"]),
+      batch_number: pickString(batch, ["batch_number", "patsh_number", "patch_number", "number", "name"])
+        ?? pickString(row, ["batch_number", "patsh_number", "patch_number"]),
       expiry_date: expiry.date,
       cost_price: pickDecimalString(brand, ["cost_price", "costPrice"]),
       sale_price: pickDecimalString(brand, ["sale_price", "salePrice"]),
@@ -110,13 +110,16 @@ export function normalizePhifStockRows(payload: unknown): NormalizedPhifStockRow
       company_name: pickString(supplier, ["company_name", "companyName", "name"]),
       raw_metadata: {
         source_keys: Object.keys(row ?? {}),
+        batch_source_keys: Object.keys(batch),
         ...(expiry.month ? { expiry_month: expiry.month } : {}),
+        ...(["invalid", "conflict"].includes(expiry.status) ? { expiry_status: expiry.status } : {}),
       },
     };
     const hashSource = {
       ...normalized,
       raw_metadata: undefined,
       ...(expiry.month ? { expiry_month: expiry.month } : {}),
+      ...(["invalid", "conflict"].includes(expiry.status) ? { expiry_status: expiry.status } : {}),
     };
     return {
       ...normalized,
@@ -250,6 +253,7 @@ export const listPhifStockItems = createServerFn({ method: "POST" })
       const { raw_metadata, ...row } = item;
       const month = parseStockExpiry(raw_metadata?.expiry_month).month;
       if (month) row.expiry_month = month;
+      if (["invalid", "conflict"].includes(raw_metadata?.expiry_status)) row.expiry_status = raw_metadata.expiry_status;
       if (includeCost) return row;
       const { cost_price, ...safe } = row;
       return safe;

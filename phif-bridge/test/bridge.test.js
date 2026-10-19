@@ -336,13 +336,13 @@ test("stock endpoint fetches all pages using read-only GET requests", async () =
           return new Response(JSON.stringify({
             recordsTotal: 3,
             recordsFiltered: 3,
-            data: [{ id: 3, pharmacies_id: "55", quantity: "9" }],
+            data: [{ id: 3, pharmacies_id: "55", quantity: "9", patsh_numbers_id: 30, patsh_numbers: { id: 30, batch_number: "C", expiry_date: "05/2028" } }],
           }), { status: 200, headers: { "content-type": "application/json" } });
         }
         return new Response(JSON.stringify({
           recordsTotal: 3,
           recordsFiltered: 3,
-          data: [{ id: 1, pharmacies_id: "55", quantity: "4" }, { id: 2, pharmacies_id: "55", quantity: "5" }],
+          data: [{ id: 1, pharmacies_id: "55", quantity: "4", patsh_numbers_id: 10, patsh_numbers: { id: 10, batch_number: "A", expiry_date: "2027-06-15" } }, { id: 2, pharmacies_id: "55", quantity: "5", patsh_numbers_id: 20, patsh_numbers: { id: 20, batch_number: "B", expiry_date: null } }],
         }), { status: 200, headers: { "content-type": "application/json" } });
       },
     });
@@ -355,6 +355,7 @@ test("stock endpoint fetches all pages using read-only GET requests", async () =
     assert.equal(result.status, 200);
     assert.equal(result.body.raw_count, 3);
     assert.deepEqual(result.body.rows.map((row) => row.id), [1, 2, 3]);
+    assert.deepEqual(result.body.rows.map((row) => [row.patsh_numbers_id, row.patsh_numbers.expiry_date]), [[10, "2027-06-15"], [20, null], [30, "05/2028"]]);
     assert.deepEqual(requested.map((req) => req.method), ["GET", "GET"]);
     assert.equal(requested[0].path, "/get-pharmacy-stock");
     assert.equal(requested[1].path, "/get-pharmacy-stock?start=2&length=100");

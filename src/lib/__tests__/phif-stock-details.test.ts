@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrichStockIngredients, formatStockExpiry, parseStockExpiry, stockExpiryState, stockExpiryValue, stockScientificSubtitle } from "@/lib/phif-stock-details.helpers";
+import { enrichStockIngredients, extractStockBatchExpiry, formatStockExpiry, parseStockExpiry, stockExpiryState, stockExpiryValue, stockScientificSubtitle } from "@/lib/phif-stock-details.helpers";
 import { loadStockIngredientReferences, normalizePhifStockRows } from "@/lib/phif-stock.functions";
 
 const stock = { brand_name: "AMLOTENS 5MG", strength: "5MG", dosage_unit: "TABS", active_ingredient: null };
@@ -61,6 +61,50 @@ describe("stock ingredient and expiry details", () => {
     }
     expect(parseStockExpiry("13/2027")).toEqual({ date: null, month: null });
     expect(formatStockExpiry(null)).toBeNull();
+  });
+
+  it("accepts localized digits and spaces without inventing a day or guessing short years", () => {
+    expect(parseStockExpiry("٠٥ / ٢٠٢٧")).toEqual({ date: null, month: "2027-05" });
+    expect(parseStockExpiry("۱۵ / ۰۶ / ۲۰۲۸")).toEqual({ date: "2028-06-15", month: null });
+    expect(parseStockExpiry("05/27")).toEqual({ date: null, month: null });
+  });
+
+  it("does not let an invalid first alias swallow a valid explicit expiry", () => {
+    expect(extractStockBatchExpiry({ patsh_numbers: { expiry_date: "not recorded", expireDate: "05/2027" } }))
+      .toEqual({ date: null, month: "2027-05", status: "valid" });
+    expect(extractStockBatchExpiry({ patsh_numbers: { expiry_date: "2028-06-15" }, expiration_date: "06/2028" }))
+      .toEqual({ date: "2028-06-15", month: null, status: "valid" });
+  });
+
+  it("binds relation arrays to this stock batch id and never borrows another batch expiry", () => {
+    const patsh_numbers = [{ id: 1, batch_number: "A", expiry_date: "05/2027" }, { id: 2, batch_number: "B", expiry_date: "2028-06-15" }];
+    const rows = normalizePhifStockRows([
+      { id: 1, patsh_numbers_id: 1, patsh_numbers },
+      { id: 2, patsh_numbers_id: 2, patsh_numbers },
+      { id: 3, patsh_numbers_id: 3, patsh_numbers },
+      { id: 4, patsh_numbers },
+    ]);
+    expect(rows[0].batch_number).toBe("A");
+    expect(rows[0].raw_metadata.expiry_month).toBe("2027-05");
+    expect(rows[1].batch_number).toBe("B");
+    expect(rows[1].expiry_date).toBe("2028-06-15");
+    for (const row of rows.slice(2)) {
+      expect(row.expiry_date).toBeNull();
+      expect(row.raw_metadata.expiry_month).toBeUndefined();
+      expect(row.raw_metadata.expiry_status).toBe("conflict");
+    }
+  });
+
+  it("marks conflicting or invalid expiry for review rather than choosing a convenient date", () => {
+    const row = { id: 1, patsh_numbers_id: 1, patsh_numbers: { id: 1, expiry_date: "2027-05-10" }, expire_date: "2027-06-10" };
+    expect(extractStockBatchExpiry(row)).toEqual({ date: null, month: null, status: "conflict" });
+    expect(extractStockBatchExpiry({ ...row, patsh_numbers_id: 2 }).status).toBe("conflict");
+    expect(extractStockBatchExpiry({ expiry_date: "31/02/2027" }).status).toBe("invalid");
+    expect(extractStockBatchExpiry({ batch_number: "2027-05-10", created_at: "2027-05-10" }).status).toBe("missing");
+    const normalized = normalizePhifStockRows([row])[0];
+    expect(normalized.raw_metadata.expiry_status).toBe("conflict");
+    expect(normalized.raw_metadata.batch_source_keys).toContain("expiry_date");
+    expect(JSON.stringify(normalized.raw_metadata)).not.toContain("2027-05-10");
   });
 
   it("stores batch-specific expiry and fingerprints changes in month-only expiry", () => {

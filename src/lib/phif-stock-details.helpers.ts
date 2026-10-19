@@ -3,7 +3,10 @@ function text(value: unknown) {
 }
 
 export function parseStockExpiry(value: unknown): { date: string | null; month: string | null } {
-  const raw = typeof value === "string" ? value.trim() : "";
+  const raw = typeof value === "string" ? value.trim()
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x660))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x6f0))
+    .replace(/\s*([/-])\s*/g, "$1") : "";
   const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.exec(raw);
   const dmy = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(raw);
   if (iso || dmy) {
@@ -20,6 +23,40 @@ export function parseStockExpiry(value: unknown): { date: string | null; month: 
     if (year >= 1000 && month >= 1 && month <= 12) return { date: null, month: `${year}-${String(month).padStart(2, "0")}` };
   }
   return { date: null, month: null };
+}
+
+export function stockBatchSource(row: any): { batch: Record<string, any>; conflict: boolean } {
+  const wanted = row?.patsh_numbers_id ?? row?.patch_numbers_id ?? row?.batch_id;
+  for (const key of ["patsh_numbers", "patch_numbers", "batch", "batch_number"]) {
+    const value = row?.[key];
+    if (!value || typeof value !== "object") continue;
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      const matches = value.filter((batch) => batch && wanted !== undefined && String(batch.id) === String(wanted));
+      return matches.length === 1 ? { batch: matches[0], conflict: false } : { batch: {}, conflict: value.length > 0 };
+    }
+    if (wanted !== undefined && value.id !== undefined && String(value.id) !== String(wanted)) return { batch: {}, conflict: true };
+    return { batch: value, conflict: false };
+  }
+  return { batch: {}, conflict: false };
+}
+
+/** Only explicitly expiry-named fields on this stock row / its own batch. */
+export function extractStockBatchExpiry(row: any) {
+  const source = stockBatchSource(row);
+  const names = new Set(["expirydate", "expiredate", "expirationdate", "expiry", "expiration", "expire", "expirymonth"]);
+  const candidates = [source.batch, row].flatMap((obj) => Object.entries(obj ?? {})
+    .filter(([key, value]) => names.has(key.toLowerCase().replace(/[^a-z]/g, "")) && value !== null && value !== undefined && value !== "")
+    .map(([, value]) => parseStockExpiry(value)));
+  const valid = candidates.filter((value) => value.date || value.month);
+  const dates = new Set(valid.flatMap((value) => value.date ? [value.date] : []));
+  const months = new Set(valid.map((value) => value.month || value.date!.slice(0, 7)));
+  const conflict = source.conflict || dates.size > 1 || months.size > 1;
+  return {
+    date: conflict ? null : [...dates][0] ?? null,
+    month: conflict || dates.size ? null : [...months][0] ?? null,
+    status: conflict ? "conflict" as const : valid.length ? "valid" as const : candidates.length ? "invalid" as const : "missing" as const,
+  };
 }
 
 export function stockExpiryValue(item: { expiry_date?: string | null; expiry_month?: string | null }) {
