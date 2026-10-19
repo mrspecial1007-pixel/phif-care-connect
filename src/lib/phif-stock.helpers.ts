@@ -25,6 +25,7 @@ type StockLike = {
   generic_ingredient_id?: string | null;
   synced_at?: string | null;
   supplier_name?: string | null;
+  is_current?: boolean;
 };
 
 type InvoiceItemLike = {
@@ -251,13 +252,32 @@ function strengthDescriptorTokens(value: unknown) {
   return tokens;
 }
 
+function explicitPackageDescriptors(value: unknown) {
+  // Parse explicit package counts from either imported name, even when invoice metadata is empty.
+  // Do not strip arbitrary numbers: they may belong to the commercial brand.
+  const packageDescriptors = new Set<string>();
+  const counts = new Set<string>();
+  const units = new Set<string>();
+  const raw = normalizeText(value);
+  for (const match of raw.matchAll(/\b(\d+)\s*(tabs?|tablets?|caps?|capsules?|pens?|vials?|amps?|ampoules?|strips?)\b/g)) {
+    packageDescriptors.add(match[1]);
+    counts.add(match[1]);
+    units.add(canonicalTextToken(match[2]));
+    packageDescriptors.add(canonicalTextToken(match[0].replace(/\s+/g, "")));
+  }
+  for (const match of raw.matchAll(/\b(?:tabs?|tablets?|caps?|capsules?|pens?|vials?|amps?|ampoules?|strips?)\s+(\d+)(?=\s*(?:$|\d+(?:\.\d+)?\s*(?:mcg|mg|g|iu|ml)\b))/g)) {
+    packageDescriptors.add(match[1]);
+    counts.add(match[1]);
+  }
+  return { tokens: packageDescriptors, units, count: counts.size === 1 ? [...counts][0] : null };
+}
+
 function commercialBrandTokens(value: unknown, context: { strength?: unknown; unit?: unknown; packageQuantity?: unknown; stripsQuantity?: unknown } = {}) {
   const descriptors = new Set([
     ...descriptiveBrandTokens(value),
     ...strengthDescriptorTokens(context.strength),
     ...textTokens(context.unit),
-    ...textTokens(context.packageQuantity),
-    ...textTokens(context.stripsQuantity),
+    ...explicitPackageDescriptors(value).tokens,
   ]);
   return textTokens(value).filter((token) => !descriptors.has(token));
 }
@@ -316,8 +336,12 @@ function normalizedUnit(value: unknown) {
 }
 
 function invoiceUnit(item: InvoiceItemLike) {
-  return pickString(item.metadata, ["unit", "dosage_unit", "quantity_unit", "quantityUnit", "dosage_form", "dosageForm"])
+  const explicit = pickString(item.metadata, ["unit", "dosage_unit", "quantity_unit", "quantityUnit", "dosage_form", "dosageForm"])
     ?? pickString(item.phif_financial_fields, ["unit", "quantity_unit", "dosage_unit"]);
+  if (explicit) return explicit;
+  const units = new Set([...textTokens(item.brand), ...explicitPackageDescriptors(item.brand).units]
+    .filter(token => ["tabs", "caps", "inj", "pen", "vial", "amp", "strip"].includes(token)));
+  return units.size === 1 ? [...units][0] : null;
 }
 
 function sameStockIdentity(a: StockLike, b: StockLike) {
@@ -340,7 +364,8 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   const genericId = pickString(item.metadata, ["generic_ingredient_id", "generic_id", "genaric_names_id"])
     ?? pickString(item.phif_financial_fields, ["generic_ingredient_id", "generic_id", "genaric_names_id"]);
   const packageQuantity = pickString(item.metadata, ["package_quantity", "packageQuantity"])
-    ?? pickString(item.phif_financial_fields, ["package_quantity", "packageQuantity"]);
+    ?? pickString(item.phif_financial_fields, ["package_quantity", "packageQuantity"])
+    ?? explicitPackageDescriptors(item.brand).count;
   const stripsQuantity = pickString(item.metadata, ["strips_quantity", "stripsQuantity"])
     ?? pickString(item.phif_financial_fields, ["strips_quantity", "stripsQuantity"]);
 
@@ -353,7 +378,7 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   const matches = candidates.filter((stock) => {
     if (!idsMatchOrMissing(brandProductId, stock.brand_product_id)) return false;
     if (!idsMatchOrMissing(genericId, stock.generic_ingredient_id)) return false;
-    if (!idsMatchOrMissing(packageQuantity, stock.package_quantity)) return false;
+    if (!idsMatchOrMissing(packageQuantity, stock.package_quantity ?? explicitPackageDescriptors(stock.brand_name).count)) return false;
     if (!idsMatchOrMissing(stripsQuantity, stock.strips_quantity)) return false;
     const brandMatches = !brand || commercialBrandCompatible(
       stock.brand_name,
@@ -427,7 +452,7 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
   const costPrice = toNumber(match.stock.cost_price);
   const itemUnit = invoiceUnit(item);
   const stockUnit = match.stock.dosage_unit;
-  const unitsAgree = itemUnit && stockUnit ? normalizedUnit(itemUnit) === normalizedUnit(stockUnit) : true;
+  const unitsAgree = Boolean(itemUnit && stockUnit && normalizedUnit(itemUnit) === normalizedUnit(stockUnit));
   if (quantity === null || quantity <= 0 || costPrice === null || invoiceValue <= 0 || !unitsAgree) {
     return {
       status: "pricing_unit_unverified",
@@ -463,5 +488,5 @@ export function stockSnapshotCandidatesForInvoice(item: InvoiceItemLike, stocks:
 }
 
 export function currentStockCandidatesForActual(item: InvoiceItemLike, stocks: StockLike[]) {
-  return stocks;
+  return stocks.filter(stock => stock.is_current !== false);
 }
