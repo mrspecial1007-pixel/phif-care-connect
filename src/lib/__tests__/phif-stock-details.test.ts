@@ -126,6 +126,24 @@ describe("stock ingredient and expiry details", () => {
     expect(stockExpiryValue({ expiry_date: normalized[1].expiry_date })).toBe("2028-06-15");
   });
 
+  it("preserves live get-pharmacy-stock patsh_numbers.expired_date for each batch", () => {
+    // Field structure verified against the live PHIF stock response; identifiers are synthetic.
+    const source = [
+      { id: 1, patsh_numbers_id: 11, quantity: "3", patsh_numbers: { id: 11, supplier_brand_name_id: 21, patch_number: "A", expired_date: "2026-12-31", created_at: "2020-01-01" } },
+      { id: 2, patsh_numbers_id: 12, quantity: "4", patsh_numbers: { id: 12, supplier_brand_name_id: 21, patch_number: "B", expired_date: "2028-11-30" } },
+      { id: 3, patsh_numbers_id: 13, quantity: "5", patsh_numbers: { id: 13, supplier_brand_name_id: 21, patch_number: "C", expired_date: "05/2027" } },
+      { id: 4, patsh_numbers_id: 14, quantity: "0", patsh_numbers: { id: 14, patch_number: "2029-01-01", expired_date: null } },
+    ];
+    const rows = normalizePhifStockRows(source);
+    expect(rows.map(row => row.expiry_date)).toEqual(["2026-12-31", "2028-11-30", null, null]);
+    expect(rows.map(row => row.batch_number)).toEqual(["A", "B", "C", "2029-01-01"]);
+    expect(rows[2].raw_metadata.expiry_month).toBe("2027-05");
+    expect(rows[3].raw_metadata.expiry_month).toBeUndefined();
+    expect(rows[0].content_hash).not.toBe(normalizePhifStockRows([{ ...source[0], patsh_numbers: { ...source[0].patsh_numbers, expired_date: null } }])[0].content_hash);
+    expect(extractStockBatchExpiry({ patsh_numbers: { expired_date: "31/02/2027" } }).status).toBe("invalid");
+    expect(extractStockBatchExpiry({ patsh_numbers: { expired_date: "2027-05-01", expiry_date: "2027-06-01" } }).status).toBe("conflict");
+  });
+
   it("classifies precise dates and month-only expiry without expiring it on an invented first day", () => {
     const now = new Date(2026, 9, 16, 12);
     expect(stockExpiryState("2026-09", now).status).toBe("expired");

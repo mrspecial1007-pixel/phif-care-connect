@@ -44,7 +44,7 @@ export function stockBatchSource(row: any): { batch: Record<string, any>; confli
 /** Only explicitly expiry-named fields on this stock row / its own batch. */
 export function extractStockBatchExpiry(row: any) {
   const source = stockBatchSource(row);
-  const names = new Set(["expirydate", "expiredate", "expirationdate", "expiry", "expiration", "expire", "expirymonth"]);
+  const names = new Set(["expirydate", "expiredate", "expireddate", "expirationdate", "expiry", "expiration", "expire", "expirymonth"]);
   const candidates = [source.batch, row].flatMap((obj) => Object.entries(obj ?? {})
     .filter(([key, value]) => names.has(key.toLowerCase().replace(/[^a-z]/g, "")) && value !== null && value !== undefined && value !== "")
     .map(([, value]) => parseStockExpiry(value)));
