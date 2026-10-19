@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
+import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { InvoiceSummaryCard, formatMoney } from "@/components/management/InvoiceSummaryCard";
@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { getProfitAnalysisReport, savePhifSupplierPurchasePrice } from "@/lib/management.functions";
+import { getTreasuryReport, savePhifSupplierPurchasePrice } from "@/lib/management.functions";
 import { todayISOLocal } from "@/lib/date";
 
 export const Route = createFileRoute("/management/treasury")({
@@ -53,7 +53,7 @@ function purchasePriceLabel(item: any) {
 }
 
 function TreasuryPage() {
-  const reportFn = useServerFn(getProfitAnalysisReport);
+  const reportFn = useServerFn(getTreasuryReport);
   const saveFn = useServerFn(savePhifSupplierPurchasePrice);
   const queryClient = useQueryClient();
   const [dateFrom, setDateFrom] = useState(todayISOLocal());
@@ -126,11 +126,18 @@ function TreasuryPage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Stat label="إجمالي قيمة الصرف" value={money(data?.summary?.total_revenue)} />
-        <Stat label="قيمة Actual" value={money(data?.source_split?.actual?.revenue)} />
-        <Stat label="قيمة PHIF Supplier" value={money(data?.source_split?.phif?.revenue)} />
+        <Stat label="قيمة Actual" value={money(data?.source_split?.actual?.revenue)}>
+          {data?.treasury_financials && <SourceProfit label="مكسب Actual" data={data.treasury_financials.actual} />}
+        </Stat>
+        <Stat label="قيمة PHIF Supplier" value={money(data?.source_split?.phif?.revenue)}>
+          {data?.treasury_financials && <SourceProfit label="مكسب PHIF Supplier" data={data.treasury_financials.phif} />}
+        </Stat>
         <Stat label="التكلفة المعروفة" value={money(data?.summary?.known_cost)} />
-        <Stat label="الربح المعروف" value={money(data?.summary?.known_profit)} />
+        <Stat label="الربح المعروف" value={data && !data.treasury_financials ? "محجوب" : money(data?.summary?.known_profit)} />
         <Stat label="تغطية التكلفة" value={`${Math.round((data?.summary?.coverage_ratio ?? 0) * 100)}%`} />
+        {data?.treasury_financials && <Stat label="قيمة المطالبة" value={data.treasury_financials.claim.complete ? money(data.treasury_financials.claim.value) : "غير مكتملة"}>
+          {!data.treasury_financials.claim.complete && <p className="mt-1 text-xs text-amber-700">توجد تكاليف ناقصة أو تحتاج مراجعة</p>}
+        </Stat>}
       </div>
 
       <section className="space-y-2">
@@ -280,11 +287,21 @@ function TreasuryInvoiceSheet({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
+function SourceProfit({ label, data }: { label: string; data: { profit: number | null; complete: boolean } }) {
+  return <div className="mt-2 border-t pt-2 text-xs">
+    <div className="break-words text-muted-foreground">{label}</div>
+    <div className={`mt-1 break-words font-semibold ${!data.complete ? "text-amber-700" : data.profit !== null && data.profit < 0 ? "text-destructive" : "text-emerald-700"}`}>
+      {data.complete ? money(data.profit) : "غير مكتمل: تكاليف ناقصة أو تحتاج مراجعة"}
+    </div>
+  </div>;
+}
+
+function Stat({ label, value, children }: { label: string; value: string | number; children?: ReactNode }) {
   return (
     <Card className="p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 break-words text-base font-bold">{value}</div>
+      {children}
     </Card>
   );
 }

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
+import { treasuryReportForRole } from "@/lib/treasury-financials.helpers";
 import { z } from "zod";
 import {
   calculateActualGrossMargin,
@@ -1005,12 +1006,23 @@ export const getManagementAuditReport = createServerFn({ method: "POST" })
 
 export const getProfitAnalysisReport = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => rangeSchema.parse(d))
-  .handler(async ({ data }) => {
+  .handler(({ data }) => buildProfitAnalysisReport(data));
+
+export const getTreasuryReport = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => rangeSchema.parse(d))
+  .handler(({ data }) => buildProfitAnalysisReport(data, true));
+
+async function buildProfitAnalysisReport(data: z.infer<typeof rangeSchema>, treasury = false) {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const session = await requireTiryaqPermission("reports_read");
     const { pharmacy_id } = session;
-    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data, financeAccess(session));
+    const access = financeAccess(session);
+    if (treasury && session.session.data.user_role !== "admin") {
+      access.actual.profit = false;
+      access.phif.profit = false;
+    }
+    const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data, access);
     const invoiceMap = new Map<string, any>();
     const beneficiaryMap = new Map<string, any>();
     const itemMap = new Map<string, any>();
@@ -1099,7 +1111,7 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
       invoice_count: row.invoice_ids.size,
       invoice_ids: undefined,
     }));
-    return {
+    const report = {
       summary: {
         total_revenue: rows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
         known_cost: rows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
@@ -1127,7 +1139,11 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
       top_profit_beneficiaries: [...beneficiaries].sort((a, b) => b.known_profit - a.known_profit).slice(0, 20),
       invoices: invoiceRows.sort((a, b) => String(b.dispensing_date ?? "").localeCompare(String(a.dispensing_date ?? ""))),
     };
-  });
+    return treasury ? treasuryReportForRole(report, session.session.data.user_role, {
+      actual: rows.filter(row => row.source === "actual").every(isFinanciallyCompleteRow),
+      phif: rows.filter(row => row.source === "phif").every(isFinanciallyCompleteRow),
+    }) : report;
+}
 
 function summarizeProfitRows(rows: any[]) {
   return {

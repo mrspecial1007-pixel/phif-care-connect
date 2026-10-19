@@ -122,7 +122,7 @@ describe("Tiryaq management and permissions", () => {
 
   it("renders treasury as invoice cards backed by the profit analysis dataset", () => {
     const treasury = readProjectFile("src/routes/management.treasury.tsx");
-    expect(treasury).toContain("getProfitAnalysisReport");
+    expect(treasury).toContain("getTreasuryReport");
     expect(treasury).toContain("(data?.invoices ?? []).map");
     expect(treasury).toContain("setSelectedInvoiceId(invoice.invoice_id)");
     expect(treasury).toContain("TreasuryInvoiceSheet");
