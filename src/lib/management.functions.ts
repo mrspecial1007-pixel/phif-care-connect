@@ -510,6 +510,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       dispensing_date: invoice.dispensing_date ?? null,
       item_count: 0,
       actual_unmatched_count: 0,
+      actual_cost_review_count: 0,
       phif_missing_cost_count: 0,
       unit_review_count: 0,
       reasons: [],
@@ -533,9 +534,9 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       continue;
     }
 
-    const match = profit.status === "matched" ? null : cachedMatch(item);
-    const reasonCode = profit.status === "pricing_unit_unverified" ? "UNIT_MISMATCH" : auditReason(match?.reason ?? profit.reason);
-    const status = profit.status === "matched"
+    const match = cachedMatch(item);
+    const reasonCode = auditReason(match.reason);
+    const status = match.status === "matched"
       ? "matched"
       : match?.reason === "ambiguous_match"
         ? "ambiguous"
@@ -547,8 +548,16 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       invoiceAudit.actual_unmatched_count += 1;
       invoiceAudit.reasons.push("Actual: AMBIGUOUS_MATCHES");
     }
+    const costNeedsReview = status === "matched" && profit.status !== "matched";
+    if (invoiceAudit && costNeedsReview) {
+      invoiceAudit.actual_cost_review_count += 1;
+      invoiceAudit.reasons.push("Actual مطابق: التكلفة تحتاج مراجعة");
+    }
 
-    const identityKey = reportDrugIdentityKey(item, "brand");
+    // Quantity-unit availability affects costing, not the identity's dosage form.
+    const identityKey = reportDrugIdentityKey(match.status === "matched"
+      ? { ...item, metadata: { unit: match.stock.dosage_unit } }
+      : item, "brand");
     const row = actualGroups.get(identityKey) ?? {
       identity_key: identityKey,
       brand: item.brand ?? null,
@@ -559,9 +568,11 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       invoice_ids: new Set<string>(),
       status,
       reason: status === "matched" ? null : reasonCode,
+      cost_review_count: 0,
       candidates: [],
     };
     row.occurrence_count += 1;
+    if (costNeedsReview) row.cost_review_count += 1;
     row.invoice_ids.add(item.phif_invoice_id);
     if (auditStatusPriority(status) > auditStatusPriority(row.status)) {
       row.status = status;
@@ -591,6 +602,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     unmatched: actualItems.filter((row) => row.status === "unmatched").length,
     ambiguous: actualItems.filter((row) => row.status === "ambiguous").length,
     match_ratio: actualItems.length ? actualItems.filter((row) => row.status === "matched").length / actualItems.length : 0,
+    cost_review: actualItems.filter((row) => row.status === "matched" && row.cost_review_count > 0).length,
   };
 
   const invoices = [...financialInvoices.values()].map((invoice) => {
@@ -605,6 +617,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     complete_invoices: invoices.filter((invoice) => invoice.status === "complete").length,
     incomplete_invoices: invoices.filter((invoice) => invoice.status === "incomplete").length,
     actual_unmatched_items: invoices.reduce((sum, invoice) => sum + invoice.actual_unmatched_count, 0),
+    actual_cost_review_items: invoices.reduce((sum, invoice) => sum + invoice.actual_cost_review_count, 0),
     phif_missing_cost_items: invoices.reduce((sum, invoice) => sum + invoice.phif_missing_cost_count, 0),
   };
 
@@ -615,6 +628,9 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       issues: actualItems
         .filter((row) => row.status !== "matched")
         .sort((a, b) => b.occurrence_count - a.occurrence_count),
+      cost_reviews: actualItems
+        .filter((row) => row.status === "matched" && row.cost_review_count > 0)
+        .sort((a, b) => b.cost_review_count - a.cost_review_count),
     },
     financial: {
       summary: financialSummary,

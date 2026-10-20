@@ -107,7 +107,7 @@ export function ReportsSummaryPage() {
 
 function purchasePriceLabel(row: any) {
   if (row.cost_hidden) return "محجوب";
-  if (row.source === "actual") return row.unit_purchase_price === null ? "Actual يحتاج مطابقة" : formatMoney(row.unit_purchase_price);
+  if (row.source === "actual") return row.match_status === "pricing_unit_unverified" ? "التكلفة تحتاج مراجعة" : row.unit_purchase_price === null ? "Actual يحتاج مطابقة" : formatMoney(row.unit_purchase_price);
   return row.unit_purchase_price === null ? "سعر شراء غير محفوظ" : formatMoney(row.unit_purchase_price);
 }
 function ItemFinancials({ row }: { row: any }) {

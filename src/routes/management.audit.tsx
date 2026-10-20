@@ -85,7 +85,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function ActualIssueCard({ item }: { item: any }) {
   return (
-    <Card className={`space-y-3 p-3 ${item.status === "ambiguous" ? "border-amber-200" : "border-red-200"}`}>
+    <Card className={`space-y-3 p-3 ${item.status === "unmatched" ? "border-red-200" : "border-amber-200"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-semibold leading-snug">{item.brand || item.active_ingredient || "صنف Actual"}</div>
@@ -99,10 +99,12 @@ function ActualIssueCard({ item }: { item: any }) {
         <div className="rounded-md bg-muted/60 p-2">مرات الظهور<strong className="block text-base">{item.occurrence_count}</strong></div>
         <div className="rounded-md bg-muted/60 p-2">الفواتير المتأثرة<strong className="block text-base">{item.invoice_count}</strong></div>
       </div>
-      <div className="rounded-md bg-red-50 p-2 text-sm text-red-800">{reasonLabel(item.reason)}</div>
+      {item.status === "matched"
+        ? <div className="rounded-md bg-amber-50 p-2 text-sm text-amber-900">التكلفة تحتاج مراجعة · {item.cost_review_count} بند بدون تكلفة مؤكدة</div>
+        : <div className="rounded-md bg-red-50 p-2 text-sm text-red-800">{reasonLabel(item.reason)}</div>}
       {item.candidates?.length > 0 && (
         <div className="space-y-2">
-          <div className="text-xs font-semibold text-muted-foreground">مرشحون محتملون من المخزون</div>
+          <div className="text-xs font-semibold text-muted-foreground">{item.status === "matched" ? "الصنف المطابق في المخزون" : "مرشحون محتملون من المخزون"}</div>
           {item.candidates.map((candidate: any, index: number) => (
             <div key={`${candidate.stock_id ?? candidate.brand_name}-${index}`} className="rounded-lg border p-2 text-xs">
               <div className="font-semibold">{candidate.brand_name || "بدون اسم تجاري"}</div>
@@ -132,9 +134,10 @@ function InvoiceIssueCard({ invoice }: { invoice: any }) {
         </div>
         <StatusBadge status="incomplete" />
       </div>
-      <div className="grid grid-cols-3 gap-2 text-xs">
+      <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-md bg-muted/60 p-2">الأصناف<strong className="block text-base">{invoice.item_count}</strong></div>
-        <div className="rounded-md bg-red-50 p-2">Actual<strong className="block text-base">{invoice.actual_unmatched_count}</strong></div>
+        <div className="rounded-md bg-red-50 p-2">Actual غير مطابق<strong className="block text-base">{invoice.actual_unmatched_count}</strong></div>
+        <div className="rounded-md bg-amber-50 p-2">Actual مراجعة تكلفة<strong className="block text-base">{invoice.actual_cost_review_count}</strong></div>
         <div className="rounded-md bg-amber-50 p-2">PHIF تكلفة<strong className="block text-base">{invoice.phif_missing_cost_count}</strong></div>
       </div>
       <div className="space-y-1 text-sm">
@@ -147,7 +150,7 @@ function InvoiceIssueCard({ invoice }: { invoice: any }) {
 function ManagementAuditPage() {
   const auditFn = useServerFn(getManagementAuditReport);
   const [nonce, setNonce] = useState(0);
-  const [section, setSection] = useState<"actual" | "financial">("actual");
+  const [section, setSection] = useState<"actual" | "cost" | "financial">("actual");
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["management_audit", nonce],
     queryFn: () => auditFn({ data: { refreshNonce: nonce } }),
@@ -184,25 +187,30 @@ function ManagementAuditPage() {
 
       {data && (
         <>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
             <MetricCard label="Actual فريدة" value={actual.summary.total_unique} />
             <MetricCard label="Matched" value={actual.summary.matched} tone="success" />
             <MetricCard label="Unmatched" value={actual.summary.unmatched} tone="danger" onClick={() => setSection("actual")} />
             <MetricCard label="Ambiguous" value={actual.summary.ambiguous} tone="warning" onClick={() => setSection("actual")} />
+            <MetricCard label="مطابق · مراجعة تكلفة" value={actual.summary.cost_review} tone="warning" onClick={() => setSection("cost")} />
             <MetricCard label="نسبة المطابقة" value={percent(actual.summary.match_ratio)} tone={actual.summary.match_ratio === 1 ? "success" : "warning"} />
           </div>
 
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
             <MetricCard label="فواتير مكتملة" value={financial.summary.complete_invoices} tone="success" />
             <MetricCard label="فواتير غير مكتملة" value={financial.summary.incomplete_invoices} tone="danger" onClick={() => setSection("financial")} />
             <MetricCard label="Actual غير مطابق" value={financial.summary.actual_unmatched_items} tone="danger" />
+            <MetricCard label="بنود Actual · مراجعة تكلفة" value={financial.summary.actual_cost_review_items} tone="warning" onClick={() => setSection("cost")} />
             <MetricCard label="PHIF بلا تكلفة" value={financial.summary.phif_missing_cost_items} tone="warning" />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant={section === "actual" ? "default" : "outline"} onClick={() => setSection("actual")} className="gap-2">
               <AlertTriangle className="h-4 w-4" />
               تدقيق Actual
+            </Button>
+            <Button variant={section === "cost" ? "default" : "outline"} onClick={() => setSection("cost")}>
+              مراجعة تكلفة Actual
             </Button>
             <Button variant={section === "financial" ? "default" : "outline"} onClick={() => setSection("financial")} className="gap-2">
               <ShieldCheck className="h-4 w-4" />
@@ -223,6 +231,13 @@ function ManagementAuditPage() {
               {financial.incomplete_invoices.length === 0 ? (
                 <Card className="flex items-center gap-2 border-emerald-200 p-4 text-emerald-800"><CheckCircle2 className="h-5 w-5" /> كل الفواتير مكتملة ماليًا.</Card>
               ) : financial.incomplete_invoices.map((invoice: any) => <InvoiceIssueCard key={invoice.invoice_id} invoice={invoice} />)}
+            </div>
+          )}
+          {section === "cost" && (
+            <div className="space-y-3">
+              {actual.cost_reviews.length === 0
+                ? <Card className="p-4 text-sm text-emerald-800">لا توجد أصناف Actual مطابقة تحتاج مراجعة تكلفة.</Card>
+                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} />)}
             </div>
           )}
         </>

@@ -47,6 +47,7 @@ function sourceLabel(source: string) {
 function purchasePriceLabel(item: any) {
   if (item.cost_hidden) return "محجوب";
   if (item.source === "actual") {
+    if (item.match_status === "pricing_unit_unverified") return "التكلفة تحتاج مراجعة";
     return item.unit_purchase_price === null ? "Actual يحتاج مطابقة" : money(item.unit_purchase_price);
   }
   return item.unit_purchase_price === null ? "سعر شراء غير محفوظ" : money(item.unit_purchase_price);
@@ -224,7 +225,7 @@ function TreasuryInvoiceSheet({
                       </div>
                     </div>
                     <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs">
-                      {item.match_status === "matched" ? "مكتمل" : financialStatusLabel({ needs_match_count: item.source === "actual" ? 1 : 0, needs_price_count: item.source === "phif" ? 1 : 0 })}
+                      {item.match_status === "matched" ? "مكتمل" : item.match_status === "pricing_unit_unverified" ? "التكلفة تحتاج مراجعة" : item.source === "actual" ? "Actual يحتاج مطابقة" : "تكلفة غير مكتملة"}
                     </span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">

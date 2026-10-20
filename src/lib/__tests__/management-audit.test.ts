@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildManagementAuditReport } from "@/lib/management.functions";
+import { calculateActualGrossMargin } from "@/lib/phif-stock.helpers";
+import { readFileSync } from "node:fs";
 
 const invoice = {
   id: "invoice-1",
@@ -38,6 +40,51 @@ function stock(overrides: Record<string, unknown>) {
 }
 
 describe("management audit center", () => {
+  it("separates a matched identity with unknown units from unmatched items and incomplete financials", () => {
+    const item = actualItem({ brand: "Allopurinol", strength: "100MG", metadata: {} });
+    const candidate = stock({ brand_name: "Allopurinol", strength: "100MG", dosage_unit: "TABS" });
+    const report = buildManagementAuditReport({ invoices: [invoice], items: [item], stocks: [candidate] });
+    expect(report.actual.summary).toMatchObject({ matched: 1, unmatched: 0, ambiguous: 0, cost_review: 1, match_ratio: 1 });
+    expect(report.actual.issues).toHaveLength(0);
+    expect(report.actual.cost_reviews[0]).toMatchObject({ status: "matched", cost_review_count: 1, reason: null });
+    expect(report.financial.summary).toMatchObject({ complete_invoices: 0, incomplete_invoices: 1, actual_unmatched_items: 0, actual_cost_review_items: 1 });
+    expect(calculateActualGrossMargin(item, [candidate])).toMatchObject({ status: "pricing_unit_unverified", purchaseCost: null, grossMargin: null });
+  });
+
+  it("keeps quantity-unit conflicts and missing prices in cost review without rejecting the product identity", () => {
+    for (const [item, candidate] of [
+      [actualItem({ metadata: { unit: "BOX" } }), stock({})],
+      [actualItem({}), stock({ cost_price: null })],
+    ]) {
+      const report = buildManagementAuditReport({ invoices: [invoice], items: [item], stocks: [candidate] });
+      expect(report.actual.summary.matched).toBe(1);
+      expect(report.actual.summary.unmatched).toBe(0);
+      expect(report.actual.summary.cost_review).toBe(1);
+      expect(report.financial.summary.actual_unmatched_items).toBe(0);
+      expect(report.financial.summary.incomplete_invoices).toBe(1);
+      expect(calculateActualGrossMargin(item, [candidate]).grossMargin).toBeNull();
+    }
+  });
+
+  it("groups complete and cost-review occurrences under one matched identity without inflating unmatched statistics", () => {
+    const base = { brand: "Allopurinol", strength: "100MG" };
+    const report = buildManagementAuditReport({ invoices: [invoice],
+      items: [actualItem({ ...base, metadata: {} }), actualItem({ ...base, metadata: { unit: "TAB" } })],
+      stocks: [stock({ ...base, brand_name: base.brand, dosage_unit: "TABLETS", cost_price: 0 })] });
+    expect(report.actual.summary).toMatchObject({ total_unique: 1, matched: 1, cost_review: 1, unmatched: 0 });
+    expect(report.actual.cost_reviews[0]).toMatchObject({ occurrence_count: 2, cost_review_count: 1 });
+  });
+
+  it("exposes separate cost-review sections in audit and correct review labels in financial views", () => {
+    const audit = readFileSync("src/routes/management.audit.tsx", "utf8");
+    const treasury = readFileSync("src/routes/management.treasury.tsx", "utf8");
+    const reports = readFileSync("src/components/management/ReportsViews.tsx", "utf8");
+    expect(audit).toContain("actual.cost_reviews");
+    expect(audit).toContain("financial.summary.actual_cost_review_items");
+    expect(audit).toContain("التكلفة تحتاج مراجعة");
+    expect(treasury).toContain('if (item.match_status === "pricing_unit_unverified") return "التكلفة تحتاج مراجعة"');
+    expect(reports).toContain('row.match_status === "pricing_unit_unverified" ? "التكلفة تحتاج مراجعة"');
+  });
   it("reports matched Actual items with the current Actual matcher", () => {
     const report = buildManagementAuditReport({
       invoices: [invoice],

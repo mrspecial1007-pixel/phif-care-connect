@@ -260,9 +260,11 @@ function explicitPackageDescriptors(value: unknown) {
   const units = new Set<string>();
   const raw = normalizeText(value);
   for (const match of raw.matchAll(/\b(\d+)\s*(tabs?|tablets?|caps?|capsules?|pens?|vials?|amps?|ampoules?|strips?)\b/g)) {
+    units.add(canonicalTextToken(match[2]));
+    // In "5/1000 Tabs", 1000 is a strength component, not a pack count.
+    if (/[\/+.]$/.test(raw.slice(0, match.index).trimEnd())) continue;
     packageDescriptors.add(match[1]);
     counts.add(match[1]);
-    units.add(canonicalTextToken(match[2]));
     packageDescriptors.add(canonicalTextToken(match[0].replace(/\s+/g, "")));
   }
   for (const match of raw.matchAll(/\b(?:tabs?|tablets?|caps?|capsules?|pens?|vials?|amps?|ampoules?|strips?)\s+(\d+)(?=\s*(?:$|\d+(?:\.\d+)?\s*(?:mcg|mg|g|iu|ml)\b))/g)) {
@@ -344,6 +346,16 @@ function invoiceUnit(item: InvoiceItemLike) {
   return units.size === 1 ? [...units][0] : null;
 }
 
+function invoiceDosageUnit(item: InvoiceItemLike) {
+  const form = pickString(item.metadata, ["dosage_form", "dosageForm", "dosage_unit"])
+    ?? pickString(item.phif_financial_fields, ["dosage_form", "dosageForm", "dosage_unit"]);
+  const unit = form ?? invoiceUnit(item);
+  if (!unit || ["box", "boxes", "pack", "packs", "strip"].includes(normalizedUnit(unit))) {
+    return invoiceUnit({ ...item, metadata: null, phif_financial_fields: null });
+  }
+  return unit;
+}
+
 function sameStockIdentity(a: StockLike, b: StockLike) {
   return ["brand_product_id", "generic_ingredient_id", "brand_name", "strength", "dosage_unit", "cost_price", "package_quantity", "strips_quantity"]
     .every((key) => normalizeText(a[key as keyof StockLike]) === normalizeText(b[key as keyof StockLike]));
@@ -372,6 +384,7 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   if (!brand && !brandProductId && !genericId) return { status: "needs_match_review", reason: "unsafe_identity" };
 
   const itemPricingUnit = invoiceUnit(item);
+  const itemDosageUnit = invoiceDosageUnit(item);
   let sawBrandLike = false;
   let sawStrengthMismatch = false;
   let sawUnitMismatch = false;
@@ -406,7 +419,7 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
       sawStrengthMismatch = true;
       return false;
     }
-    if (itemPricingUnit && stock.dosage_unit && normalizedUnit(itemPricingUnit) !== normalizedUnit(stock.dosage_unit)) {
+    if (itemDosageUnit && stock.dosage_unit && normalizedUnit(itemDosageUnit) !== normalizedUnit(stock.dosage_unit)) {
       sawUnitMismatch = true;
       return false;
     }

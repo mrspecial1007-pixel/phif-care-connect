@@ -46,6 +46,16 @@ describe("Actual imported package descriptions", () => {
     expect(calculateActualGrossMargin({ ...item(), brand: "XARELTO 15MG-28TAB" }, [stock()])).toMatchObject({ status: "matched", purchaseCost: 338.492 });
   });
 
+  it("never interprets a compound strength component as a package count", () => {
+    for (const brand of ["Xigduo® 5/1000 Tabs", "Xigduo® 5/1000MG Tabs", "Xigduo® 5/1000MG 60 Tabs"]) {
+      const row = { ...item(), brand, strength: "5MG / 1000MG", quantity: 60 };
+      const candidate = { ...stock(), brand_name: "Xigduo® 5/1000 Tabs", strength: "5MG / 1000MG", package_quantity: "60", cost_price: "4.350000" };
+      expect(matchActualInvoiceItemToStock(row, [candidate]).status).toBe("matched");
+      expect(calculateActualGrossMargin(row, [candidate]).purchaseCost).toBe(261);
+      expect(matchActualInvoiceItemToStock({ ...row, strength: "5MG/850MG" }, [candidate]).status).toBe("needs_match_review");
+    }
+  });
+
   it("keeps VILDAGLIPTIN separate from the different VILDATIC commercial brand", () => {
     const row = { ...item(), brand: "VILDAGLIPTIN", strength: "50MG", quantity: 30, phif_financial_fields: { total_amount: 50.46 } };
     const candidate = { ...stock(), brand_name: "VILDATIC", strength: "50MG", package_quantity: "30", cost_price: "1.400000" };
@@ -76,6 +86,8 @@ describe("Actual imported package descriptions", () => {
   });
 
   it("never calculates unknown or conflicting quantity units as a documented unit cost", () => {
+    expect(matchActualInvoiceItemToStock({ ...item(), metadata: { unit: "BOX" } }, [stock()]).status).toBe("matched");
+    expect(matchActualInvoiceItemToStock({ ...item(), metadata: { unit: "BOX", dosage_form: "CAPS" } }, [stock()])).toMatchObject({ status: "needs_match_review", reason: "unit_mismatch" });
     expect(calculateActualGrossMargin({ ...item(), metadata: { unit: "BOX" } }, [stock()]).purchaseCost).toBeNull();
     expect(calculateActualGrossMargin({ ...item(), brand: "XARELTO" }, [{ ...stock(), brand_name: "XARELTO" }])).toMatchObject({ status: "pricing_unit_unverified", purchaseCost: null });
     expect(calculateActualGrossMargin(item(), [{ ...stock(), cost_price: null }]).purchaseCost).toBeNull();
