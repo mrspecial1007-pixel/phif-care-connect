@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { actualReferenceItem } from "./actual-stock-links.helpers";
 import { z } from "zod";
 import { hasPermission } from "@/lib/user-permissions";
 import { TIRYAQ_PHARMACY_NAME } from "@/lib/pharmacy-isolation";
@@ -105,9 +106,10 @@ async function loadAll(admin: any, pharmacyId: string, range: { dateFrom?: strin
   }
   const stock = access.actualItems ? await pagedAll((a, b) =>
     admin.from("phif_stock_items")
-      .select("id, brand_name, active_ingredient, strength, dosage_unit, stock_quantity, source_quantity_unit, cost_price, sale_price, supplier_name, synced_at")
+      .select("id, source_stock_id, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, stock_quantity, source_quantity_unit, cost_price, sale_price, supplier_name, synced_at")
       .eq("pharmacy_id", pharmacyId).eq("is_current", true).range(a, b)) : [];
-  return { invoices, items, stock };
+  const { loadActualStockLinks } = await import("./actual-stock-links.server");
+  return { invoices, items: (await loadActualStockLinks(admin, pharmacyId, items)).items, stock };
 }
 
 function buildIndex(data: Awaited<ReturnType<typeof loadAll>>, access: ItemAccess) {
@@ -127,17 +129,24 @@ function buildIndex(data: Awaited<ReturnType<typeof loadAll>>, access: ItemAcces
     if (!it.active_ingredient) continue;
     const source = itemSource(it);
     if (!sourceIsVisible(source, access)) continue;
-    const row = get(String(it.active_ingredient).trim(), String(it.strength ?? "").trim(), formOf(it.metadata));
+    const reference = actualReferenceItem(it);
+    const row = get(String(reference.active_ingredient).trim(), String(reference.strength ?? "").trim(), formOf(it.metadata));
     row.sources.add(source);
     const inv: any = invById.get(it.phif_invoice_id);
     if (inv && sourceMovementsVisible(source, access)) row.patients.add(inv.insurance_card_number ?? inv.patient_id ?? inv.beneficiary_name ?? inv.id);
     row.items.push({ ...it, invoice: inv });
+    const target = it.manual_stock_link?.target;
+    if (target) for (const candidate of data.stock) {
+      const sameProduct = target.brand_product_id ? candidate.brand_product_id === target.brand_product_id : candidate.source_stock_id === target.source_stock_id;
+      if (sameProduct && norm(candidate.brand_name) === norm(target.brand_name) && norm(candidate.strength) === norm(target.strength)
+        && !row.stock.some((existing: any) => existing.id === candidate.id)) row.stock.push(candidate);
+    }
   }
   for (const s of data.stock) {
     if (!s.active_ingredient) continue;
     const row = get(String(s.active_ingredient).trim(), String(s.strength ?? "").trim(), String(s.dosage_unit ?? "").trim());
     row.sources.add("Actual");
-    row.stock.push(s);
+    if (!row.stock.some((existing: any) => existing.id === s.id)) row.stock.push(s);
   }
   return map;
 }
@@ -193,6 +202,8 @@ export const getReferenceItem = createServerFn({ method: "POST" })
         brand: it.brand as string | null,
         beneficiary: it.invoice.beneficiary_name as string | null,
         source: itemSource(it),
+        manualMatch: Boolean(it.manual_stock_link?.is_active),
+        referenceBrand: actualReferenceItem(it).brand ?? null,
       }));
     return {
       id: row.id as string,

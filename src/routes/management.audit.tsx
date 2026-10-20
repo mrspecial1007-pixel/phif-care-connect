@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Link2, RefreshCw, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
 import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { getManagementAuditReport } from "@/lib/management.functions";
+import { ActualStockLinks } from "@/components/management/ActualStockLinkEditor";
 
 export const Route = createFileRoute("/management/audit")({
   component: ManagementAuditPage,
@@ -34,6 +35,7 @@ function money(value: number | null | undefined) {
 
 const reasonLabels: Record<string, string> = {
   NO_STOCK_MATCH: "لا يوجد صنف مطابق في مخزون PHIF الحالي",
+  manual_target_unavailable: "المرجع اليدوي غير متاح حاليًا أو تغيرت بياناته؛ يلزم مراجعة الربط",
   STRENGTH_MISMATCH: "اختلاف في التركيز",
   UNIT_MISMATCH: "اختلاف أو غياب وحدة التسعير",
   SUPPLIER_MISMATCH: "اختلاف المورد",
@@ -83,7 +85,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-full px-2 py-1 text-xs font-semibold ${cls}`}>{label}</span>;
 }
 
-function ActualIssueCard({ item }: { item: any }) {
+function ActualIssueCard({ item, onLink }: { item: any; onLink?: (ids: string[]) => void }) {
   return (
     <Card className={`space-y-3 p-3 ${item.status === "unmatched" ? "border-red-200" : "border-amber-200"}`}>
       <div className="flex items-start justify-between gap-3">
@@ -95,6 +97,8 @@ function ActualIssueCard({ item }: { item: any }) {
         </div>
         <StatusBadge status={item.status} />
       </div>
+      {item.manual_match && <span className="text-xs font-semibold text-teal-800">مطابقة يدوية</span>}
+      {onLink && <Button variant="outline" size="sm" onClick={() => onLink(item.item_ids)}><Link2 className="size-4" />ربط بصنف من المخزون</Button>}
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-md bg-muted/60 p-2">مرات الظهور<strong className="block text-base">{item.occurrence_count}</strong></div>
         <div className="rounded-md bg-muted/60 p-2">الفواتير المتأثرة<strong className="block text-base">{item.invoice_count}</strong></div>
@@ -150,6 +154,7 @@ function InvoiceIssueCard({ invoice }: { invoice: any }) {
 function ManagementAuditPage() {
   const auditFn = useServerFn(getManagementAuditReport);
   const [nonce, setNonce] = useState(0);
+  const [linkItems, setLinkItems] = useState<string[] | null>(null);
   const [section, setSection] = useState<"actual" | "cost" | "financial">("actual");
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["management_audit", nonce],
@@ -162,12 +167,13 @@ function ManagementAuditPage() {
 
   return (
     <div className="space-y-4" dir="rtl">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-48">
           <ReportBackLink to="/management" label="الإدارة" />
           <h1 className="text-xl font-bold">مركز التدقيق</h1>
-          <p className="text-sm text-muted-foreground">تشخيص قراءة فقط لمطابقة Actual والتسعير المالي دون تعديل أي بيانات.</p>
+          <p className="text-sm text-muted-foreground">مطابقة Actual واكتمال التكلفة</p>
         </div>
+        {data?.can_manage_links && <Button variant="outline" onClick={() => setLinkItems([])}><Link2 className="size-4" />الروابط اليدوية</Button>}
         <Button
           variant="outline"
           className="shrink-0 gap-2"
@@ -222,7 +228,7 @@ function ManagementAuditPage() {
             <div className="space-y-3">
               {actual.issues.length === 0 ? (
                 <Card className="flex items-center gap-2 border-emerald-200 p-4 text-emerald-800"><CheckCircle2 className="h-5 w-5" /> لا توجد مشاكل مطابقة Actual.</Card>
-              ) : actual.issues.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} />)}
+              ) : actual.issues.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} />)}
             </div>
           )}
 
@@ -237,11 +243,12 @@ function ManagementAuditPage() {
             <div className="space-y-3">
               {actual.cost_reviews.length === 0
                 ? <Card className="p-4 text-sm text-emerald-800">لا توجد أصناف Actual مطابقة تحتاج مراجعة تكلفة.</Card>
-                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} />)}
+                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} />)}
             </div>
           )}
         </>
       )}
+      {linkItems && data?.can_manage_links && <ActualStockLinks itemIds={linkItems} onClose={() => setLinkItems(null)} />}
     </div>
   );
 }

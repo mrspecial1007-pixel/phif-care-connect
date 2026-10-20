@@ -220,6 +220,7 @@ function TreasuryInvoiceSheet({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="break-words font-semibold">{item.brand || item.item_name || "صنف غير محدد"}</div>
+                      {item.manual_match && <span className="text-xs text-teal-800">مطابقة يدوية · {item.reference_brand}</span>}
                       <div className="text-xs text-muted-foreground">
                         {item.active_ingredient || "-"} · {item.strength || "-"} · {sourceLabel(item.source)} · الكمية {item.quantity_label ?? item.quantity ?? "-"}
                       </div>

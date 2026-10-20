@@ -123,7 +123,7 @@ export function ItemReferenceDetailsPage({ itemId }: { itemId: string }) {
     </DetailSection>
 
     <DetailSection title="حركة الصرف" icon={CalendarClock}>
-      {item.movements.length ? <Card className="divide-y p-0">{item.movements.map((m: any) => <div key={m.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 p-3"><div className="min-w-0"><strong className="block truncate text-sm">صرف {m.quantity ?? "—"} · {m.beneficiary ?? "—"}</strong><span className="text-xs text-muted-foreground">{m.source}{m.brand ? ` · ${m.brand}` : ""}</span></div><time className="shrink-0 text-xs text-muted-foreground">{dateLabel(m.date)}</time></div>)}</Card> : <Empty text="لا توجد حركة صرف" />}
+      {item.movements.length ? <Card className="divide-y p-0">{item.movements.map((m: any) => <div key={m.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 p-3"><div className="min-w-0"><strong className="block truncate text-sm">صرف {m.quantity ?? "—"} · {m.beneficiary ?? "—"}</strong><span className="text-xs text-muted-foreground">{m.source}{m.brand ? ` · ${m.brand}` : ""}</span>{m.manualMatch && <span className="block text-xs text-teal-800">مطابقة يدوية · {m.referenceBrand}</span>}</div><time className="shrink-0 text-xs text-muted-foreground">{dateLabel(m.date)}</time></div>)}</Card> : <Empty text="لا توجد حركة صرف" />}
     </DetailSection>
   </div>;
 }

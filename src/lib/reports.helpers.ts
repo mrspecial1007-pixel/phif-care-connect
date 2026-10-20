@@ -1,4 +1,5 @@
 import { invoiceItemValue, stockQuantityBreakdown, matchActualInvoiceItemToStock } from "@/lib/phif-stock.helpers";
+import { actualReferenceItem, type ActualStockLink } from "./actual-stock-links.helpers";
 
 export type ReportSource = "all" | "actual" | "phif";
 export type DrugGrouping = "scientific" | "brand";
@@ -15,6 +16,7 @@ export type ReportInvoice = {
 };
 
 export type ReportItem = {
+  manual_stock_link?: ActualStockLink;
   id?: string | null;
   phif_invoice_id: string;
   active_ingredient?: string | null;
@@ -104,6 +106,7 @@ function unitForItem(item: ReportItem) {
 }
 
 function drugKey(item: ReportItem, groupBy: DrugGrouping) {
+  item = actualReferenceItem(item);
   const unit = unitForItem(item);
   const name = groupBy === "brand" ? item.brand : item.active_ingredient;
   return [
@@ -328,7 +331,7 @@ export function buildMonthlyReport(input: BuildReportInput) {
       active_ingredient: item.active_ingredient ?? null,
       strength: item.strength ?? null,
       dosage_form: dosageForm(item) || null,
-      brand: item.brand ?? null,
+      brand: actualReferenceItem(item).brand ?? null,
       source,
       unit: unit || null,
       quantity: 0,

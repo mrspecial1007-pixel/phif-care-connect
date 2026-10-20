@@ -1,3 +1,5 @@
+import type { ActualStockLink } from "./actual-stock-links.helpers";
+
 export type StockQuantityBreakdown = {
   originalQuantity: number | null;
   stripsPerBox: number | null;
@@ -29,6 +31,7 @@ type StockLike = {
 };
 
 type InvoiceItemLike = {
+  manual_stock_link?: ActualStockLink;
   brand?: string | null;
   active_ingredient?: string | null;
   strength?: string | null;
@@ -40,7 +43,7 @@ type InvoiceItemLike = {
 
 export type ActualMatchResult =
   | { status: "matched"; stock: StockLike; reason: string }
-  | { status: "needs_match_review"; reason: "no_match" | "ambiguous_match" | "not_actual" | "unknown_source" | "unsafe_identity" | "strength_mismatch" | "unit_mismatch" | "supplier_mismatch"; candidates?: StockLike[] };
+  | { status: "needs_match_review"; reason: "no_match" | "ambiguous_match" | "not_actual" | "unknown_source" | "unsafe_identity" | "strength_mismatch" | "unit_mismatch" | "supplier_mismatch" | "manual_target_unavailable"; candidates?: StockLike[] };
 
 export type ActualProfitResult = {
   status: "matched" | "needs_match_review" | "pricing_unit_unverified" | "phif_supplier_excluded";
@@ -361,6 +364,37 @@ function sameStockIdentity(a: StockLike, b: StockLike) {
     .every((key) => normalizeText(a[key as keyof StockLike]) === normalizeText(b[key as keyof StockLike]));
 }
 
+export function validateActualStockLink(item: InvoiceItemLike, stock: StockLike) {
+  if (item.source_classification !== "actual-supplier") throw new Error("الربط متاح لبنود Actual فقط");
+  if (!item.strength || !stock.strength || !compatibleStrength(item.strength, stock.strength)) throw new Error("التركيز غير مؤكد أو مختلف");
+  if (!stock.brand_name || !stock.dosage_unit) throw new Error("هوية صنف المخزون غير مكتملة");
+  const form = invoiceDosageUnit(item);
+  if (form && normalizedUnit(form) !== normalizedUnit(stock.dosage_unit)) throw new Error("الشكل الدوائي مختلف");
+  for (const key of ["package_quantity", "strips_quantity"] as const) {
+    const value = item.metadata?.[key] ?? item.phif_financial_fields?.[key]
+      ?? (key === "package_quantity" ? explicitPackageDescriptors(item.brand).count : null);
+    if (!idsMatchOrMissing(value, stock[key])) throw new Error("بيانات العبوة مختلفة");
+  }
+}
+
+function manualActualMatch(item: InvoiceItemLike, candidates: StockLike[]): ActualMatchResult | null {
+  const link = item.manual_stock_link;
+  if (!link?.is_active) return null;
+  const target = link.target;
+  try { validateActualStockLink(item, target); } catch { return { status: "needs_match_review", reason: "manual_target_unavailable" }; }
+  const matches = candidates.filter(stock => stock.is_current !== false
+    && (target.brand_product_id ? stock.brand_product_id === target.brand_product_id : stock.source_stock_id === target.source_stock_id)
+    && normalizeText(stock.brand_name) === normalizeText(target.brand_name)
+    && compatibleStrength(stock.strength, target.strength)
+    && normalizedUnit(stock.dosage_unit) === normalizedUnit(target.dosage_unit)
+    && idsMatchOrMissing(stock.package_quantity, target.package_quantity)
+    && idsMatchOrMissing(stock.strips_quantity, target.strips_quantity));
+  if (!matches.length) return { status: "needs_match_review", reason: "manual_target_unavailable" };
+  // Identity is confirmed, but competing current costs are never chosen arbitrarily.
+  const prices = new Set(matches.map(stock => toNumber(stock.cost_price)));
+  return { status: "matched", reason: "manual_link", stock: { ...matches[0], cost_price: prices.size === 1 ? matches[0].cost_price : null } };
+}
+
 export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates: StockLike[]): ActualMatchResult {
   if (item.source_classification === "phif-supplier") {
     return { status: "needs_match_review", reason: "not_actual" };
@@ -368,6 +402,9 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   if (item.source_classification !== "actual-supplier") {
     return { status: "needs_match_review", reason: item.source_classification ? "not_actual" : "unknown_source" };
   }
+
+  const manual = manualActualMatch(item, candidates);
+  if (manual) return manual;
 
   const brand = normalizeText(item.brand);
   const strength = normalizeStrength(item.strength);

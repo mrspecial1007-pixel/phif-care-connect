@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { actualReferenceItem } from "@/lib/actual-stock-links.helpers";
 import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
 import { treasuryFinanceAccess, treasuryReportForSession } from "@/lib/treasury-financials.helpers";
 import { z } from "zod";
@@ -172,7 +173,8 @@ async function loadReportDataset(
     items.push(...((rows ?? []) as ReportItem[]));
   }
 
-  return { invoices: invoiceRows, items };
+  const { loadActualStockLinks } = await import("./actual-stock-links.server");
+  return { invoices: invoiceRows, items: (await loadActualStockLinks(supabaseAdmin, pharmacyId, items)).items };
 }
 
 async function loadAllReportDataset(supabaseAdmin: any, pharmacyId: string) {
@@ -197,7 +199,8 @@ async function loadAllReportDataset(supabaseAdmin: any, pharmacyId: string) {
     items.push(...((rows ?? []) as ReportItem[]));
   }
 
-  return { invoices: invoiceRows, items };
+  const { loadActualStockLinks } = await import("./actual-stock-links.server");
+  return { invoices: invoiceRows, items: (await loadActualStockLinks(supabaseAdmin, pharmacyId, items)).items };
 }
 
 async function loadFirstDispensingByCard(
@@ -406,6 +409,8 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         unit_purchase_price: profit.unitPurchasePrice,
         match_status: profit.status,
         match_reason: profit.reason,
+        manual_match: Boolean(item.manual_stock_link?.is_active),
+        reference_brand: actualReferenceItem(item).brand,
       };
     });
   return { invoices: dataset.invoices, items: dataset.items, rows: access ? redactProfitRows(rows, access) : rows, stocks };
@@ -556,7 +561,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
 
     // Quantity-unit availability affects costing, not the identity's dosage form.
     const identityKey = reportDrugIdentityKey(match.status === "matched"
-      ? { ...item, metadata: { unit: match.stock.dosage_unit } }
+      ? { ...actualReferenceItem(item), metadata: { unit: match.stock.dosage_unit } }
       : item, "brand");
     const row = actualGroups.get(identityKey) ?? {
       identity_key: identityKey,
@@ -570,8 +575,12 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       reason: status === "matched" ? null : reasonCode,
       cost_review_count: 0,
       candidates: [],
+      item_ids: [],
+      manual_match: false,
     };
     row.occurrence_count += 1;
+    row.item_ids.push(item.id);
+    if (item.manual_stock_link?.is_active) row.manual_match = true;
     if (costNeedsReview) row.cost_review_count += 1;
     row.invoice_ids.add(item.phif_invoice_id);
     if (auditStatusPriority(status) > auditStatusPriority(row.status)) {
@@ -631,6 +640,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       cost_reviews: actualItems
         .filter((row) => row.status === "matched" && row.cost_review_count > 0)
         .sort((a, b) => b.cost_review_count - a.cost_review_count),
+      manual_matches: actualItems.filter(row => row.manual_match),
     },
     financial: {
       summary: financialSummary,
@@ -890,7 +900,9 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
     const stockRows = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
 
     const invoiceById = new Map((invoices ?? []).map((invoice: any) => [invoice.id, invoice]));
-    const details = redactProfitRows(items.map((item) => {
+    const { loadActualStockLinks } = await import("./actual-stock-links.server");
+    const linkedItems = (await loadActualStockLinks(supabaseAdmin, pharmacy_id, items)).items;
+    const details = redactProfitRows(linkedItems.map((item: any) => {
       const invoice: any = invoiceById.get(item.phif_invoice_id);
       const candidates = currentStockCandidatesForActual(item, stockRows ?? []);
       const margin = calculateActualGrossMargin(item, candidates);
@@ -906,6 +918,7 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
         match_status: margin.status,
         match_reason: margin.reason,
         matched_stock_id: margin.stock?.source_stock_id ?? null,
+        manual_match: Boolean(item.manual_stock_link?.is_active),
         source: "actual",
         unit_purchase_price: margin.status === "matched" ? reportNumberValue(margin.stock?.cost_price) : null,
       };
@@ -940,12 +953,13 @@ export const searchReportItems = createServerFn({ method: "POST" })
     for (const item of dataset.items) {
       const source = reportItemSource(item);
       if (!sourceAccess(access, source).items) continue;
-      const text = [item.brand, item.active_ingredient, item.strength].filter(Boolean).join(" ").toLowerCase();
+      const reference = actualReferenceItem(item);
+      const text = [item.brand, reference.brand, item.active_ingredient, item.strength].filter(Boolean).join(" ").toLowerCase();
       if (!text.includes(query)) continue;
       const identityKey = reportDrugIdentityKey(item, "scientific");
       const row = grouped.get(identityKey) ?? {
         identity_key: identityKey,
-        brand: item.brand ?? null,
+        brand: reference.brand ?? null,
         active_ingredient: item.active_ingredient ?? null,
         strength: item.strength ?? null,
         source,
@@ -975,7 +989,7 @@ export const getReportItemTracking = createServerFn({ method: "POST" })
     return {
       item: first ? {
         identity_key: data.identityKey,
-        brand: first.brand,
+        brand: first.reference_brand ?? first.brand,
         active_ingredient: first.active_ingredient,
         strength: first.strength,
         source: first.source,
@@ -1004,10 +1018,12 @@ export const getManagementAuditReport = createServerFn({ method: "POST" })
     try {
       const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { pharmacy_id } = await requireTiryaqPermission("reports_read");
+      const context = await requireTiryaqPermission("reports_read");
+      const { pharmacy_id } = context;
       const dataset = await loadAllReportDataset(supabaseAdmin, pharmacy_id);
       const stocks = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
-      return buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks });
+      const { isTreasuryManager } = await import("./treasury-financials.helpers");
+      return { ...buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks }), can_manage_links: isTreasuryManager(context) };
     } catch (error: any) {
       console.error("management audit failed", {
         name: error?.name ?? null,
