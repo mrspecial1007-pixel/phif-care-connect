@@ -36,6 +36,7 @@ export function treasuryReportForSession(report: any, context: TreasurySession |
       ...report,
       treasury_financials: {
         actual: { profit: actualProfit, complete: complete.actual },
+        actual_coverage: actualCoverage(report.invoices.flatMap((invoice: any) => invoice.items ?? []).filter((row: any) => row.source === "actual")),
         phif: { profit: phifProfit, complete: complete.phif },
         claim: { value: claimComplete ? report.source_split.phif.revenue + actualProfit : null, complete: claimComplete },
       },
@@ -57,4 +58,15 @@ export function treasuryReportForSession(report: any, context: TreasurySession |
       items: invoice.items.map((item: any) => ({ ...hideProfit(item), gross_margin: null, profit_hidden: true })),
     })),
   };
+}
+
+export function actualCoverage(rows: any[]) {
+  const complete = rows.filter(row => row.match_status === "matched" && row.purchase_cost != null && row.gross_margin != null);
+  const known = new Set(complete);
+  const incomplete = rows.filter(row => !known.has(row));
+  const sum = (list: any[], key: string) => list.reduce((total, row) => total + Number(row[key] ?? 0), 0);
+  return { complete_items: complete.length, review_items: incomplete.length,
+    complete_revenue: sum(complete, "revenue"), incomplete_revenue: sum(incomplete, "revenue"),
+    actual_cost: sum(complete, "purchase_cost"),
+    actual_profit: incomplete.length ? null : sum(complete, "gross_margin"), price_basis: "current_stock" };
 }

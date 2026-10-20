@@ -96,7 +96,8 @@ describe("management audit center", () => {
     expect(report.actual.summary.matched).toBe(1);
     expect(report.actual.summary.unmatched).toBe(0);
     expect(report.actual.issues).toHaveLength(0);
-    expect(report.financial.summary.complete_invoices).toBe(1);
+    expect(report.financial.summary.complete_invoices).toBe(0);
+    expect(report.financial.summary.actual_cost_review_items).toBe(1);
   });
 
   it("does not make supplier differences fail Actual audit or invoice completion", () => {
@@ -116,7 +117,8 @@ describe("management audit center", () => {
     expect(report.actual.summary.matched).toBe(1);
     expect(report.actual.summary.ambiguous).toBe(0);
     expect(report.actual.summary.unmatched).toBe(0);
-    expect(report.financial.summary.complete_invoices).toBe(1);
+    expect(report.financial.summary.complete_invoices).toBe(0);
+    expect(report.financial.summary.actual_cost_review_items).toBe(1);
     expect(report.financial.summary.actual_unmatched_items).toBe(0);
   });
 

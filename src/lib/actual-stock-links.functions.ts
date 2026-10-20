@@ -4,7 +4,7 @@ import { isTreasuryManager } from "./treasury-financials.helpers";
 import { actualItemSignature } from "./actual-stock-links.helpers";
 import { validateActualStockLink } from "./phif-stock.helpers";
 
-async function manager() {
+export async function actualManager() {
   const { requirePharmacySession } = await import("./pharmacy-session.server");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const context = await requirePharmacySession();
@@ -32,7 +32,7 @@ async function scopedItem(db: any, pharmacyId: string, itemId: string) {
 export const getActualStockLinkEditor = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ itemId: z.string().uuid().optional() }).parse(input))
   .handler(async ({ data }) => {
-    const { db, pharmacyId } = await manager();
+    const { db, pharmacyId } = await actualManager();
     const { ACTUAL_LINK_SELECT, missingActualLinksMigration } = await import("./actual-stock-links.server");
     const history: any[] = [];
     for (let from = 0; ; ) {
@@ -74,7 +74,7 @@ export const saveActualStockLink = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ itemId: z.string().uuid(), targetId: z.string().uuid().nullable(),
     expectedVersion: z.number().int().min(0), confirmed: z.literal(true), revoke: z.boolean().default(false) }).parse(input))
   .handler(async ({ data }) => {
-    const { db, pharmacyId, actorId, actor } = await manager();
+    const { db, pharmacyId, actorId, actor } = await actualManager();
     const item = await scopedItem(db, pharmacyId, data.itemId);
     if (!data.revoke) {
       if (!data.targetId) throw new Error("اختر صنف المخزون أولًا");

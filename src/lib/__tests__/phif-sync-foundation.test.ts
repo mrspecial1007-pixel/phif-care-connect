@@ -1057,9 +1057,9 @@ describe("PHIF sync foundation", () => {
     expect(matchActualInvoiceItemToStock(actualItem, [stock])).toMatchObject({ status: "matched" });
     expect(calculateActualGrossMargin(actualItem, [stock])).toMatchObject({ status: "pricing_unit_unverified", purchaseCost: null });
     expect(calculateActualGrossMargin({ ...actualItem, metadata: { unit: "INJ" } }, [stock])).toMatchObject({
-      status: "matched",
-      purchaseCost: 40,
-      grossMargin: 16.482999999999997,
+      status: "pricing_unit_unverified",
+      purchaseCost: null,
+      grossMargin: null,
     });
   });
 
@@ -1083,7 +1083,7 @@ describe("PHIF sync foundation", () => {
     };
 
     expect(matchActualInvoiceItemToStock(actualItem, [stock])).toMatchObject({ status: "matched" });
-    expect(calculateActualGrossMargin(actualItem, [stock])).toMatchObject({
+    expect(calculateActualGrossMargin({ ...actualItem, metadata: { quantity_unit: "TAB" } }, [stock])).toMatchObject({
       status: "matched",
       purchaseCost: 7.5,
       grossMargin: 4.5,
@@ -1417,7 +1417,7 @@ describe("PHIF sync foundation", () => {
     };
 
     expect(matchActualInvoiceItemToStock(item, [stock])).toMatchObject({ status: "matched" });
-    expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "matched", purchaseCost: 30, grossMargin: 15 });
+    expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "pricing_unit_unverified", purchaseCost: null, reason: "missing_cost_unit" });
   });
 
   it("reports specific Actual mismatch reasons without accepting unsafe matches", () => {

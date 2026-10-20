@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getTreasuryReport, savePhifSupplierPurchasePrice } from "@/lib/management.functions";
 import { todayISOLocal } from "@/lib/date";
+import { ACTUAL_UNITS, type ActualUnit } from "@/lib/actual-units.helpers";
 
 export const Route = createFileRoute("/management/treasury")({
   component: TreasuryPage,
@@ -141,6 +142,19 @@ function TreasuryPage() {
         </Stat>}
       </div>
 
+      {data?.treasury_financials?.actual_coverage && <Card className="space-y-2 p-3 text-sm">
+        <h2 className="font-semibold">اكتمال تكلفة Actual فقط</h2>
+        <div className="grid grid-cols-2 gap-2">
+          <span>بنود مكتملة: {data.treasury_financials.actual_coverage.complete_items}</span>
+          <span>تحتاج مراجعة: {data.treasury_financials.actual_coverage.review_items}</span>
+          <span>صرف مكتمل التكلفة: {money(data.treasury_financials.actual_coverage.complete_revenue)}</span>
+          <span>صرف غير مكتمل التكلفة: {money(data.treasury_financials.actual_coverage.incomplete_revenue)}</span>
+          <span>تكلفة Actual المحسوبة: {money(data.treasury_financials.actual_coverage.actual_cost)}</span>
+          <span>مكسب Actual: {data.treasury_financials.actual_coverage.actual_profit == null ? "غير مكتمل" : money(data.treasury_financials.actual_coverage.actual_profit)}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">وفق سعر المخزون المتاح حاليًا، وليس ربحًا تاريخيًا مؤكدًا. لا تشمل هذه الأرقام تكاليف PHIF Supplier.</p>
+      </Card>}
+
       <section className="space-y-2">
         <h2 className="font-semibold">الفواتير</h2>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -237,6 +251,12 @@ function TreasuryInvoiceSheet({
                     <Stat label="الوحدة" value={item.unit || "تحتاج مراجعة"} />
                     <Stat label="المصدر" value={sourceLabel(item.source)} />
                   </div>
+                  {item.source === "actual" && <p className="mt-2 text-xs text-muted-foreground">
+                    {item.actual_unit_evidence === "manual" ? "وحدة صرف موثقة يدويًا" : item.actual_unit_evidence === "source" ? "وحدة صرف مسجلة من المصدر" : "وحدة الصرف تحتاج توثيقًا"}
+                    {item.actual_cost_unit && ` · وحدة التكلفة: ${ACTUAL_UNITS[item.actual_cost_unit as ActualUnit]}`}
+                    {item.actual_conversion_factor != null && ` · معامل التحويل: ${item.actual_conversion_factor}`}
+                    {" · وفق سعر المخزون المتاح"}
+                  </p>}
                   {item.source === "phif" && item.can_edit_purchase_price && (
                     <div className="mt-3 grid gap-2 rounded-md border p-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                       <label className="space-y-1">

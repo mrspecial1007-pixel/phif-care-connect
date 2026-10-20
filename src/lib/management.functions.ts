@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import { actualReferenceItem } from "@/lib/actual-stock-links.helpers";
+import { actualReferenceItem, actualItemSignature } from "@/lib/actual-stock-links.helpers";
+import { actualCostUnits, ACTUAL_UNIT_REASONS, ACTUAL_UNITS } from "@/lib/actual-units.helpers";
 import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
 import { treasuryFinanceAccess, treasuryReportForSession } from "@/lib/treasury-financials.helpers";
 import { z } from "zod";
@@ -147,60 +148,36 @@ function previousMonthRange(dateFrom: string, dateTo: string) {
 async function loadReportDataset(
   supabaseAdmin: any,
   pharmacyId: string,
-  dateFrom: string,
-  dateTo: string,
+  dateFrom?: string,
+  dateTo?: string,
 ) {
-  const { data: invoices, error } = await supabaseAdmin
-    .from("phif_invoices")
-    .select("id, invoice_number, invoice_key, beneficiary_name, insurance_card_number, dispensing_date, metadata")
-    .eq("pharmacy_id", pharmacyId)
-    .gte("dispensing_date", dateFrom)
-    .lte("dispensing_date", dateTo)
-    .order("dispensing_date", { ascending: false });
-  if (error) throw new Error(error.message);
-
-  const invoiceRows = (invoices ?? []) as ReportInvoice[];
+  const { readReportPages } = await import("./report-pages.server");
+  const invoiceRows = await readReportPages(() => {
+    let query = supabaseAdmin.from("phif_invoices")
+      .select("id, invoice_number, invoice_key, beneficiary_name, insurance_card_number, dispensing_date, metadata", { count: "exact" })
+      .eq("pharmacy_id", pharmacyId);
+    if (dateFrom) query = query.gte("dispensing_date", dateFrom);
+    if (dateTo) query = query.lte("dispensing_date", dateTo);
+    return query.order("dispensing_date", { ascending: false }).order("id");
+  }) as ReportInvoice[];
   const ids = invoiceRows.map((invoice) => invoice.id);
   const items: ReportItem[] = [];
   for (let index = 0; index < ids.length; index += 500) {
     const batch = ids.slice(index, index + 500);
     if (batch.length === 0) continue;
-    const { data: rows, error: itemError } = await supabaseAdmin
+    const rows = await readReportPages(() => supabaseAdmin
       .from("phif_invoice_items")
-      .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata")
-      .in("phif_invoice_id", batch);
-    if (itemError) throw new Error(itemError.message);
+      .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata", { count: "exact" })
+      .in("phif_invoice_id", batch).order("id"));
     items.push(...((rows ?? []) as ReportItem[]));
   }
 
-  const { loadActualStockLinks } = await import("./actual-stock-links.server");
-  return { invoices: invoiceRows, items: (await loadActualStockLinks(supabaseAdmin, pharmacyId, items)).items };
+  const { loadActualReportDecisions } = await import("./actual-units.server");
+  return { invoices: invoiceRows, items: (await loadActualReportDecisions(supabaseAdmin, pharmacyId, items)).items };
 }
 
-async function loadAllReportDataset(supabaseAdmin: any, pharmacyId: string) {
-  const { data: invoices, error } = await supabaseAdmin
-    .from("phif_invoices")
-    .select("id, invoice_number, invoice_key, beneficiary_name, insurance_card_number, dispensing_date, metadata")
-    .eq("pharmacy_id", pharmacyId)
-    .order("dispensing_date", { ascending: false });
-  if (error) throw new Error(error.message);
-
-  const invoiceRows = (invoices ?? []) as ReportInvoice[];
-  const ids = invoiceRows.map((invoice) => invoice.id);
-  const items: ReportItem[] = [];
-  for (let index = 0; index < ids.length; index += 500) {
-    const batch = ids.slice(index, index + 500);
-    if (batch.length === 0) continue;
-    const { data: rows, error: itemError } = await supabaseAdmin
-      .from("phif_invoice_items")
-      .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata")
-      .in("phif_invoice_id", batch);
-    if (itemError) throw new Error(itemError.message);
-    items.push(...((rows ?? []) as ReportItem[]));
-  }
-
-  const { loadActualStockLinks } = await import("./actual-stock-links.server");
-  return { invoices: invoiceRows, items: (await loadActualStockLinks(supabaseAdmin, pharmacyId, items)).items };
+export async function loadAllReportDataset(supabaseAdmin: any, pharmacyId: string) {
+  return loadReportDataset(supabaseAdmin, pharmacyId);
 }
 
 async function loadFirstDispensingByCard(
@@ -374,6 +351,7 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
     .map((item) => {
       const invoice: any = invoiceById.get(item.phif_invoice_id);
        const profit = profitForItem(item, invoice, stocks);
+      const units = profit.source === "actual" && profit.stock ? actualCostUnits(item, profit.stock) : null;
       return {
         item_id: item.id,
         invoice_id: item.phif_invoice_id,
@@ -388,15 +366,18 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         brand: item.brand ?? null,
         quantity: item.quantity,
         quick_cost_identity: profit.source === "phif" ? supplierQuickCostIdentity(item) : null,
-        invoice_quantity_unit: profit.source === "phif" ? supplierInvoiceUnit(item).unit : itemUnit(item),
+        invoice_quantity_unit: profit.source === "phif" ? supplierInvoiceUnit(item).unit : profit.stock ? actualCostUnits(item, profit.stock).dispensingUnit : null,
+        actual_unit_evidence: profit.source === "actual" && profit.stock ? actualCostUnits(item, profit.stock).provenance : null,
+        actual_cost_unit: profit.source === "actual" && profit.stock ? actualCostUnits(item, profit.stock).costUnit : null,
+        actual_conversion_factor: profit.source === "actual" && profit.stock ? actualCostUnits(item, profit.stock).factor : null,
         invoice_unit_issue: profit.source === "phif" ? supplierInvoiceUnit(item).issue : null,
         invoice_dosage_form: profit.source === "phif" ? supplierInvoiceForm(item) : item.metadata?.dosage_form ?? item.metadata?.dosageForm ?? item.metadata?.form ?? item.metadata?.pharmaceuticalForm ?? itemUnit(item),
         invoice_package_quantity: item.metadata?.package_quantity ?? item.metadata?.packageQuantity ?? null,
         invoice_strips_quantity: item.metadata?.strips_quantity ?? item.metadata?.stripsQuantity ?? null,
-         quantity_label: reportItemQuantityLabel(item, profit.stock),
+         quantity_label: profit.source === "actual" ? `${item.quantity ?? "—"} ${units?.dispensingUnit ? ACTUAL_UNITS[units.dispensingUnit] : "وحدة غير موثقة"}` : reportItemQuantityLabel(item, profit.stock),
          identity_key: reportDrugIdentityKey(item, "scientific"),
           purchase_cost_mode: profit.source === "phif" ? savedPurchaseMode(item) : null,
-          unit: (profit.source === "phif" ? String(item.phif_financial_fields?.internal_purchase_cost_unit ?? item.phif_financial_fields?.internal_purchase_unit ?? "").trim() || itemUnit(item) : itemUnit(item) ?? profit.stock?.dosage_unit) ?? null,
+          unit: (profit.source === "phif" ? String(item.phif_financial_fields?.internal_purchase_cost_unit ?? item.phif_financial_fields?.internal_purchase_unit ?? "").trim() || itemUnit(item) : units?.dispensingUnit ? ACTUAL_UNITS[units.dispensingUnit] : null) ?? null,
          supplier: item.supplier ?? profit.stock?.supplier_name ?? null,
          stock_quantity: profit.stock?.stock_quantity ?? null,
          stock_synced_at: profit.stock?.synced_at ?? null,
@@ -479,6 +460,8 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     metadata: item.metadata ?? null,
     financial: item.phif_financial_fields ?? null,
     supplier: item.supplier ?? null,
+    manual_stock_link: item.manual_stock_link ?? null,
+    actual_unit_decision: item.actual_unit_decision ?? null,
   });
   const actualMatchKey = (item: any) => JSON.stringify({
     source: item.source_classification ?? null,
@@ -488,6 +471,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     metadata: item.metadata ?? null,
     financial: item.phif_financial_fields ?? null,
     supplier: item.supplier ?? null,
+    manual_stock_link: item.manual_stock_link ?? null,
   });
   const cachedProfit = (item: any, invoice: any) => {
     const key = actualAuditKey(item);
@@ -556,7 +540,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     const costNeedsReview = status === "matched" && profit.status !== "matched";
     if (invoiceAudit && costNeedsReview) {
       invoiceAudit.actual_cost_review_count += 1;
-      invoiceAudit.reasons.push("Actual مطابق: التكلفة تحتاج مراجعة");
+      invoiceAudit.reasons.push(`Actual مطابق: ${ACTUAL_UNIT_REASONS[profit.reason] ?? "التكلفة تحتاج مراجعة"}`);
     }
 
     // Quantity-unit availability affects costing, not the identity's dosage form.
@@ -577,11 +561,20 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       candidates: [],
       item_ids: [],
       manual_match: false,
+      documented_unit_count: 0,
+      cost_reasons: [],
+      unit_scopes: [],
     };
     row.occurrence_count += 1;
     row.item_ids.push(item.id);
+    const scopeKey = actualItemSignature(item);
+    const scope = row.unit_scopes.find((entry: any) => entry.signature === scopeKey);
+    if (scope) scope.count += 1;
+    else row.unit_scopes.push({ signature: scopeKey, item_id: item.id, brand: item.brand, count: 1 });
     if (item.manual_stock_link?.is_active) row.manual_match = true;
     if (costNeedsReview) row.cost_review_count += 1;
+    if (item.actual_unit_decision?.is_active) row.documented_unit_count += 1;
+    if (costNeedsReview && !row.cost_reasons.includes(profit.reason)) row.cost_reasons.push(profit.reason);
     row.invoice_ids.add(item.phif_invoice_id);
     if (auditStatusPriority(status) > auditStatusPriority(row.status)) {
       row.status = status;
@@ -602,6 +595,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
 
   const actualItems = [...actualGroups.values()].map((row) => ({
     ...row,
+    unit_scopes: row.unit_scopes.map(({ signature, ...scope }: any) => scope),
     invoice_count: row.invoice_ids.size,
     invoice_ids: undefined,
   }));
@@ -641,6 +635,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
         .filter((row) => row.status === "matched" && row.cost_review_count > 0)
         .sort((a, b) => b.cost_review_count - a.cost_review_count),
       manual_matches: actualItems.filter(row => row.manual_match),
+      documented_units: actualItems.filter(row => row.documented_unit_count > 0),
     },
     financial: {
       summary: financialSummary,
@@ -874,34 +869,10 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
     const { pharmacy_id } = session;
     const access = financeAccess(session);
 
-    const { data: invoices, error } = await supabaseAdmin
-      .from("phif_invoices")
-      .select("id, invoice_number, invoice_key, dispensing_date")
-      .eq("pharmacy_id", pharmacy_id)
-      .gte("dispensing_date", data.dateFrom)
-      .lte("dispensing_date", data.dateTo)
-      .order("dispensing_date", { ascending: false });
-    if (error) throw new Error(error.message);
-
-    const ids = (invoices ?? []).map((invoice: any) => invoice.id);
-    const items: any[] = [];
-    for (let index = 0; index < ids.length; index += 500) {
-      const batch = ids.slice(index, index + 500);
-      if (batch.length === 0) continue;
-      const { data: rows, error: itemError } = await supabaseAdmin
-        .from("phif_invoice_items")
-        .select("id, phif_invoice_id, phif_item_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata")
-        .in("phif_invoice_id", batch)
-        .neq("source_classification", "phif-supplier");
-      if (itemError) throw new Error(itemError.message);
-      items.push(...(rows ?? []));
-    }
-
+    const dataset = await loadReportDataset(supabaseAdmin, pharmacy_id, data.dateFrom, data.dateTo);
     const stockRows = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
-
-    const invoiceById = new Map((invoices ?? []).map((invoice: any) => [invoice.id, invoice]));
-    const { loadActualStockLinks } = await import("./actual-stock-links.server");
-    const linkedItems = (await loadActualStockLinks(supabaseAdmin, pharmacy_id, items)).items;
+    const invoiceById = new Map(dataset.invoices.map((invoice: any) => [invoice.id, invoice]));
+    const linkedItems = dataset.items.filter(item => item.source_classification === "actual-supplier");
     const details = redactProfitRows(linkedItems.map((item: any) => {
       const invoice: any = invoiceById.get(item.phif_invoice_id);
       const candidates = currentStockCandidatesForActual(item, stockRows ?? []);

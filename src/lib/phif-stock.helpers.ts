@@ -1,4 +1,5 @@
 import type { ActualStockLink } from "./actual-stock-links.helpers";
+import { actualCostUnits, type ActualUnitDecision } from "./actual-units.helpers";
 
 export type StockQuantityBreakdown = {
   originalQuantity: number | null;
@@ -31,6 +32,7 @@ type StockLike = {
 };
 
 type InvoiceItemLike = {
+  actual_unit_decision?: ActualUnitDecision;
   manual_stock_link?: ActualStockLink;
   brand?: string | null;
   active_ingredient?: string | null;
@@ -500,21 +502,19 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
 
   const quantity = toNumber(item.quantity);
   const costPrice = toNumber(match.stock.cost_price);
-  const itemUnit = invoiceUnit(item);
-  const stockUnit = match.stock.dosage_unit;
-  const unitsAgree = Boolean(itemUnit && stockUnit && normalizedUnit(itemUnit) === normalizedUnit(stockUnit));
-  if (quantity === null || quantity <= 0 || costPrice === null || invoiceValue <= 0 || !unitsAgree) {
+  const units = actualCostUnits(item, match.stock);
+  if (quantity === null || quantity <= 0 || costPrice === null || costPrice < 0 || invoiceValue <= 0 || units.issue || units.factor === null) {
     return {
       status: "pricing_unit_unverified",
       invoiceValue,
       purchaseCost: null,
       grossMargin: null,
       stock: match.stock,
-      reason: "pricing_unit_unverified",
+      reason: units.issue ?? "invalid_cost_or_quantity",
     };
   }
 
-  const purchaseCost = quantity * costPrice;
+  const purchaseCost = quantity * units.factor * costPrice;
   return {
     status: "matched",
     invoiceValue,

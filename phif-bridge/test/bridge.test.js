@@ -11,6 +11,19 @@ import { createPhifBridgeServer } from "../server.js";
 
 const SECRET = "test-secret";
 
+test("Actual quantity units come only from the quantity cell, never a brand package suffix", () => {
+  const invoice = (quantity, supplier = "شركة اكليل") => parseInvoiceDetails(`<table><tr>
+    <td>${supplier}</td><td>AMLODIPINE</td><td>5MG</td><td>Amlotens 30 Tabs</td>
+    <td>${quantity}</td><td>20</td><td>0</td><td>20</td></tr></table>`);
+  assert.equal(invoice("30").items[0].metadata, undefined);
+  assert.equal(invoice("30").items[0].quantity, 30);
+  assert.equal(invoice("30 tablets").items[0].metadata.quantity_unit, "tablets");
+  assert.equal(invoice("1 PEN").items[0].metadata.quantity_unit, "PEN");
+  assert.equal(invoice("30 tablets").items[0].quantity, 30);
+  assert.equal(invoice("30 tablets", "PHIF Supplier").items[0].metadata, undefined);
+  assert.equal(invoice("30 units").items[0].metadata, undefined);
+});
+
 test("session store isolates PHIF cookies by pharmacy", () => {
   const store = new BridgeSessionStore();
   const a = store.create("pharmacy-a");

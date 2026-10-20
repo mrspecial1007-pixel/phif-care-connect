@@ -66,7 +66,7 @@ describe("manual Actual stock identity links", () => {
     expect(matchActualInvoiceItemToStock(bound, [{ ...target, is_current: false }])).toMatchObject({ reason: "manual_target_unavailable" });
     expect(matchActualInvoiceItemToStock(bound, [{ ...target, strength: "100MG" }])).toMatchObject({ reason: "manual_target_unavailable" });
     const boxes = { ...item, metadata: { quantity_unit: "BOX" } };
-    expect(calculateActualGrossMargin(applyActualStockLinks([boxes], [link(boxes)])[0], [target]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin(applyActualStockLinks([boxes], [link(boxes)])[0], [target]).purchaseCost).toBe(30 * 30 * 1.4);
   });
 
   it("uses the unified brand tracking key but keeps each saved item once", () => {

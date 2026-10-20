@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { getManagementAuditReport } from "@/lib/management.functions";
 import { ActualStockLinks } from "@/components/management/ActualStockLinkEditor";
+import { ActualUnitEditor } from "@/components/management/ActualUnitEditor";
+import { ACTUAL_UNIT_REASONS } from "@/lib/actual-units.helpers";
 
 export const Route = createFileRoute("/management/audit")({
   component: ManagementAuditPage,
@@ -85,7 +87,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-full px-2 py-1 text-xs font-semibold ${cls}`}>{label}</span>;
 }
 
-function ActualIssueCard({ item, onLink }: { item: any; onLink?: (ids: string[]) => void }) {
+function ActualIssueCard({ item, onLink, onUnits }: { item: any; onLink?: (ids: string[]) => void; onUnits?: (id: string) => void }) {
   return (
     <Card className={`space-y-3 p-3 ${item.status === "unmatched" ? "border-red-200" : "border-amber-200"}`}>
       <div className="flex items-start justify-between gap-3">
@@ -99,12 +101,17 @@ function ActualIssueCard({ item, onLink }: { item: any; onLink?: (ids: string[])
       </div>
       {item.manual_match && <span className="text-xs font-semibold text-teal-800">مطابقة يدوية</span>}
       {onLink && <Button variant="outline" size="sm" onClick={() => onLink(item.item_ids)}><Link2 className="size-4" />ربط بصنف من المخزون</Button>}
+      {onUnits && item.status === "matched" && item.unit_scopes.map((scope: any) => <Button key={scope.item_id} variant="outline" size="sm" className="h-auto whitespace-normal py-2" onClick={() => onUnits(scope.item_id)}>
+        توثيق الوحدات · {scope.brand} · {scope.count} بند متوافق
+      </Button>)}
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-md bg-muted/60 p-2">مرات الظهور<strong className="block text-base">{item.occurrence_count}</strong></div>
         <div className="rounded-md bg-muted/60 p-2">الفواتير المتأثرة<strong className="block text-base">{item.invoice_count}</strong></div>
       </div>
       {item.status === "matched"
-        ? <div className="rounded-md bg-amber-50 p-2 text-sm text-amber-900">التكلفة تحتاج مراجعة · {item.cost_review_count} بند بدون تكلفة مؤكدة</div>
+        ? item.cost_review_count > 0 ? <div className="rounded-md bg-amber-50 p-2 text-sm text-amber-900">التكلفة تحتاج مراجعة · {item.cost_review_count} بند بدون تكلفة مؤكدة
+          {item.cost_reasons?.map((reason: string) => <p key={reason}>{ACTUAL_UNIT_REASONS[reason] ?? reason}</p>)}</div>
+          : <p className="text-sm text-emerald-800">الوحدات موثقة والتكلفة مكتملة</p>
         : <div className="rounded-md bg-red-50 p-2 text-sm text-red-800">{reasonLabel(item.reason)}</div>}
       {item.candidates?.length > 0 && (
         <div className="space-y-2">
@@ -155,6 +162,7 @@ function ManagementAuditPage() {
   const auditFn = useServerFn(getManagementAuditReport);
   const [nonce, setNonce] = useState(0);
   const [linkItems, setLinkItems] = useState<string[] | null>(null);
+  const [unitItem, setUnitItem] = useState<string | null>(null);
   const [section, setSection] = useState<"actual" | "cost" | "financial">("actual");
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["management_audit", nonce],
@@ -191,7 +199,7 @@ function ManagementAuditPage() {
       {isLoading && <Card className="p-4 text-sm text-muted-foreground">جاري تشغيل التدقيق...</Card>}
       {error && <Card className="border-red-200 p-4 text-sm text-red-700">تعذر تشغيل التدقيق: {auditErrorMessage(error)}</Card>}
 
-      {data && (
+      {data && actual && financial && (
         <>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
             <MetricCard label="Actual فريدة" value={actual.summary.total_unique} />
@@ -243,12 +251,17 @@ function ManagementAuditPage() {
             <div className="space-y-3">
               {actual.cost_reviews.length === 0
                 ? <Card className="p-4 text-sm text-emerald-800">لا توجد أصناف Actual مطابقة تحتاج مراجعة تكلفة.</Card>
-                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} />)}
+                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} onUnits={data.can_manage_links ? setUnitItem : undefined} />)}
+              {data.can_manage_links && actual.documented_units.length > 0 && <>
+                <h2 className="font-semibold">مراجعة الوحدات المعتمدة وتعديلها أو إلغاؤها</h2>
+                {actual.documented_units.map((item: any) => <ActualIssueCard key={`units-${item.identity_key}`} item={item} onUnits={setUnitItem} />)}
+              </>}
             </div>
           )}
         </>
       )}
       {linkItems && data?.can_manage_links && <ActualStockLinks itemIds={linkItems} onClose={() => setLinkItems(null)} />}
+      {unitItem && data?.can_manage_links && <ActualUnitEditor itemId={unitItem} onClose={() => setUnitItem(null)} />}
     </div>
   );
 }

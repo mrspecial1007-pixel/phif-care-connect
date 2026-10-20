@@ -164,6 +164,10 @@ export function parseInvoiceDetails(html, fallbackInvoiceKey = null) {
     strength: row.strength,
     brand: row.brand,
     quantity: parseNumber(row.quantity),
+    // Only an explicit unit attached to the quantity cell documents its meaning.
+    // A product-name suffix such as "30 Tabs" describes packaging, not this quantity.
+    ...(classifySource(row.supplier) === "actual-supplier" && quantityCellUnit(row.quantity)
+      ? { metadata: { quantity_unit: quantityCellUnit(row.quantity), quantity_unit_source: "phif_quantity_cell" } } : {}),
     financial_fields: {
       insurance_amount: parseMoney(row.insurance),
       outside_insurance_amount: parseMoney(row.outside),
@@ -179,6 +183,11 @@ export function parseInvoiceDetails(html, fallbackInvoiceKey = null) {
     dispensing_time: normalizeTime(time),
     items,
   };
+}
+
+function quantityCellUnit(text) {
+  const match = String(text ?? "").trim().match(/^\d+(?:\.\d+)?\s+(tabs?|tablets?|caps?(?:ules?)?|pens?|vials?|ampoules?|bottles?|strips?|box(?:es)?|drops|inhalers?|tubes?|ml|قرص|أقراص|قلم|فيال|شريط|علبة|عبوة)$/i);
+  return match?.[1] ?? null;
 }
 
 export function classifySource(supplier) {
