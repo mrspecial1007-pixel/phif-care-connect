@@ -255,7 +255,8 @@ function ManagementAuditPage() {
           {section === "cost" && (
             <div className="space-y-3">
               <ActualUnitAccessNotice access={data.unit_access} />
-              <p className="text-sm text-teal-900">اقتراحات متوافقة حسابيًا: {actual.summary.suggested_unit_items} بند. لا تدخل الأرباح قبل اعتماد وحداتها.</p>
+              <p className="text-sm text-teal-900">محسوب تلقائيًا بوحدة المخزون والتحقق المالي: {actual.summary.automatic_cost_items} بند. اقتراحات تحويل تحتاج اعتمادًا: {actual.summary.suggested_unit_items} بند.</p>
+              <p className="text-xs text-muted-foreground">الحساب وفق أسعار المخزون المتاحة حاليًا، وليس إثباتًا لأسعار تاريخية.</p>
               {actual.cost_reviews.length === 0
                 ? <Card className="p-4 text-sm text-emerald-800">لا توجد أصناف Actual مطابقة تحتاج مراجعة تكلفة.</Card>
                 : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} onUnits={setUnitItem} />)}
@@ -263,6 +264,10 @@ function ManagementAuditPage() {
                 <h2 className="font-semibold">مراجعة الوحدات المعتمدة وتعديلها أو إلغاؤها</h2>
                 {actual.documented_units.map((item: any) => <ActualIssueCard key={`units-${item.identity_key}`} item={item} onUnits={setUnitItem} />)}
               </>}
+              {actual.automatic_units.length > 0 && <details className="space-y-2">
+                <summary className="cursor-pointer text-sm font-semibold">الأصناف المحسوبة تلقائيًا ومراجعة استثناءاتها</summary>
+                {actual.automatic_units.map((item: any) => <ActualIssueCard key={`auto-${item.identity_key}`} item={item} onUnits={setUnitItem} />)}
+              </details>}
             </div>
           )}
         </>

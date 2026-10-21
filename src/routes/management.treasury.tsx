@@ -252,7 +252,7 @@ function TreasuryInvoiceSheet({
                     <Stat label="المصدر" value={sourceLabel(item.source)} />
                   </div>
                   {item.source === "actual" && <p className="mt-2 text-xs text-muted-foreground">
-                    {item.actual_unit_evidence === "manual" ? "وحدة صرف موثقة يدويًا" : item.actual_unit_evidence === "source" ? "وحدة صرف مسجلة من المصدر" : "وحدة الصرف تحتاج توثيقًا"}
+                    {item.actual_unit_evidence === "manual" ? "وحدة صرف موثقة يدويًا" : item.actual_unit_evidence === "stock_price_check" ? "تحقق آلي: وحدة المخزون وتوافق قيمة الصرف" : item.actual_unit_evidence === "source" ? "وحدة صرف مسجلة من المصدر" : "وحدة الصرف تحتاج توثيقًا"}
                     {item.actual_cost_unit && ` · وحدة التكلفة: ${ACTUAL_UNITS[item.actual_cost_unit as ActualUnit]}`}
                     {item.actual_conversion_factor != null && ` · معامل التحويل: ${item.actual_conversion_factor}`}
                     {" · وفق سعر المخزون المتاح"}

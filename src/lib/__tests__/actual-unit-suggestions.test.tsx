@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { actualUnitSuggestion, actualMoneyProduct } from "@/lib/actual-unit-suggestions.helpers";
 import { actualUnitPreview, actualDecisionInput } from "@/lib/actual-units.preview";
 import { actualUnitAccess } from "@/lib/actual-units.auth";
-import { calculateActualGrossMargin, matchActualInvoiceItemToStock } from "@/lib/phif-stock.helpers";
+import { calculateActualGrossMargin, matchActualInvoiceItemToStock, invoiceItemValue } from "@/lib/phif-stock.helpers";
 import { actualUnitSourceSignature, actualStockUnitSignature, applyActualUnitDecisions } from "@/lib/actual-units.helpers";
 import { buildManagementAuditReport } from "@/lib/management.functions";
 import { UnitForm } from "@/components/management/ActualUnitEditor";
@@ -16,7 +16,7 @@ const item = { id: "item", phif_invoice_id: "invoice", source_classification: "a
   strength: "400 MCG", quantity: 30, metadata: {}, phif_financial_fields: { total_amount: 129.600 } };
 const stock = { id: "stock", brand_name: "PROSTAM LP", strength: "400 MCG", dosage_unit: "CAPS",
   package_quantity: 30, strips_quantity: 2, sale_price: 4.320, cost_price: 3.600, is_current: true, stock_quantity: 0 };
-const suggest = (source: any = item, stocks: any[] = [stock]) => actualUnitSuggestion(source, matchActualInvoiceItemToStock(source, stocks));
+const suggest = (source: any = item, stocks: any[] = [stock]) => actualUnitSuggestion(source, matchActualInvoiceItemToStock(source, stocks), invoiceItemValue(source));
 const context = (role: string, userId?: string, pharmacy = TIRYAQ_PHARMACY_NAME) => ({ pharmacy_id: "tiryaq", pharmacy_name: pharmacy,
   session: { data: { user_id: userId, user_role: role, user_permissions: { users_manage: true } } } });
 const db = (row: any, calls: any[] = []) => ({ from(table: string) { calls.push(table);
@@ -30,13 +30,14 @@ describe("Actual unit price evidence and explicit manager approval", () => {
   it("proposes Cloud PROSTAM 30 native units at 108.000 cost / 21.600 profit without inventing a tablet form", () => {
     expect(suggest()).toMatchObject({ status: "high_confidence", dispensingUnit: "capsule", costUnit: "capsule",
       expectedValue: 129.6, projectedCost: 108, projectedProfit: 21.6, factor: 1 });
-    expect(calculateActualGrossMargin(item, [stock]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "matched", purchaseCost: 108, grossMargin: 21.6, reason: "verified_stock_sale_price",
+      units: { provenance: "stock_price_check", dispensingUnit: "capsule", costUnit: "capsule", factor: 1 } });
     const approval = { phif_invoice_item_id: item.id, source_signature: actualUnitSourceSignature(item), stock_signature: actualStockUnitSignature(stock),
       dispensing_unit: "capsule" as const, cost_unit: "capsule" as const, version: 1, is_active: true };
     const [bound] = applyActualUnitDecisions([item], [approval]);
     expect(calculateActualGrossMargin(bound, [stock])).toMatchObject({ status: "matched", purchaseCost: 108 });
     expect(calculateActualGrossMargin(bound, [stock]).grossMargin).toBeCloseTo(21.6);
-    expect(calculateActualGrossMargin(applyActualUnitDecisions([bound], [{ ...approval, is_active: false }])[0], [stock]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin(applyActualUnitDecisions([bound], [{ ...approval, is_active: false }])[0], [stock]).purchaseCost).toBe(108);
   });
 
   it("rounds decimal products once to millimes, without accepting discounts or broad tolerances", () => {
@@ -45,6 +46,48 @@ describe("Actual unit price evidence and explicit manager approval", () => {
     expect(actualMoneyProduct("3", "0.3335")).toBe(1.001);
     for (const value of [129.599, 129.601, 120, 0, 129.6001]) expect(suggest({ ...item, phif_financial_fields: { total_amount: value } }).status).toBe("review");
     for (const quantity of [null, 0, -1, "not-number"]) expect(suggest({ ...item, quantity }).status).toBe("review");
+  });
+
+  it("does not auto-cost a discount, unknown price unit, missing price or conflicting stock rows", () => {
+    for (const value of [129.599, 129.601, 120]) {
+      expect(calculateActualGrossMargin({ ...item, phif_financial_fields: { total_amount: value } }, [stock]))
+        .toMatchObject({ status: "pricing_unit_unverified", purchaseCost: null, grossMargin: null, reason: "amount_mismatch" });
+    }
+    for (const stocks of [[{ ...stock, dosage_unit: "INJ" }], [{ ...stock, sale_price: null }],
+      [stock, { ...stock, id: "other-sale", sale_price: 5 }], [stock, { ...stock, id: "other-cost", cost_price: 4 }]]) {
+      expect(calculateActualGrossMargin(item, stocks).purchaseCost).toBeNull();
+    }
+    expect(calculateActualGrossMargin({ ...item, brand: "Another brand" }, [stock]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin({ ...item, strength: null }, [stock]).purchaseCost).toBeNull();
+  });
+
+  it("does not auto-certify an amount-only box/strip conversion; retains explicit and manual unit evidence", () => {
+    const strip = { ...item, quantity: 2 };
+    expect(calculateActualGrossMargin(strip, [stock])).toMatchObject({ purchaseCost: null, reason: "conversion_requires_confirmation" });
+    expect(calculateActualGrossMargin({ ...strip, metadata: { quantity_unit: "STRIP" } }, [stock])).toMatchObject({ purchaseCost: 108 });
+    const approval = { phif_invoice_item_id: item.id, source_signature: actualUnitSourceSignature(strip), stock_signature: actualStockUnitSignature(stock),
+      dispensing_unit: "strip" as const, cost_unit: "capsule" as const, version: 1, is_active: true };
+    expect(calculateActualGrossMargin(applyActualUnitDecisions([strip], [approval])[0], [stock]).purchaseCost).toBe(108);
+    expect(calculateActualGrossMargin(applyActualUnitDecisions([{ ...strip, quantity: 30 }], [approval])[0], [stock]).purchaseCost).toBeNull();
+  });
+
+  it("auto-costs one documented native pen without interpreting package_quantity=300 as pens", () => {
+    const insulin = { ...item, brand: "Novomix", strength: "100IU", quantity: 1, phif_financial_fields: { total_amount: 86.58 } };
+    const pen = { ...stock, brand_name: "Novomix", strength: "100IU", dosage_unit: "PEN", package_quantity: 300, strips_quantity: null,
+      sale_price: 86.58, cost_price: 78 };
+    expect(calculateActualGrossMargin(insulin, [pen])).toMatchObject({ status: "matched", purchaseCost: 78, grossMargin: 8.58,
+      units: { dispensingUnit: "pen", costUnit: "pen", factor: 1 } });
+    expect(calculateActualGrossMargin({ ...insulin, phif_financial_fields: { total_amount: 25974 } }, [pen]).purchaseCost).toBeNull();
+  });
+
+  it("honors an audited manual decision when current sale prices differ from a historical invoice", () => {
+    const discounted = { ...item, phif_financial_fields: { total_amount: 120 } };
+    const approval = { phif_invoice_item_id: item.id, source_signature: actualUnitSourceSignature(discounted), stock_signature: actualStockUnitSignature(stock),
+      dispensing_unit: "capsule" as const, cost_unit: "capsule" as const, version: 1, is_active: true };
+    const [bound] = applyActualUnitDecisions([discounted], [approval]);
+    expect(calculateActualGrossMargin(bound, [stock])).toMatchObject({ purchaseCost: 108, grossMargin: 12, units: { provenance: "manual" } });
+    expect(calculateActualGrossMargin(applyActualUnitDecisions([bound], [])[0], [stock]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin({ ...item, source_classification: "phif-supplier" }, [stock]).status).toBe("phif_supplier_excluded");
   });
 
   it("keeps sale/cost conflicts, unknown pricing units and competing interpretations for review", () => {
@@ -94,12 +137,12 @@ describe("Actual unit price evidence and explicit manager approval", () => {
 
   it("renders manager preview with financial evidence, item exceptions and no implicit selection", () => {
     const markup = renderToStaticMarkup(<UnitForm data={{ ...preview(), available: true, operations: [] }} scope={{ itemId: item.id }} onSave={async () => {}} />);
-    expect(markup).toContain("PROSTAM LP"); expect(markup).toContain("اعتماد الوحدات المتوافقة");
+    expect(markup).toContain("PROSTAM LP"); expect(markup).toContain("محسوب آليًا");
     expect(markup).toContain("معامل التحويل"); expect(markup).toContain("استثناء هذه الفاتورة");
     expect(markup).not.toContain('checked=""');
     const report = buildManagementAuditReport({ invoices: [{ id: "invoice" }], items: [item], stocks: [stock] });
-    expect(report.actual.summary).toMatchObject({ suggested_unit_items: 1, matched: 1, unmatched: 0 });
-    expect(report.financial.summary.actual_cost_review_items).toBe(1); // Proposal is not approval.
+    expect(report.actual.summary).toMatchObject({ automatic_cost_items: 1, suggested_unit_items: 0, matched: 1, unmatched: 0 });
+    expect(report.financial.summary.actual_cost_review_items).toBe(0);
     const form = readFileSync("src/components/management/ActualUnitEditor.tsx", "utf8");
     expect(form).toContain('["actual_units", access?.subject, scope]');
     expect(form).toContain("access?.allowed && query.data");

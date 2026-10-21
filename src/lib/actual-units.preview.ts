@@ -28,12 +28,13 @@ export function actualUnitPreview(input: { invoices: any[]; items: any[]; stocks
     const match = matchActualInvoiceItemToStock(item, currentStockCandidatesForActual(item, input.stocks));
     if (match.status !== "matched" || actualStockUnitSignature(match.stock) !== actualStockUnitSignature(stock)) continue;
     const decision = decisions.get(item.id);
-    const units = actualCostUnits(item, match.stock);
+    const margin = calculateActualGrossMargin(item, currentStockCandidatesForActual(item, input.stocks));
+    const units = margin.units ?? actualCostUnits(item, match.stock);
     const row = { id: item.id, invoice_id: invoice.id, invoice_number: invoice.invoice_number, date: invoice.dispensing_date,
       quantity: item.quantity, version: decision?.version ?? 0, signature: actualUnitSourceSignature(item),
       stockSignature: actualStockUnitSignature(match.stock), decision: decision ?? null,
-      units, saleValue: invoiceItemValue(item), suggestion: actualUnitSuggestion(item, match),
-      complete: calculateActualGrossMargin(item, [match.stock]).status === "matched" };
+      units, saleValue: invoiceItemValue(item), suggestion: actualUnitSuggestion(item, match, invoiceItemValue(item)),
+      complete: margin.status === "matched" };
     eligible.push({ item, stock: match.stock, row }); rows.push(row);
   }
   rows.sort((a, b) => Number(b.suggestion.status === "high_confidence" && !b.complete) - Number(a.suggestion.status === "high_confidence" && !a.complete));

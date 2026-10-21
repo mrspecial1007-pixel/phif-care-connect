@@ -1,5 +1,5 @@
 import { actualUnit, actualSourceUnit, actualConversionFactor, type ActualUnit } from "./actual-units.helpers";
-import { invoiceItemValue, type ActualMatchResult } from "./phif-stock.helpers";
+import type { ActualMatchResult } from "./phif-stock.helpers";
 
 export const UNIT_SUGGESTION_REASONS: Record<string, string> = {
   identity_review: "هوية الصنف تحتاج مراجعة",
@@ -7,9 +7,10 @@ export const UNIT_SUGGESTION_REASONS: Record<string, string> = {
   invalid_amount: "الكمية أو قيمة الصرف أو السعر غير صالح للتحقق",
   source_conflict: "وحدات المصدر متعارضة",
   price_conflict: "أسعار أو وحدات سجلات المخزون المطابقة متعارضة",
+  stock_price_missing: "سعر البيع أو الشراء غير متاح للتحقق الآلي",
   amount_mismatch: "قيمة الصرف لا توافق سعر البيع الحالي؛ قد يوجد خصم أو اختلاف تاريخي",
   competing_units: "أكثر من تفسير للوحدة يعطي المبلغ نفسه",
-  price_verified: "توافق حسابي وحيد مع وحدة مخزون محددة؛ يحتاج اعتماد المدير",
+  price_verified: "توافق حسابي وحيد مع وحدة مخزون محددة",
 };
 
 // Decimal integers: LYD has three fractional digits. Round the final product
@@ -28,7 +29,7 @@ export function actualMoneyProduct(quantity: unknown, price: unknown, factor = 1
   return rounded <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(rounded) / 1000 : null;
 }
 
-export function actualUnitSuggestion(item: any, match: ActualMatchResult) {
+export function actualUnitSuggestion(item: any, match: ActualMatchResult, invoiceValue: number) {
   const review = (reason: string, extra: any = {}) => ({ status: "review" as const, reason,
     dispensingUnit: null as ActualUnit | null, costUnit: null as ActualUnit | null,
     expectedValue: null as number | null, projectedCost: null as number | null,
@@ -40,10 +41,11 @@ export function actualUnitSuggestion(item: any, match: ActualMatchResult) {
   const priceSignature = JSON.stringify({ quantity: item.quantity, value: item.phif_financial_fields,
     prices: equivalents.map(s => [s.cost_price, s.sale_price, s.dosage_unit, s.package_quantity, s.strips_quantity]) });
   const base = { costUnit, priceSignature, salePrice: Number(stock.sale_price), costPrice: Number(stock.cost_price),
-    invoiceValue: invoiceItemValue(item) };
-  if (equivalents.some(s => actualUnit(s.dosage_unit) !== costUnit || s.cost_price == null || s.sale_price == null
+    invoiceValue };
+  if (equivalents.some(s => s.cost_price == null || s.sale_price == null)) return review("stock_price_missing", base);
+  if (equivalents.some(s => actualUnit(s.dosage_unit) !== costUnit
     || Number(s.cost_price) !== Number(stock.cost_price) || Number(s.sale_price) !== Number(stock.sale_price))) return review("price_conflict", base);
-  const value = decimal(invoiceItemValue(item)), quantity = decimal(item.quantity);
+  const value = decimal(invoiceValue), quantity = decimal(item.quantity);
   if (!value || value.n <= 0n || (value.n * 1000n) % value.d !== 0n || !quantity || quantity.n <= 0n
     || !(Number(stock.cost_price) > 0) || !(Number(stock.sale_price) > 0)) return review("invalid_amount", base);
   const source = actualSourceUnit(item);
@@ -60,5 +62,5 @@ export function actualUnitSuggestion(item: any, match: ActualMatchResult) {
   const proposed = verified[0], projectedCost = actualMoneyProduct(item.quantity, stock.cost_price, proposed.factor);
   if (projectedCost == null) return review("invalid_amount", base);
   return { status: "high_confidence" as const, reason: "price_verified", ...base, ...proposed, projectedCost,
-    projectedProfit: Math.round((invoiceItemValue(item) - projectedCost) * 1000) / 1000 };
+    projectedProfit: Math.round((invoiceValue - projectedCost) * 1000) / 1000 };
 }

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { actualUnitSuggestion } from "./actual-unit-suggestions.helpers";
 import { actualReferenceItem } from "@/lib/actual-stock-links.helpers";
-import { actualCostUnits, actualUnitGroupSignature, ACTUAL_UNIT_REASONS, ACTUAL_UNITS } from "@/lib/actual-units.helpers";
+import { actualUnitGroupSignature, ACTUAL_UNIT_REASONS, ACTUAL_UNITS } from "@/lib/actual-units.helpers";
 import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
 import { treasuryFinanceAccess, treasuryReportForSession } from "@/lib/treasury-financials.helpers";
 import { z } from "zod";
@@ -335,6 +335,7 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
     status: margin.status,
     reason: margin.reason,
     stock: margin.stock,
+    units: margin.units,
     invoice,
   };
 }
@@ -352,7 +353,7 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
     .map((item) => {
       const invoice: any = invoiceById.get(item.phif_invoice_id);
        const profit = profitForItem(item, invoice, stocks);
-      const units = profit.source === "actual" && profit.stock ? actualCostUnits(item, profit.stock) : null;
+      const units = profit.source === "actual" ? profit.units : null;
       return {
         item_id: item.id,
         invoice_id: item.phif_invoice_id,
@@ -367,10 +368,10 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
         brand: item.brand ?? null,
         quantity: item.quantity,
         quick_cost_identity: profit.source === "phif" ? supplierQuickCostIdentity(item) : null,
-        invoice_quantity_unit: profit.source === "phif" ? supplierInvoiceUnit(item).unit : profit.stock ? actualCostUnits(item, profit.stock).dispensingUnit : null,
-        actual_unit_evidence: profit.source === "actual" && profit.stock ? actualCostUnits(item, profit.stock).provenance : null,
-        actual_cost_unit: profit.source === "actual" && profit.stock ? actualCostUnits(item, profit.stock).costUnit : null,
-        actual_conversion_factor: profit.source === "actual" && profit.stock ? actualCostUnits(item, profit.stock).factor : null,
+        invoice_quantity_unit: profit.source === "phif" ? supplierInvoiceUnit(item).unit : units?.dispensingUnit ?? null,
+        actual_unit_evidence: units?.provenance ?? null,
+        actual_cost_unit: units?.costUnit ?? null,
+        actual_conversion_factor: units?.factor ?? null,
         invoice_unit_issue: profit.source === "phif" ? supplierInvoiceUnit(item).issue : null,
         invoice_dosage_form: profit.source === "phif" ? supplierInvoiceForm(item) : item.metadata?.dosage_form ?? item.metadata?.dosageForm ?? item.metadata?.form ?? item.metadata?.pharmaceuticalForm ?? itemUnit(item),
         invoice_package_quantity: item.metadata?.package_quantity ?? item.metadata?.packageQuantity ?? null,
@@ -560,6 +561,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       reason: status === "matched" ? null : reasonCode,
       cost_review_count: 0,
       suggested_unit_count: 0,
+      automatic_cost_count: 0,
       candidates: [],
       item_ids: [],
       manual_match: false,
@@ -575,7 +577,8 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     else row.unit_scopes.push({ signature: scopeKey, item_id: item.id, brand: item.brand, count: 1 });
     if (item.manual_stock_link?.is_active) row.manual_match = true;
     if (costNeedsReview) row.cost_review_count += 1;
-    if (costNeedsReview && actualUnitSuggestion(item, match).status === "high_confidence") row.suggested_unit_count += 1;
+    if (costNeedsReview && actualUnitSuggestion(item, match, invoiceItemValue(item)).status === "high_confidence") row.suggested_unit_count += 1;
+    if (profit.status === "matched" && profit.reason === "verified_stock_sale_price") row.automatic_cost_count += 1;
     if (item.actual_unit_decision?.is_active) row.documented_unit_count += 1;
     if (costNeedsReview && !row.cost_reasons.includes(profit.reason)) row.cost_reasons.push(profit.reason);
     row.invoice_ids.add(item.phif_invoice_id);
@@ -610,6 +613,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     match_ratio: actualItems.length ? actualItems.filter((row) => row.status === "matched").length / actualItems.length : 0,
     cost_review: actualItems.filter((row) => row.status === "matched" && row.cost_review_count > 0).length,
     suggested_unit_items: actualItems.reduce((sum, row) => sum + row.suggested_unit_count, 0),
+    automatic_cost_items: actualItems.reduce((sum, row) => sum + row.automatic_cost_count, 0),
   };
 
   const invoices = [...financialInvoices.values()].map((invoice) => {
@@ -640,6 +644,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
         .sort((a, b) => b.suggested_unit_count - a.suggested_unit_count || b.cost_review_count - a.cost_review_count),
       manual_matches: actualItems.filter(row => row.manual_match),
       documented_units: actualItems.filter(row => row.documented_unit_count > 0),
+      automatic_units: actualItems.filter(row => row.automatic_cost_count > 0),
     },
     financial: {
       summary: financialSummary,
@@ -906,6 +911,7 @@ export const getActualProfitReport = createServerFn({ method: "POST" })
 
     return {
       total_actual_items: details.length,
+      price_basis: "current_stock",
       total_actual_value: totalValue,
       matched_item_count: matched.length,
       review_item_count: details.length - matched.length,

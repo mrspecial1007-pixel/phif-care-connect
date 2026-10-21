@@ -1,5 +1,6 @@
 import type { ActualStockLink } from "./actual-stock-links.helpers";
 import { actualCostUnits, type ActualUnitDecision } from "./actual-units.helpers";
+import { actualUnitSuggestion, actualMoneyProduct } from "./actual-unit-suggestions.helpers";
 
 export type StockQuantityBreakdown = {
   originalQuantity: number | null;
@@ -54,6 +55,7 @@ export type ActualProfitResult = {
   grossMargin: number | null;
   stock: StockLike | null;
   reason: string;
+  units?: ReturnType<typeof actualCostUnits>;
 };
 
 function toNumber(value: unknown): number | null {
@@ -475,6 +477,24 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
   return { status: "needs_match_review", reason: "no_match" };
 }
 
+export function actualFinancialUnits(item: InvoiceItemLike, match: Extract<ActualMatchResult, { status: "matched" }>) {
+  const documented = actualCostUnits(item, match.stock);
+  if (!documented.issue || !["missing_dispensing_unit", "missing_cost_unit"].includes(documented.issue)) return documented;
+  if (!item.brand?.trim() || !item.strength?.trim() || !match.stock.brand_name?.trim() || !match.stock.strength?.trim()) {
+    return { ...documented, issue: "unsafe_identity" };
+  }
+  const evidence = actualUnitSuggestion(item, match, invoiceItemValue(item));
+  if (evidence.reason === "stock_price_missing") return documented;
+  if (evidence.status !== "high_confidence") return { ...documented, issue: evidence.reason };
+  // An amount-derived strip/box interpretation is still only a proposal. Without
+  // a recorded quantity unit, auto-costing is limited to the stock's native unit.
+  if (!documented.dispensingUnit && (evidence.factor !== 1 || evidence.dispensingUnit !== evidence.costUnit)) {
+    return { ...documented, issue: "conversion_requires_confirmation" };
+  }
+  return { dispensingUnit: evidence.dispensingUnit, costUnit: evidence.costUnit, factor: evidence.factor,
+    issue: null, provenance: "stock_price_check", actor: null, at: null };
+}
+
 export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: StockLike[]): ActualProfitResult {
   const invoiceValue = invoiceItemValue(item);
   if (item.source_classification === "phif-supplier") {
@@ -502,7 +522,7 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
 
   const quantity = toNumber(item.quantity);
   const costPrice = toNumber(match.stock.cost_price);
-  const units = actualCostUnits(item, match.stock);
+  const units = actualFinancialUnits(item, match);
   if (quantity === null || quantity <= 0 || costPrice === null || costPrice < 0 || invoiceValue <= 0 || units.issue || units.factor === null) {
     return {
       status: "pricing_unit_unverified",
@@ -511,17 +531,23 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
       grossMargin: null,
       stock: match.stock,
       reason: units.issue ?? "invalid_cost_or_quantity",
+      units,
     };
   }
 
-  const purchaseCost = quantity * units.factor * costPrice;
+  const purchaseCost = units.provenance === "stock_price_check"
+    ? actualMoneyProduct(item.quantity, match.stock.cost_price, units.factor)
+    : quantity * units.factor * costPrice;
+  if (purchaseCost === null) return { status: "pricing_unit_unverified", invoiceValue, purchaseCost: null,
+    grossMargin: null, stock: match.stock, reason: "invalid_cost_or_quantity", units };
   return {
     status: "matched",
     invoiceValue,
     purchaseCost,
-    grossMargin: invoiceValue - purchaseCost,
+    grossMargin: units.provenance === "stock_price_check" ? Math.round((invoiceValue - purchaseCost) * 1000) / 1000 : invoiceValue - purchaseCost,
     stock: match.stock,
-    reason: "verified_unit_price",
+    reason: units.provenance === "stock_price_check" ? "verified_stock_sale_price" : "verified_unit_price",
+    units,
   };
 }
 

@@ -84,6 +84,14 @@ export const ACTUAL_UNIT_REASONS: Record<string, string> = {
   stale_unit_decision: "تغير الصنف أو بيانات العبوة؛ أعد مراجعة التوثيق",
   undocumented_conversion: "تحويل الوحدة غير موثق أو بيانات العبوة غير كافية",
   invalid_cost_or_quantity: "سعر التكلفة أو الكمية غير صالح للحساب",
+  pricing_unit_unknown: "وحدة سعر المخزون غير موثقة",
+  invalid_amount: "الكمية أو قيمة الصرف أو السعر غير صالح للتحقق",
+  source_conflict: "وحدات المصدر متعارضة",
+  price_conflict: "أسعار سجلات المخزون المطابقة متعارضة",
+  amount_mismatch: "قيمة الصرف تختلف عن سعر البيع الحالي؛ يلزم توثيق الوحدة",
+  competing_units: "توجد تفسيرات متعددة لوحدة الكمية",
+  conversion_requires_confirmation: "تحويل العلبة أو الشريط يحتاج وحدة صرف موثقة",
+  unsafe_identity: "بيانات الاسم التجاري أو التركيز غير كافية للتحقق الآلي",
 };
 
 export function actualCostUnitAllowed(stock: any, unit: ActualUnit) {

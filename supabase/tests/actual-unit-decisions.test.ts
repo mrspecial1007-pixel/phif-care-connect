@@ -188,7 +188,7 @@ integration("Actual unit migration in isolated PostgreSQL", () => {
       await save([await entry(130,140,1)], { unit: "strip", cost: "capsule" });
       expect(calculateActualGrossMargin((await reloaded())[0], stocks).purchaseCost).toBe(1620);
       await save([await entry(130,140,2)], { unit: "capsule", cost: "capsule", revoke: true });
-      expect(calculateActualGrossMargin((await reloaded())[0], stocks).purchaseCost).toBeNull();
+      expect(calculateActualGrossMargin((await reloaded())[0], stocks).purchaseCost).toBe(108); // Revocation returns to verified automatic rules.
       expect(JSON.stringify((await db.query("SELECT * FROM public.phif_invoice_items WHERE id IN ($1,$2) ORDER BY id", [id(130),id(131)])).rows)).toBe(before);
       expect(JSON.stringify((await db.query("SELECT * FROM public.phif_stock_items WHERE id=$1", [id(140)])).rows)).toBe(stockBefore);
       expect(await count("user_operation_log")).toBe(3);

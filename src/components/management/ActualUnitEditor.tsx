@@ -71,7 +71,7 @@ export function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSav
       <p className="mt-1 text-xs text-muted-foreground">سعر المخزون المتاح حاليًا، وليس سعرًا تاريخيًا مثبتًا وقت الصرف. اعتماد وحدة السعر أدناه تأكيد منك لمعناها الفعلي.</p>
     </div>
     <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">التحقق يقرب الناتج النهائي إلى 0.001 د.ل فقط. توافق المبلغ اقتراح وليس إثباتًا تاريخيًا أو اعتمادًا تلقائيًا للوحدة.</p>
+      <p className="text-xs text-muted-foreground">التحقق يقرب الناتج النهائي إلى 0.001 د.ل فقط. الحساب التلقائي يتطلب وحدة مخزون محددة وتوافقًا ماليًا وحيدًا. تحويلات الكمية غير الموثقة تبقى للمراجعة.</p>
       {[...new Set<ActualUnit>(data.rows.filter((r: any) => !r.complete && r.suggestion.status === "high_confidence").map((r: any) => r.suggestion.dispensingUnit))].map(unit => {
         const compatible = data.rows.filter((r: any) => !r.complete && r.suggestion.status === "high_confidence" && r.suggestion.dispensingUnit === unit);
         return <Button key={unit} variant="outline" className="h-auto whitespace-normal py-2" onClick={() => {
@@ -103,7 +103,7 @@ export function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSav
             setExcluded(previous => { const next = new Set(previous); e.target.checked ? next.delete(row.id) : next.add(row.id); return next; }); setConfirmed(false);
           }} />
           <span className="min-w-0">فاتورة {row.invoice_number} · {row.date}<br />الكمية الأصلية: {row.quantity}
-            <span className="block text-xs text-muted-foreground">{row.units.provenance === "manual" ? "موثق يدويًا" : row.units.provenance === "source" ? "وحدة مسجلة من المصدر" : "وحدة غير موثقة"}
+            <span className="block text-xs text-muted-foreground">{row.units.provenance === "manual" ? "موثق يدويًا" : row.units.provenance === "stock_price_check" ? "محسوب آليًا بوحدة المخزون والتحقق المالي" : row.units.provenance === "source" ? "وحدة مسجلة من المصدر" : "وحدة غير موثقة"}
               {row.units.dispensingUnit && ` · ${ACTUAL_UNITS[row.units.dispensingUnit as ActualUnit]}`}
               {row.units.issue && ` · ${ACTUAL_UNIT_REASONS[row.units.issue] ?? "التكلفة تحتاج مراجعة"}`}</span>
             {row.decision && <span className="block text-xs text-muted-foreground">{row.decision.is_active ? "آخر اعتماد" : "ملغى"}: {row.decision.updated_actor} · {new Date(row.decision.updated_at).toLocaleString("ar-LY")}</span>}
