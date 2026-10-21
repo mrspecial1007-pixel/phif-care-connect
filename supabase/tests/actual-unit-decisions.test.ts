@@ -2,8 +2,9 @@
 // Set PHIF_TEST_PGLITE_MODULE to an installed @electric-sql/pglite/dist/index.js.
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { actualUnitSourceSignature, actualStockUnitSignature, actualCostUnits } from "../../src/lib/actual-units.helpers";
-import { actualImportedSnapshot, actualPricingSnapshot } from "../../src/lib/actual-units.preview";
+import { actualUnitSourceSignature, actualStockUnitSignature, actualCostUnits, applyActualUnitDecisions } from "../../src/lib/actual-units.helpers";
+import { actualImportedSnapshot, actualPricingSnapshot, actualUnitPreview, actualDecisionInput } from "../../src/lib/actual-units.preview";
+import { calculateActualGrossMargin } from "../../src/lib/phif-stock.helpers";
 
 const modulePath = process.env.PHIF_TEST_PGLITE_MODULE;
 const integration = modulePath ? describe : describe.skip;
@@ -45,6 +46,7 @@ integration("Actual unit migration in isolated PostgreSQL", () => {
         ('${id(42)}','${id(1)}','vial-source','vial-product','TestVial','1MG','VIAL',1,NULL,12,true),
         ('${id(43)}','${id(2)}','other-source','tablet-product','Aspirem EC','75MG','TABS',56,4,0.563,true);
       ALTER TABLE public.phif_invoice_items ADD COLUMN phif_financial_fields jsonb NOT NULL DEFAULT '{}';
+      ALTER TABLE public.phif_stock_items ADD COLUMN sale_price numeric;
     `);
     await db.exec(readFileSync("supabase/migrations/20261020020000_add_actual_unit_decisions.sql", "utf8"));
   }, 60000);
@@ -159,5 +161,41 @@ integration("Actual unit migration in isolated PostgreSQL", () => {
       await expect(save([documented], { unit: "box" })).rejects.toThrow("Conflicting source quantity unit");
       expect((await save([documented])).rows[0].affected).toBe(1);
     } finally { await db.query("UPDATE public.phif_invoice_items SET phif_financial_fields='{}' WHERE id=$1", [id(30)]); }
+  });
+
+  it("runs suggested subset approval through the real RPC, reloads, edits and revokes without altering imports", async () => {
+    await db.query(`INSERT INTO public.phif_stock_items(id,pharmacy_id,source_stock_id,brand_product_id,brand_name,strength,
+      dosage_unit,package_quantity,strips_quantity,cost_price,sale_price,is_current)
+      VALUES ($1,$2,'prostam-source','prostam-product','PROSTAM LP','400 MCG','CAPS',30,2,3.6,4.32,true)`, [id(140), id(1)]);
+    await db.query(`INSERT INTO public.phif_invoice_items(id,phif_invoice_id,brand,strength,quantity,source_classification,phif_financial_fields)
+      VALUES ($1,$3,'PROSTAM LP','400 MCG',30,'actual-supplier','{"total_amount":129.6}'),
+      ($2,$3,'PROSTAM LP','400 MCG',30,'actual-supplier','{"total_amount":120}')`, [id(130), id(131), id(20)]);
+    try {
+      const items = (await db.query("SELECT * FROM public.phif_invoice_items WHERE id IN ($1,$2) ORDER BY id", [id(130), id(131)])).rows;
+      const stocks = (await db.query("SELECT * FROM public.phif_stock_items WHERE id=$1", [id(140)])).rows;
+      const before = JSON.stringify(items), stockBefore = JSON.stringify(stocks);
+      const preview = actualUnitPreview({ invoices: [{ id: id(20) }], items, stocks, decisions: [], scope: { itemId: id(130) } });
+      const compatible = preview.rows.filter(row => row.suggestion.status === "high_confidence");
+      expect(compatible).toHaveLength(1);
+      const selected = actualDecisionInput(preview, { rows: compatible.map(row => ({ ...row, priceSignature: row.suggestion.priceSignature })),
+        dispensingUnit: "capsule", costUnit: "capsule", revoke: false, suggestedOnly: true });
+      expect((await save([await entry(130,140)], { unit: "capsule", cost: "capsule" })).rows[0].affected).toBe(selected.length);
+      const reloaded = async () => applyActualUnitDecisions(items, (await db.query("SELECT * FROM public.phif_actual_unit_decisions")).rows);
+      const [bound, excluded] = await reloaded();
+      expect(calculateActualGrossMargin(bound, stocks).purchaseCost).toBe(108);
+      expect(calculateActualGrossMargin(bound, stocks).grossMargin).toBeCloseTo(21.6);
+      expect(calculateActualGrossMargin(excluded, stocks).purchaseCost).toBeNull();
+      await save([await entry(130,140,1)], { unit: "strip", cost: "capsule" });
+      expect(calculateActualGrossMargin((await reloaded())[0], stocks).purchaseCost).toBe(1620);
+      await save([await entry(130,140,2)], { unit: "capsule", cost: "capsule", revoke: true });
+      expect(calculateActualGrossMargin((await reloaded())[0], stocks).purchaseCost).toBeNull();
+      expect(JSON.stringify((await db.query("SELECT * FROM public.phif_invoice_items WHERE id IN ($1,$2) ORDER BY id", [id(130),id(131)])).rows)).toBe(before);
+      expect(JSON.stringify((await db.query("SELECT * FROM public.phif_stock_items WHERE id=$1", [id(140)])).rows)).toBe(stockBefore);
+      expect(await count("user_operation_log")).toBe(3);
+    } finally {
+      await db.query("DELETE FROM public.phif_actual_unit_decisions WHERE phif_invoice_item_id IN ($1,$2)", [id(130),id(131)]);
+      await db.query("DELETE FROM public.phif_invoice_items WHERE id IN ($1,$2)", [id(130),id(131)]);
+      await db.query("DELETE FROM public.phif_stock_items WHERE id=$1", [id(140)]);
+    }
   });
 });

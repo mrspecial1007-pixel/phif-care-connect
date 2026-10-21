@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { getManagementAuditReport } from "@/lib/management.functions";
 import { ActualStockLinks } from "@/components/management/ActualStockLinkEditor";
 import { ActualUnitEditor } from "@/components/management/ActualUnitEditor";
+import { ActualUnitAccessNotice } from "@/components/management/ActualUnitAccessNotice";
 import { ACTUAL_UNIT_REASONS } from "@/lib/actual-units.helpers";
 
 export const Route = createFileRoute("/management/audit")({
@@ -100,6 +101,7 @@ function ActualIssueCard({ item, onLink, onUnits }: { item: any; onLink?: (ids: 
         <StatusBadge status={item.status} />
       </div>
       {item.manual_match && <span className="text-xs font-semibold text-teal-800">مطابقة يدوية</span>}
+      {item.suggested_unit_count > 0 && <p className="text-xs font-semibold text-teal-800">{item.suggested_unit_count} بند بوحدة مقترحة بثقة عالية — بانتظار الاعتماد</p>}
       {onLink && <Button variant="outline" size="sm" onClick={() => onLink(item.item_ids)}><Link2 className="size-4" />ربط بصنف من المخزون</Button>}
       {onUnits && item.status === "matched" && item.unit_scopes.map((scope: any) => <Button key={scope.item_id} variant="outline" size="sm" className="h-auto whitespace-normal py-2" onClick={() => onUnits(scope.item_id)}>
         توثيق الوحدات · {scope.brand} · {scope.count} بند متوافق
@@ -168,6 +170,9 @@ function ManagementAuditPage() {
     queryKey: ["management_audit", nonce],
     queryFn: () => auditFn({ data: { refreshNonce: nonce } }),
     retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const actual = data?.actual;
@@ -249,10 +254,12 @@ function ManagementAuditPage() {
           )}
           {section === "cost" && (
             <div className="space-y-3">
+              <ActualUnitAccessNotice access={data.unit_access} />
+              <p className="text-sm text-teal-900">اقتراحات متوافقة حسابيًا: {actual.summary.suggested_unit_items} بند. لا تدخل الأرباح قبل اعتماد وحداتها.</p>
               {actual.cost_reviews.length === 0
                 ? <Card className="p-4 text-sm text-emerald-800">لا توجد أصناف Actual مطابقة تحتاج مراجعة تكلفة.</Card>
-                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} onUnits={data.can_manage_units ? setUnitItem : undefined} />)}
-              {data.can_manage_units && actual.documented_units.length > 0 && <>
+                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} onUnits={setUnitItem} />)}
+              {actual.documented_units.length > 0 && <>
                 <h2 className="font-semibold">مراجعة الوحدات المعتمدة وتعديلها أو إلغاؤها</h2>
                 {actual.documented_units.map((item: any) => <ActualIssueCard key={`units-${item.identity_key}`} item={item} onUnits={setUnitItem} />)}
               </>}
@@ -261,7 +268,7 @@ function ManagementAuditPage() {
         </>
       )}
       {linkItems && data?.can_manage_links && <ActualStockLinks itemIds={linkItems} onClose={() => setLinkItems(null)} />}
-      {unitItem && data?.can_manage_units && <ActualUnitEditor itemId={unitItem} onClose={() => setUnitItem(null)} />}
+      {unitItem && data && <ActualUnitEditor itemId={unitItem} access={data.unit_access} onClose={() => setUnitItem(null)} />}
     </div>
   );
 }

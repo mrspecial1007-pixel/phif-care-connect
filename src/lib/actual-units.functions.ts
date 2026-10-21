@@ -41,8 +41,8 @@ export const getActualUnitEditor = createServerFn({ method: "POST" })
 
 export const saveActualUnits = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ scope: scopeSchema, confirmed: z.literal(true), revoke: z.boolean(),
-    dispensingUnit: units, costUnit: units,
-    rows: z.array(z.object({ id: z.string().uuid(), version: z.number().int().min(0), signature: z.string(), stockSignature: z.string() })).min(1).max(1000),
+    dispensingUnit: units, costUnit: units, suggestedOnly: z.boolean().default(false),
+    rows: z.array(z.object({ id: z.string().uuid(), version: z.number().int().min(0), signature: z.string(), stockSignature: z.string(), priceSignature: z.string().optional() })).min(1).max(1000),
   }).parse(input))
   .handler(async ({ data }) => {
     const preview = await previewForManager(data.scope);
@@ -64,6 +64,8 @@ export const saveActualUnits = createServerFn({ method: "POST" })
     const { data: affected, error } = await preview.db.rpc("set_phif_actual_units", { p_pharmacy_id: preview.pharmacyId,
       p_user_id: preview.actorId, p_actor: preview.actor, p_rows: payload,
       p_dispensing_unit: data.dispensingUnit, p_cost_unit: data.costUnit, p_revoke: data.revoke });
-    if (error) throw new Error("لم يُحفظ القرار. قد تكون البيانات تغيرت؛ حدّث المعاينة وحاول مجددًا.");
+    if (error) throw new Error(error.code === "PGRST202" ? "دالة اعتماد الوحدات غير متاحة في الإصدار المنشور؛ تحقق من تطبيق migration وتحديث مخطط API"
+      : error.code === "42501" ? "رفض الخادم صلاحية الاعتماد؛ تحقق من حساب المدير وصلاحية RPC للخادم فقط"
+      : "لم يُحفظ القرار. قد تكون البيانات تغيرت؛ حدّث المعاينة وحاول مجددًا.");
     return { saved: true, affected: Number(affected) };
   });

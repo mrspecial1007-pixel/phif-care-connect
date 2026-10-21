@@ -7,26 +7,29 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getActualUnitEditor, saveActualUnits } from "@/lib/actual-units.functions";
 import { ACTUAL_UNITS, ACTUAL_UNIT_REASONS, actualConversionFactor, type ActualUnit } from "@/lib/actual-units.helpers";
+import { UNIT_SUGGESTION_REASONS } from "@/lib/actual-unit-suggestions.helpers";
+import { ActualUnitAccessNotice } from "./ActualUnitAccessNotice";
 
 const queryKeys = ["actual_units", "management_audit", "treasury_report", "management_profit_analysis", "management_monthly_report",
   "report_item_tracking", "report_item_search", "reference_items", "reference_item"];
 const money = (value: number) => value.toLocaleString("ar-LY", { maximumFractionDigits: 3 });
 
-export function ActualUnitEditor({ itemId, onClose }: { itemId: string; onClose: () => void }) {
+export function ActualUnitEditor({ itemId, onClose, access }: { itemId: string; onClose: () => void; access?: { allowed: boolean; subject?: string; code: string; message: string } }) {
   const read = useServerFn(getActualUnitEditor), save = useServerFn(saveActualUnits), client = useQueryClient();
   const [from, setFrom] = useState(""), [to, setTo] = useState("");
   const scope = useMemo(() => ({ itemId, dateFrom: from || undefined, dateTo: to || undefined }), [itemId, from, to]);
-  const query = useQuery({ queryKey: ["actual_units", scope], queryFn: () => read({ data: scope }), retry: false });
+  const query = useQuery({ queryKey: ["actual_units", access?.subject, scope], queryFn: () => read({ data: scope }), retry: false, enabled: access?.allowed === true, staleTime: 0 });
   return <Sheet open onOpenChange={open => !open && onClose()}>
     <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto sm:mx-auto sm:max-w-2xl" dir="rtl">
       <SheetHeader className="text-right"><SheetTitle>توثيق وحدات صرف Actual</SheetTitle></SheetHeader>
+      <ActualUnitAccessNotice access={access} />
       <div className="my-3 grid grid-cols-2 gap-2">
         <label className="text-xs">من تاريخ<Input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
         <label className="text-xs">إلى تاريخ<Input type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
       </div>
       {query.isFetching && <p className="text-sm">جارٍ تحديث المعاينة...</p>}
       {query.error && <p role="alert" className="text-sm text-destructive">{query.error.message}</p>}
-      {query.data && !query.isFetching && <UnitForm key={query.dataUpdatedAt} data={query.data} scope={scope}
+      {access?.allowed && query.data && !query.isFetching && <UnitForm key={query.dataUpdatedAt} data={query.data} scope={scope}
         onSave={async input => {
           const result = await save({ data: input });
           await Promise.all(queryKeys.map(key => client.invalidateQueries({ queryKey: [key] })));
@@ -36,11 +39,12 @@ export function ActualUnitEditor({ itemId, onClose }: { itemId: string; onClose:
   </Sheet>;
 }
 
-function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSave: (input: any) => Promise<void> }) {
+export function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSave: (input: any) => Promise<void> }) {
   const first = data.rows.find((row: any) => row.decision?.is_active)?.decision;
   const [dispensingUnit, setDispensing] = useState<ActualUnit | "">(first?.dispensing_unit ?? "");
   const [costUnit, setCost] = useState<ActualUnit | "">(first?.cost_unit ?? "");
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [excluded, setExcluded] = useState<Set<string>>(new Set(data.rows.map((r: any) => r.id)));
+  const [suggestedOnly, setSuggestedOnly] = useState(false);
   const [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
@@ -52,8 +56,8 @@ function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSave: (inp
     if (lock.current || !confirmed || !rows.length || rows.length > 1000) return;
     lock.current = true; setBusy(true); setError("");
     try {
-      await onSave({ scope, confirmed: true, revoke, dispensingUnit, costUnit,
-        rows: rows.map(({ id, version, signature, stockSignature }: any) => ({ id, version, signature, stockSignature })) });
+      await onSave({ scope, confirmed: true, revoke, dispensingUnit, costUnit, suggestedOnly: suggestedOnly && !revoke,
+        rows: rows.map(({ id, version, signature, stockSignature, suggestion }: any) => ({ id, version, signature, stockSignature, priceSignature: suggestion.priceSignature })) });
     } catch (err) { setError((err as Error).message); }
     finally { lock.current = false; setBusy(false); }
   }
@@ -63,12 +67,24 @@ function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSave: (inp
     <div className="rounded-md border p-3 text-sm">
       <h3 className="break-words font-bold">{stock.brand_name} · {stock.strength}</h3>
       <p>الشكل: {stock.dosage_unit || "غير موثق"} · العبوة: {stock.package_quantity ?? "—"} · أشرطة/علبة: {stock.strips_quantity ?? "—"}</p>
-      <p>سعر المخزون: {stock.cost_price == null ? "غير متاح" : `${money(Number(stock.cost_price))} د.ل`} · {stock.dosage_unit}</p>
+      <p>شراء الوحدة: {stock.cost_price == null ? "غير متاح" : `${money(Number(stock.cost_price))} د.ل`} · بيع الوحدة: {stock.sale_price == null ? "غير متاح" : `${money(Number(stock.sale_price))} د.ل`} · {stock.dosage_unit}</p>
       <p className="mt-1 text-xs text-muted-foreground">سعر المخزون المتاح حاليًا، وليس سعرًا تاريخيًا مثبتًا وقت الصرف. اعتماد وحدة السعر أدناه تأكيد منك لمعناها الفعلي.</p>
     </div>
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">التحقق يقرب الناتج النهائي إلى 0.001 د.ل فقط. توافق المبلغ اقتراح وليس إثباتًا تاريخيًا أو اعتمادًا تلقائيًا للوحدة.</p>
+      {[...new Set<ActualUnit>(data.rows.filter((r: any) => !r.complete && r.suggestion.status === "high_confidence").map((r: any) => r.suggestion.dispensingUnit))].map(unit => {
+        const compatible = data.rows.filter((r: any) => !r.complete && r.suggestion.status === "high_confidence" && r.suggestion.dispensingUnit === unit);
+        return <Button key={unit} variant="outline" className="h-auto whitespace-normal py-2" onClick={() => {
+          setDispensing(unit); setCost(compatible[0].suggestion.costUnit);
+          setExcluded(new Set(data.rows.filter((r: any) => !compatible.includes(r)).map((r: any) => r.id)));
+          setSuggestedOnly(true); setConfirmed(false);
+        }}>اعتماد الوحدات المتوافقة · {ACTUAL_UNITS[unit]} ({compatible.length})</Button>;
+      })}
+      {suggestedOnly && <p className="text-xs text-teal-800">تم تحديد البنود المتوافقة فقط؛ راجع الحساب ثم أكد الاعتماد أدناه.</p>}
+    </div>
     <div className="grid grid-cols-2 gap-2 text-sm">
-      <UnitSelect label="وحدة الكمية المصروفة" value={dispensingUnit} onChange={value => { setDispensing(value); setConfirmed(false); }} />
-      <UnitSelect label="وحدة سعر التكلفة" value={costUnit} onChange={value => { setCost(value); setConfirmed(false); }} />
+      <UnitSelect label="وحدة الكمية المصروفة" value={dispensingUnit} onChange={value => { setDispensing(value); setSuggestedOnly(false); setConfirmed(false); }} />
+      <UnitSelect label="وحدة سعر التكلفة" value={costUnit} onChange={value => { setCost(value); setSuggestedOnly(false); setConfirmed(false); }} />
     </div>
     <div className="rounded-md bg-teal-50 p-3 text-sm text-teal-950">
       <strong>{rows.length} بند · {invoices} فاتورة</strong>
@@ -77,7 +93,7 @@ function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSave: (inp
       {factor != null && Number(stock.cost_price) > 0 && <p>معاينة التكلفة وفق السعر الحالي: {money(quantity * factor * Number(stock.cost_price))} د.ل</p>}
     </div>
     <div className="flex flex-wrap gap-2">
-      <Button variant="outline" size="sm" onClick={() => { setExcluded(new Set()); setConfirmed(false); }}>تحديد الكل</Button>
+      <Button variant="outline" size="sm" onClick={() => { setExcluded(new Set()); setSuggestedOnly(false); setConfirmed(false); }}>تحديد الكل للمراجعة اليدوية</Button>
       <Button variant="outline" size="sm" onClick={() => { setExcluded(new Set(data.rows.map((r: any) => r.id))); setConfirmed(false); }}>إلغاء التحديد</Button>
     </div>
     <div className="max-h-64 space-y-2 overflow-y-auto">
@@ -93,6 +109,15 @@ function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSave: (inp
             {row.decision && <span className="block text-xs text-muted-foreground">{row.decision.is_active ? "آخر اعتماد" : "ملغى"}: {row.decision.updated_actor} · {new Date(row.decision.updated_at).toLocaleString("ar-LY")}</span>}
           </span>
         </label>
+        <div className={`mt-2 rounded-md p-2 text-xs ${row.suggestion.status === "high_confidence" ? "bg-teal-50 text-teal-950" : "bg-amber-50 text-amber-950"}`}>
+          <p>قيمة الصرف: {money(row.saleValue)} د.ل</p>
+          <p>{UNIT_SUGGESTION_REASONS[row.suggestion.reason]}</p>
+          {row.suggestion.status === "high_confidence" && <>
+            <p>الوحدة المقترحة: {ACTUAL_UNITS[row.suggestion.dispensingUnit as ActualUnit]} · معامل التحويل: {row.suggestion.factor}</p>
+            <p dir="ltr">{row.quantity} × {row.suggestion.factor} × {money(row.suggestion.salePrice)} = {money(row.suggestion.expectedValue)} LYD</p>
+            <p>بعد الاعتماد: تكلفة {money(row.suggestion.projectedCost)} · مكسب {money(row.suggestion.projectedProfit)} د.ل وفق السعر الحالي</p>
+          </>}
+        </div>
         <button type="button" className="mt-1 text-xs text-teal-800 underline" onClick={() => {
           setExcluded(previous => new Set([...previous, ...data.rows.filter((r: any) => r.invoice_id === row.invoice_id).map((r: any) => r.id)])); setConfirmed(false);
         }}>استثناء هذه الفاتورة</button>

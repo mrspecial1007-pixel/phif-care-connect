@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { actualUnitSuggestion } from "./actual-unit-suggestions.helpers";
 import { actualReferenceItem } from "@/lib/actual-stock-links.helpers";
 import { actualCostUnits, actualUnitGroupSignature, ACTUAL_UNIT_REASONS, ACTUAL_UNITS } from "@/lib/actual-units.helpers";
 import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
@@ -558,6 +559,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       status,
       reason: status === "matched" ? null : reasonCode,
       cost_review_count: 0,
+      suggested_unit_count: 0,
       candidates: [],
       item_ids: [],
       manual_match: false,
@@ -573,6 +575,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     else row.unit_scopes.push({ signature: scopeKey, item_id: item.id, brand: item.brand, count: 1 });
     if (item.manual_stock_link?.is_active) row.manual_match = true;
     if (costNeedsReview) row.cost_review_count += 1;
+    if (costNeedsReview && actualUnitSuggestion(item, match).status === "high_confidence") row.suggested_unit_count += 1;
     if (item.actual_unit_decision?.is_active) row.documented_unit_count += 1;
     if (costNeedsReview && !row.cost_reasons.includes(profit.reason)) row.cost_reasons.push(profit.reason);
     row.invoice_ids.add(item.phif_invoice_id);
@@ -606,6 +609,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     ambiguous: actualItems.filter((row) => row.status === "ambiguous").length,
     match_ratio: actualItems.length ? actualItems.filter((row) => row.status === "matched").length / actualItems.length : 0,
     cost_review: actualItems.filter((row) => row.status === "matched" && row.cost_review_count > 0).length,
+    suggested_unit_items: actualItems.reduce((sum, row) => sum + row.suggested_unit_count, 0),
   };
 
   const invoices = [...financialInvoices.values()].map((invoice) => {
@@ -633,7 +637,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
         .sort((a, b) => b.occurrence_count - a.occurrence_count),
       cost_reviews: actualItems
         .filter((row) => row.status === "matched" && row.cost_review_count > 0)
-        .sort((a, b) => b.cost_review_count - a.cost_review_count),
+        .sort((a, b) => b.suggested_unit_count - a.suggested_unit_count || b.cost_review_count - a.cost_review_count),
       manual_matches: actualItems.filter(row => row.manual_match),
       documented_units: actualItems.filter(row => row.documented_unit_count > 0),
     },
@@ -994,8 +998,10 @@ export const getManagementAuditReport = createServerFn({ method: "POST" })
       const dataset = await loadAllReportDataset(supabaseAdmin, pharmacy_id);
       const stocks = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
       const { isTreasuryManager } = await import("./treasury-financials.helpers");
+      const { actualUnitAccess } = await import("./actual-units.auth");
+      const unit_access = await actualUnitAccess(supabaseAdmin, context, process.env.SESSION_SECRET);
       return { ...buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks }), can_manage_links: isTreasuryManager(context),
-        can_manage_units: context.session.data.user_role === "admin" && Boolean(context.session.data.user_id) };
+        can_manage_units: unit_access.allowed, unit_access };
     } catch (error: any) {
       console.error("management audit failed", {
         name: error?.name ?? null,

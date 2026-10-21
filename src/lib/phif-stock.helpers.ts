@@ -44,7 +44,7 @@ type InvoiceItemLike = {
 };
 
 export type ActualMatchResult =
-  | { status: "matched"; stock: StockLike; reason: string }
+  | { status: "matched"; stock: StockLike; reason: string; equivalentStocks?: StockLike[] }
   | { status: "needs_match_review"; reason: "no_match" | "ambiguous_match" | "not_actual" | "unknown_source" | "unsafe_identity" | "strength_mismatch" | "unit_mismatch" | "supplier_mismatch" | "manual_target_unavailable"; candidates?: StockLike[] };
 
 export type ActualProfitResult = {
@@ -394,7 +394,7 @@ function manualActualMatch(item: InvoiceItemLike, candidates: StockLike[]): Actu
   if (!matches.length) return { status: "needs_match_review", reason: "manual_target_unavailable" };
   // Identity is confirmed, but competing current costs are never chosen arbitrarily.
   const prices = new Set(matches.map(stock => toNumber(stock.cost_price)));
-  return { status: "matched", reason: "manual_link", stock: { ...matches[0], cost_price: prices.size === 1 ? matches[0].cost_price : null } };
+  return { status: "matched", reason: "manual_link", equivalentStocks: matches, stock: { ...matches[0], cost_price: prices.size === 1 ? matches[0].cost_price : null } };
 }
 
 export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates: StockLike[]): ActualMatchResult {
@@ -467,7 +467,7 @@ export function matchActualInvoiceItemToStock(item: InvoiceItemLike, candidates:
 
   // Repeated immutable snapshots of the same stock product are not competing products.
   const distinct = matches.filter((stock, index) => !matches.slice(0, index).some((other) => sameStockIdentity(stock, other)));
-  if (distinct.length === 1) return { status: "matched", stock: matches[0], reason: "commercial_identity" };
+  if (distinct.length === 1) return { status: "matched", stock: matches[0], equivalentStocks: matches, reason: "commercial_identity" };
   if (distinct.length > 1) return { status: "needs_match_review", reason: "ambiguous_match", candidates: distinct };
   if (sawUnitMismatch) return { status: "needs_match_review", reason: "unit_mismatch" };
   if (sawStrengthMismatch) return { status: "needs_match_review", reason: "strength_mismatch" };

@@ -1,5 +1,7 @@
 import { matchActualInvoiceItemToStock, currentStockCandidatesForActual, calculateActualGrossMargin } from "./phif-stock.helpers";
 import { actualUnitSourceSignature, actualUnitGroupSignature, actualUnitSourceSnapshot, actualStockUnitSignature, actualCostUnits, actualCostUnitAllowed, actualSourceUnit, type ActualUnit } from "./actual-units.helpers";
+import { actualUnitSuggestion } from "./actual-unit-suggestions.helpers";
+import { invoiceItemValue } from "./phif-stock.helpers";
 
 export const actualImportedSnapshot = actualUnitSourceSnapshot;
 export const actualPricingSnapshot = (stock: any) => ({ brand_product_id: stock.brand_product_id ?? null,
@@ -30,19 +32,28 @@ export function actualUnitPreview(input: { invoices: any[]; items: any[]; stocks
     const row = { id: item.id, invoice_id: invoice.id, invoice_number: invoice.invoice_number, date: invoice.dispensing_date,
       quantity: item.quantity, version: decision?.version ?? 0, signature: actualUnitSourceSignature(item),
       stockSignature: actualStockUnitSignature(match.stock), decision: decision ?? null,
-      units, complete: calculateActualGrossMargin(item, [match.stock]).status === "matched" };
+      units, saleValue: invoiceItemValue(item), suggestion: actualUnitSuggestion(item, match),
+      complete: calculateActualGrossMargin(item, [match.stock]).status === "matched" };
     eligible.push({ item, stock: match.stock, row }); rows.push(row);
   }
+  rows.sort((a, b) => Number(b.suggestion.status === "high_confidence" && !b.complete) - Number(a.suggestion.status === "high_confidence" && !a.complete));
   return { stock, rows, eligible, summary: { items: rows.length, invoices: new Set(rows.map(r => r.invoice_id)).size,
     quantity: rows.reduce((sum, r) => sum + Number(r.quantity || 0), 0) } };
 }
 
-export function actualDecisionInput(preview: { eligible: any[] }, data: { rows: any[]; dispensingUnit: ActualUnit; costUnit: ActualUnit; revoke: boolean }) {
+export function actualDecisionInput(preview: { eligible: any[] }, data: { rows: any[]; dispensingUnit: ActualUnit; costUnit: ActualUnit; revoke: boolean; suggestedOnly?: boolean }) {
   if (new Set(data.rows.map(r => r.id)).size !== data.rows.length) throw new Error("بنود مكررة في الطلب");
   return data.rows.map(requested => {
     const found = preview.eligible.find(e => e.row.id === requested.id);
     if (!found || ["version", "signature", "stockSignature"].some(key => requested[key] !== found.row[key])) throw new Error("تغيرت المعاينة؛ أعد تحميلها");
     if (!data.revoke) {
+      if (data.suggestedOnly) {
+        const suggestion = found.row.suggestion;
+        if (suggestion.status !== "high_confidence" || suggestion.dispensingUnit !== data.dispensingUnit
+          || suggestion.costUnit !== data.costUnit || requested.priceSignature !== suggestion.priceSignature) {
+          throw new Error("تغيرت الأسعار أو أن بعض البنود غير متوافقة مع الاقتراح؛ أعد المعاينة");
+        }
+      }
       const evidence = actualSourceUnit(found.item);
       if (evidence.issue === "conflicting_dispensing_unit" || (evidence.unit && evidence.unit !== data.dispensingUnit)) {
         throw new Error("وحدة الاعتماد تتعارض مع وحدة الصرف المسجلة في المصدر");
