@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { actualManager } from "./actual-stock-links.functions";
+import { verifyActualUnitAdmin } from "./actual-units.auth";
 import { actualUnitPreview, actualDecisionInput, actualImportedSnapshot, actualPricingSnapshot } from "./actual-units.preview";
 import { actualUnitSourceSignature, actualStockUnitSignature, ACTUAL_UNITS, actualCostUnits } from "./actual-units.helpers";
 
@@ -9,7 +9,9 @@ const scopeSchema = z.object({ itemId: z.string().uuid(), dateFrom: z.string().d
 const units = z.enum(Object.keys(ACTUAL_UNITS) as [keyof typeof ACTUAL_UNITS, ...(keyof typeof ACTUAL_UNITS)[]]);
 
 async function previewForManager(scope: z.infer<typeof scopeSchema>) {
-  const context = await actualManager();
+  const { requirePharmacySession } = await import("./pharmacy-session.server");
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const context = await verifyActualUnitAdmin(supabaseAdmin, await requirePharmacySession(), process.env.SESSION_SECRET);
   const { loadAllReportDataset, loadStockWithCosts } = await import("./management.functions");
   const { loadActualUnitDecisions } = await import("./actual-units.server");
   const dataset = await loadAllReportDataset(context.db, context.pharmacyId);
@@ -56,7 +58,8 @@ export const saveActualUnits = createServerFn({ method: "POST" })
       }
       return { item_id: item.id, stock_id: stock.id, expected_version: row.version,
         source_signature: decision.source_signature, stock_signature: decision.stock_signature,
-        imported: actualImportedSnapshot(item), pricing: actualPricingSnapshot(stock) };
+        imported: actualImportedSnapshot(item), pricing: actualPricingSnapshot(stock),
+        expected_link_version: item.manual_stock_link?.version ?? 0 };
     });
     const { data: affected, error } = await preview.db.rpc("set_phif_actual_units", { p_pharmacy_id: preview.pharmacyId,
       p_user_id: preview.actorId, p_actor: preview.actor, p_rows: payload,

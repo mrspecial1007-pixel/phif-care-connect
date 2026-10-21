@@ -1,5 +1,3 @@
-import { actualItemSignature } from "./actual-stock-links.helpers";
-
 export const ACTUAL_UNITS = {
   tablet: "قرص", capsule: "كبسولة", strip: "شريط", box: "علبة", pen: "قلم",
   vial: "فيال", ampoule: "أمبول", bottle: "عبوة", drops: "عبوة قطرات",
@@ -37,14 +35,34 @@ export function actualSourceUnit(item: any) {
   return { unit: units[0], issue: null };
 }
 
+export function actualUnitSourceSnapshot(item: any) {
+  return { brand: item.brand ?? null, strength: item.strength ?? null,
+    source_classification: item.source_classification ?? null, metadata: item.metadata ?? {},
+    quantity: item.quantity == null ? null : Number(item.quantity),
+    financial_units: { quantity_unit: item.phif_financial_fields?.quantity_unit ?? null, unit: item.phif_financial_fields?.unit ?? null } };
+}
+
 export function actualUnitSourceSignature(item: any) {
-  return JSON.stringify([actualItemSignature(item), item.quantity ?? null]);
+  return JSON.stringify(actualUnitSourceSnapshot(item));
+}
+
+export function actualUnitGroupSignature(item: any) {
+  const { quantity, ...identity } = actualUnitSourceSnapshot(item);
+  return JSON.stringify(identity);
 }
 
 export function actualStockUnitSignature(stock: any) {
-  const text = (value: any) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-  return JSON.stringify([stock.brand_product_id || stock.source_stock_id, text(stock.brand_name), text(stock.strength),
-    actualUnit(stock.dosage_unit) ?? text(stock.dosage_unit), text(stock.package_quantity), text(stock.strips_quantity)]);
+  return JSON.stringify({ product_reference: stock.brand_product_id || stock.source_stock_id || null,
+    brand_name: stock.brand_name ?? null, strength: stock.strength ?? null, dosage_unit: stock.dosage_unit ?? null,
+    package_quantity: stock.package_quantity == null ? null : Number(stock.package_quantity),
+    strips_quantity: stock.strips_quantity == null ? null : Number(stock.strips_quantity) });
+}
+
+export function sameActualSignature(left: string, right: string) {
+  const ordered = (value: any): any => Array.isArray(value) ? value.map(ordered)
+    : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, ordered(value[key])])) : value;
+  try { return JSON.stringify(ordered(JSON.parse(left))) === JSON.stringify(ordered(JSON.parse(right))); }
+  catch { return false; }
 }
 
 export function actualConversionFactor(from: ActualUnit, to: ActualUnit, stock: any): number | null {
@@ -70,19 +88,16 @@ export const ACTUAL_UNIT_REASONS: Record<string, string> = {
 
 export function actualCostUnitAllowed(stock: any, unit: ActualUnit) {
   const form = actualUnit(stock.dosage_unit);
-  if (form) return form === unit;
-  if (/^(cream|gel|ointment)$/i.test(String(stock.dosage_unit).trim())) return unit === "tube" || unit === "gram";
-  // An injection form is not a pricing unit. Only an explicit manager decision
-  // can establish which discrete presentation its cost refers to.
-  if (/^(inj|injection)$/i.test(String(stock.dosage_unit).trim())) return ["pen", "vial", "ampoule"].includes(unit);
-  return false;
+  // A generic form such as INJ/CREAM cannot prove whether the price is per
+  // vial/pen/tube/gram. Keep it for review until a discrete unit is documented.
+  return Boolean(form && form === unit);
 }
 
 export function actualCostUnits(item: any, stock: any) {
   const decision = item.actual_unit_decision as ActualUnitDecision | undefined;
   const source = actualSourceUnit(item);
-  const valid = decision?.is_active && decision.source_signature === actualUnitSourceSignature(item)
-    && decision.stock_signature === actualStockUnitSignature(stock);
+  const valid = decision?.is_active && sameActualSignature(decision.source_signature, actualUnitSourceSignature(item))
+    && sameActualSignature(decision.stock_signature, actualStockUnitSignature(stock));
   let issue = decision?.is_active && !valid ? "stale_unit_decision" : source.issue;
   const dispensingUnit = valid ? actualUnit(decision.dispensing_unit) : source.unit;
   // The pharmacy has explicitly confirmed tablet cost_price is per tablet. Other
@@ -92,7 +107,9 @@ export function actualCostUnits(item: any, stock: any) {
   else if (!costUnit) issue ||= "missing_cost_unit";
   const factor = dispensingUnit && costUnit ? actualConversionFactor(dispensingUnit, costUnit, stock) : null;
   if (!issue && factor === null) issue = "undocumented_conversion";
-  const manualIssue = costUnit && actualCostUnitAllowed(stock, costUnit) ? factor === null ? "undocumented_conversion" : null : "missing_cost_unit";
+  const manualIssue = source.issue === "conflicting_dispensing_unit" || (source.unit && source.unit !== dispensingUnit)
+    ? "conflicting_dispensing_unit"
+    : costUnit && actualCostUnitAllowed(stock, costUnit) ? factor === null ? "undocumented_conversion" : null : "missing_cost_unit";
   return { dispensingUnit, costUnit, factor, issue: valid ? manualIssue : issue,
     provenance: valid ? "manual" : source.unit ? "source" : null,
     actor: valid ? decision.updated_actor : null, at: valid ? decision.updated_at : null };

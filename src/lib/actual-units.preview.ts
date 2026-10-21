@@ -1,12 +1,11 @@
-import { actualItemSignature } from "./actual-stock-links.helpers";
 import { matchActualInvoiceItemToStock, currentStockCandidatesForActual, calculateActualGrossMargin } from "./phif-stock.helpers";
-import { actualUnitSourceSignature, actualStockUnitSignature, actualCostUnits, actualCostUnitAllowed, type ActualUnit } from "./actual-units.helpers";
+import { actualUnitSourceSignature, actualUnitGroupSignature, actualUnitSourceSnapshot, actualStockUnitSignature, actualCostUnits, actualCostUnitAllowed, actualSourceUnit, type ActualUnit } from "./actual-units.helpers";
 
-export const actualImportedSnapshot = (item: any) => ({ brand: item.brand ?? null, strength: item.strength ?? null,
-  quantity: item.quantity ?? null, metadata: item.metadata ?? {}, source_classification: item.source_classification });
+export const actualImportedSnapshot = actualUnitSourceSnapshot;
 export const actualPricingSnapshot = (stock: any) => ({ brand_product_id: stock.brand_product_id ?? null,
   source_stock_id: stock.source_stock_id ?? null, brand_name: stock.brand_name ?? null, strength: stock.strength ?? null,
-  dosage_unit: stock.dosage_unit ?? null, package_quantity: stock.package_quantity ?? null, strips_quantity: stock.strips_quantity ?? null });
+  dosage_unit: stock.dosage_unit ?? null, package_quantity: stock.package_quantity == null ? null : Number(stock.package_quantity),
+  strips_quantity: stock.strips_quantity == null ? null : Number(stock.strips_quantity) });
 
 export function actualUnitPreview(input: { invoices: any[]; items: any[]; stocks: any[]; decisions: any[];
   scope: { itemId: string; dateFrom?: string; dateTo?: string } }) {
@@ -20,7 +19,7 @@ export function actualUnitPreview(input: { invoices: any[]; items: any[]; stocks
   const eligible: any[] = [];
   const rows: any[] = [];
   for (const item of input.items) {
-    if (item.source_classification !== "actual-supplier" || actualItemSignature(item) !== actualItemSignature(anchor)) continue;
+    if (item.source_classification !== "actual-supplier" || actualUnitGroupSignature(item) !== actualUnitGroupSignature(anchor)) continue;
     const invoice = invoices.get(item.phif_invoice_id);
     if (!invoice || (input.scope.dateFrom && invoice.dispensing_date < input.scope.dateFrom)
       || (input.scope.dateTo && invoice.dispensing_date > input.scope.dateTo)) continue;
@@ -44,6 +43,10 @@ export function actualDecisionInput(preview: { eligible: any[] }, data: { rows: 
     const found = preview.eligible.find(e => e.row.id === requested.id);
     if (!found || ["version", "signature", "stockSignature"].some(key => requested[key] !== found.row[key])) throw new Error("تغيرت المعاينة؛ أعد تحميلها");
     if (!data.revoke) {
+      const evidence = actualSourceUnit(found.item);
+      if (evidence.issue === "conflicting_dispensing_unit" || (evidence.unit && evidence.unit !== data.dispensingUnit)) {
+        throw new Error("وحدة الاعتماد تتعارض مع وحدة الصرف المسجلة في المصدر");
+      }
       if (!actualCostUnitAllowed(found.stock, data.costUnit)) throw new Error("وحدة التكلفة لا تتوافق مع بيانات المخزون؛ يلزم توثيق مصدرها أولًا");
     }
     return found;

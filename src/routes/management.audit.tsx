@@ -251,8 +251,8 @@ function ManagementAuditPage() {
             <div className="space-y-3">
               {actual.cost_reviews.length === 0
                 ? <Card className="p-4 text-sm text-emerald-800">لا توجد أصناف Actual مطابقة تحتاج مراجعة تكلفة.</Card>
-                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} onUnits={data.can_manage_links ? setUnitItem : undefined} />)}
-              {data.can_manage_links && actual.documented_units.length > 0 && <>
+                : actual.cost_reviews.map((item: any) => <ActualIssueCard key={item.identity_key} item={item} onLink={data.can_manage_links ? setLinkItems : undefined} onUnits={data.can_manage_units ? setUnitItem : undefined} />)}
+              {data.can_manage_units && actual.documented_units.length > 0 && <>
                 <h2 className="font-semibold">مراجعة الوحدات المعتمدة وتعديلها أو إلغاؤها</h2>
                 {actual.documented_units.map((item: any) => <ActualIssueCard key={`units-${item.identity_key}`} item={item} onUnits={setUnitItem} />)}
               </>}
@@ -261,7 +261,7 @@ function ManagementAuditPage() {
         </>
       )}
       {linkItems && data?.can_manage_links && <ActualStockLinks itemIds={linkItems} onClose={() => setLinkItems(null)} />}
-      {unitItem && data?.can_manage_links && <ActualUnitEditor itemId={unitItem} onClose={() => setUnitItem(null)} />}
+      {unitItem && data?.can_manage_units && <ActualUnitEditor itemId={unitItem} onClose={() => setUnitItem(null)} />}
     </div>
   );
 }

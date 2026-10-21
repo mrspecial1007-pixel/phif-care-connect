@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import { actualReferenceItem, actualItemSignature } from "@/lib/actual-stock-links.helpers";
-import { actualCostUnits, ACTUAL_UNIT_REASONS, ACTUAL_UNITS } from "@/lib/actual-units.helpers";
+import { actualReferenceItem } from "@/lib/actual-stock-links.helpers";
+import { actualCostUnits, actualUnitGroupSignature, ACTUAL_UNIT_REASONS, ACTUAL_UNITS } from "@/lib/actual-units.helpers";
 import { normalizeSupplierUnit, supplierInvoiceForm, supplierInvoiceUnit, supplierQuickCostIdentity } from "@/lib/phif-supplier-quick-cost.helpers";
 import { treasuryFinanceAccess, treasuryReportForSession } from "@/lib/treasury-financials.helpers";
 import { z } from "zod";
@@ -567,7 +567,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     };
     row.occurrence_count += 1;
     row.item_ids.push(item.id);
-    const scopeKey = actualItemSignature(item);
+    const scopeKey = actualUnitGroupSignature(item);
     const scope = row.unit_scopes.find((entry: any) => entry.signature === scopeKey);
     if (scope) scope.count += 1;
     else row.unit_scopes.push({ signature: scopeKey, item_id: item.id, brand: item.brand, count: 1 });
@@ -994,7 +994,8 @@ export const getManagementAuditReport = createServerFn({ method: "POST" })
       const dataset = await loadAllReportDataset(supabaseAdmin, pharmacy_id);
       const stocks = await loadStockWithCosts(supabaseAdmin, pharmacy_id);
       const { isTreasuryManager } = await import("./treasury-financials.helpers");
-      return { ...buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks }), can_manage_links: isTreasuryManager(context) };
+      return { ...buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks }), can_manage_links: isTreasuryManager(context),
+        can_manage_units: context.session.data.user_role === "admin" && Boolean(context.session.data.user_id) };
     } catch (error: any) {
       console.error("management audit failed", {
         name: error?.name ?? null,

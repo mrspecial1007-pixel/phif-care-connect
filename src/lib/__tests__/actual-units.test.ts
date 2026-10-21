@@ -10,6 +10,7 @@ import { actualCoverage, treasuryReportForSession, isTreasuryManager } from "@/l
 import { TIRYAQ_PHARMACY_NAME, ANDALUS_PHARMACY_NAME } from "@/lib/pharmacy-isolation";
 import { readReportPages } from "@/lib/report-pages.server";
 import { actualItemSignature, applyActualStockLinks } from "@/lib/actual-stock-links.helpers";
+import { actualUnitAdminId, verifyActualUnitAdmin } from "@/lib/actual-units.auth";
 
 // Medicine-only Cloud fields, no patient/card/session data. IDs below are synthetic.
 const item = { id: "a", phif_invoice_id: "f1", brand: "Aspirem EC", strength: "75MG", quantity: 30,
@@ -72,7 +73,7 @@ describe("Actual quantity-unit documentation", () => {
       ["Synthetic vial", "1MG", "VIAL", "vial", 12],
       ["Normoptic", "0.5%", "DROPS", "drops", 11.55],
       ["Synthetic inhaler", "100MCG", "SPRAY", "inhaler", 14.9],
-      ["Synthetic topical", "1%", "CREAM", "tube", 5],
+      ["Synthetic topical", "1%", "TUBE", "tube", 5],
     ] as const) {
       const source = { ...item, brand, strength, quantity: 1, phif_financial_fields: { total_amount: 150 } };
       const target = { ...stock, brand_name: brand, strength, dosage_unit: form, cost_price: cost, package_quantity: null, strips_quantity: null };
@@ -136,6 +137,8 @@ describe("Actual quantity-unit documentation", () => {
     expect(() => actualDecisionInput(preview, { ...input, rows: [preview.rows[1], preview.rows[1]] })).toThrow("مكررة");
     expect(() => actualDecisionInput(preview, { ...input, rows: [{ ...preview.rows[1], id: "foreign" }] })).toThrow();
     expect(actualUnitPreview({ invoices, items, stocks: [stock], decisions: [], scope: { itemId: item.id, dateFrom: "2026-09-01" } }).rows).toHaveLength(1);
+    const mixed = [item, { ...items[1], phif_financial_fields: { total_amount: 21, quantity_unit: "BOX" } }];
+    expect(actualUnitPreview({ invoices, items: mixed, stocks: [stock], decisions: [], scope: { itemId: item.id } }).rows).toHaveLength(1);
     expect(() => actualDecisionInput(preview, { ...input, costUnit: "pen" })).toThrow("وحدة التكلفة");
   });
 
@@ -176,13 +179,53 @@ describe("Actual quantity-unit documentation", () => {
     expect(isTreasuryManager(session("employee"))).toBe(false);
     expect(isTreasuryManager(session("admin", ANDALUS_PHARMACY_NAME))).toBe(false);
     const fn = readFileSync("src/lib/actual-units.functions.ts", "utf8");
-    expect(fn).toContain("await actualManager()"); expect(fn.match(/await previewForManager\(/g)).toHaveLength(2);
+    expect(fn).toContain("await verifyActualUnitAdmin(supabaseAdmin, await requirePharmacySession(), process.env.SESSION_SECRET)"); expect(fn.match(/await previewForManager\(/g)).toHaveLength(2);
     expect(fn).toContain("confirmed: z.literal(true)"); expect(fn).toContain("actualDecisionInput(preview, data)");
     expect(fn).not.toMatch(/\.from\("phif_invoice_items"\)\.(update|insert|delete)/);
     const sql = readFileSync("supabase/migrations/20261020020000_add_actual_unit_decisions.sql", "utf8");
     expect(sql).toContain("ENABLE ROW LEVEL SECURITY"); expect(sql).toContain("FROM PUBLIC,anon,authenticated");
     expect(sql).toContain("FOR UPDATE OF i"); expect(sql).toContain("expected_version"); expect(sql).toContain("user_operation_log");
     expect(sql).not.toMatch(/(?:UPDATE|DELETE FROM) public\.(phif_invoice_items|phif_stock_items|patients)/i);
+  });
+
+  it("rejects legacy/employee/forged sessions and revalidates an active individual administrator", async () => {
+    const secret = "x".repeat(32);
+    const context = (role: string, id?: string, pharmacy = TIRYAQ_PHARMACY_NAME) => ({ pharmacy_id: "tiryaq", pharmacy_name: pharmacy,
+      session: { data: { user_role: role, user_id: id, user_permissions: { users_manage: true } } } });
+    for (const session of [context("legacy"), context("employee", "employee"), context("admin"), context("admin", "admin", ANDALUS_PHARMACY_NAME)]) {
+      expect(() => actualUnitAdminId(session, secret)).toThrow();
+    }
+    for (const unsafe of [undefined, "short", "dev-only-session-secret-please-set-SESSION_SECRET-in-env"]) {
+      expect(() => actualUnitAdminId(context("admin", "admin"), unsafe)).toThrow("سر جلسات");
+    }
+    const calls: any[] = [];
+    const db = (row: any) => ({ from(table: string) { calls.push(table);
+      const query = { select() { return query; }, eq(key: string, value: any) { calls.push([key, value]); return query; },
+        async maybeSingle() { return { data: row, error: null }; } }; return query;
+    } });
+    expect(await verifyActualUnitAdmin(db({ id: "admin", display_name: "Verified manager" }), context("admin", "admin"), secret))
+      .toMatchObject({ actorId: "admin", actor: "Verified manager", pharmacyId: "tiryaq" });
+    expect(calls).toContainEqual(["pharmacy_id", "tiryaq"]); expect(calls).toContainEqual(["role", "admin"]);
+    expect(calls).toContainEqual(["is_active", true]);
+    await expect(verifyActualUnitAdmin(db(null), context("admin", "admin"), secret)).rejects.toThrow("صلاحية المدير");
+  });
+
+  it("accepts database-canonical signature JSON but rejects forged signatures and unproven price units", () => {
+    const approval = decision();
+    const reverse = (text: string) => JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(text)).reverse()), null, 2);
+    const [bound] = applyActualUnitDecisions([item], [{ ...approval, source_signature: reverse(approval.source_signature), stock_signature: reverse(approval.stock_signature) }]);
+    expect(calculateActualGrossMargin(bound, [stock]).purchaseCost).toBeCloseTo(16.89);
+    for (const bad of ["{}", "null", "not-json"]) {
+      expect(calculateActualGrossMargin(applyActualUnitDecisions([item], [{ ...approval, source_signature: bad }])[0], [stock]).purchaseCost).toBeNull();
+    }
+    const recorded = { ...item, phif_financial_fields: { total_amount: 21, quantity_unit: "TABLETS" } };
+    expect(calculateActualGrossMargin(bind(recorded, stock, "box"), [stock]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin(bind(recorded), [stock]).purchaseCost).toBeCloseTo(16.89);
+    for (const [form, unit] of [["INJ", "vial"], ["CREAM", "gram"], ["CREAM", "tube"]] as const) {
+      const source = { ...item, brand: "Uncertain presentation", strength: "1MG" };
+      const target = { ...stock, brand_name: source.brand, strength: source.strength, dosage_unit: form };
+      expect(calculateActualGrossMargin(bind(source, target, unit, unit), [target]).purchaseCost).toBeNull();
+    }
   });
 
   it("does not truncate historical invoices/items when the response cap is below the requested page size", async () => {
