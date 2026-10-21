@@ -1,5 +1,5 @@
 import type { ActualStockLink } from "./actual-stock-links.helpers";
-import { actualCostUnits, type ActualUnitDecision } from "./actual-units.helpers";
+import { actualCostUnits, actualUnit, type ActualUnitDecision } from "./actual-units.helpers";
 import { actualUnitSuggestion, actualMoneyProduct } from "./actual-unit-suggestions.helpers";
 
 export type StockQuantityBreakdown = {
@@ -483,6 +483,16 @@ export function actualFinancialUnits(item: InvoiceItemLike, match: Extract<Actua
   if (!item.brand?.trim() || !item.strength?.trim() || !match.stock.brand_name?.trim() || !match.stock.strength?.trim()) {
     return { ...documented, issue: "unsafe_identity" };
   }
+  // Pharmacy-confirmed contract: missing historical quantity units on matched
+  // tablet items mean tablets, and stock cost_price is per tablet. Explicit
+  // source units and audited decisions above retain precedence.
+  if (!documented.dispensingUnit && actualUnit(match.stock.dosage_unit) === "tablet"
+    && Number(match.stock.cost_price) > 0
+    && (match.equivalentStocks ?? [match.stock]).every(stock => actualUnit(stock.dosage_unit) === "tablet"
+      && stock.cost_price != null && Number(stock.cost_price) === Number(match.stock.cost_price))) {
+    return { dispensingUnit: "tablet" as const, costUnit: "tablet" as const, factor: 1,
+      issue: null, provenance: "pharmacy_tablet_policy", actor: null, at: null };
+  }
   const evidence = actualUnitSuggestion(item, match, invoiceItemValue(item));
   if (evidence.reason === "stock_price_missing") return documented;
   if (evidence.status !== "high_confidence") return { ...documented, issue: evidence.reason };
@@ -535,7 +545,8 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
     };
   }
 
-  const purchaseCost = units.provenance === "stock_price_check"
+  const automatic = units.provenance === "stock_price_check" || units.provenance === "pharmacy_tablet_policy";
+  const purchaseCost = automatic
     ? actualMoneyProduct(item.quantity, match.stock.cost_price, units.factor)
     : quantity * units.factor * costPrice;
   if (purchaseCost === null) return { status: "pricing_unit_unverified", invoiceValue, purchaseCost: null,
@@ -544,9 +555,10 @@ export function calculateActualGrossMargin(item: InvoiceItemLike, candidates: St
     status: "matched",
     invoiceValue,
     purchaseCost,
-    grossMargin: units.provenance === "stock_price_check" ? Math.round((invoiceValue - purchaseCost) * 1000) / 1000 : invoiceValue - purchaseCost,
+    grossMargin: automatic ? Math.round((invoiceValue - purchaseCost) * 1000) / 1000 : invoiceValue - purchaseCost,
     stock: match.stock,
-    reason: units.provenance === "stock_price_check" ? "verified_stock_sale_price" : "verified_unit_price",
+    reason: units.provenance === "pharmacy_tablet_policy" ? "confirmed_tablet_quantity"
+      : units.provenance === "stock_price_check" ? "verified_stock_sale_price" : "verified_unit_price",
     units,
   };
 }

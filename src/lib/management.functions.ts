@@ -578,7 +578,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     if (item.manual_stock_link?.is_active) row.manual_match = true;
     if (costNeedsReview) row.cost_review_count += 1;
     if (costNeedsReview && actualUnitSuggestion(item, match, invoiceItemValue(item)).status === "high_confidence") row.suggested_unit_count += 1;
-    if (profit.status === "matched" && profit.reason === "verified_stock_sale_price") row.automatic_cost_count += 1;
+    if (profit.status === "matched" && ["verified_stock_sale_price", "confirmed_tablet_quantity"].includes(profit.reason)) row.automatic_cost_count += 1;
     if (item.actual_unit_decision?.is_active) row.documented_unit_count += 1;
     if (costNeedsReview && !row.cost_reasons.includes(profit.reason)) row.cost_reasons.push(profit.reason);
     row.invoice_ids.add(item.phif_invoice_id);

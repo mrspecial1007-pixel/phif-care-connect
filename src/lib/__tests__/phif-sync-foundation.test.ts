@@ -1450,7 +1450,7 @@ describe("PHIF sync foundation", () => {
     const stock = { brand_name: "Formin", strength: "500mg", dosage_unit: "TABS", cost_price: "0.284", sale_price: "0.400" };
     expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "matched", invoiceValue: 10.2, purchaseCost: 8.52, grossMargin: 1.6799999999999997 });
     expect(calculateActualGrossMargin({ ...item, metadata: { unit: "BOX" } }, [stock]).grossMargin).toBeNull();
-    expect(calculateActualGrossMargin({ ...item, metadata: {} }, [{ ...stock, sale_price: null }])).toMatchObject({ status: "pricing_unit_unverified", purchaseCost: null, grossMargin: null });
+    expect(calculateActualGrossMargin({ ...item, metadata: {} }, [{ ...stock, sale_price: null }])).toMatchObject({ status: "matched", purchaseCost: 8.52, grossMargin: 1.68, reason: "confirmed_tablet_quantity" });
   });
 
   it("does not choose between distinct commercial products at the same strength", () => {

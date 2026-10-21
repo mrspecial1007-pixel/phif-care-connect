@@ -255,7 +255,7 @@ function ManagementAuditPage() {
           {section === "cost" && (
             <div className="space-y-3">
               <ActualUnitAccessNotice access={data.unit_access} />
-              <p className="text-sm text-teal-900">محسوب تلقائيًا بوحدة المخزون والتحقق المالي: {actual.summary.automatic_cost_items} بند. اقتراحات تحويل تحتاج اعتمادًا: {actual.summary.suggested_unit_items} بند.</p>
+              <p className="text-sm text-teal-900">محسوب تلقائيًا بوحدة الأقراص المعتمدة أو التحقق المالي: {actual.summary.automatic_cost_items} بند. اقتراحات تحويل تحتاج اعتمادًا: {actual.summary.suggested_unit_items} بند.</p>
               <p className="text-xs text-muted-foreground">الحساب وفق أسعار المخزون المتاحة حاليًا، وليس إثباتًا لأسعار تاريخية.</p>
               {actual.cost_reviews.length === 0
                 ? <Card className="p-4 text-sm text-emerald-800">لا توجد أصناف Actual مطابقة تحتاج مراجعة تكلفة.</Card>

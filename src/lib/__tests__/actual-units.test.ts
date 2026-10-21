@@ -25,12 +25,12 @@ const bind = (source: any = item, target: any = stock, unit: ActualUnit = "table
   applyActualUnitDecisions([source], [decision(source, target, unit, priceUnit)])[0];
 
 describe("Actual quantity-unit documentation", () => {
-  it("never certifies an invoice quantity from a commercial package suffix or dosage form", () => {
+  it("keeps imported unit evidence unchanged while applying the explicit pharmacy tablet contract", () => {
     for (const source of [item, { ...item, brand: "Aspirem EC 75MG 56TABS" }, { ...item, metadata: { dosage_form: "TABLET" } }]) {
       expect(actualSourceUnit(source).unit).toBeNull();
       expect(actualCostUnits(source, stock).issue).toBe("missing_dispensing_unit");
     }
-    expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "pricing_unit_unverified", reason: "missing_dispensing_unit", purchaseCost: null });
+    expect(calculateActualGrossMargin(item, [stock])).toMatchObject({ status: "matched", reason: "confirmed_tablet_quantity", purchaseCost: 16.89 });
     expect(matchActualInvoiceItemToStock(item, [stock]).status).toBe("matched");
   });
 
@@ -88,7 +88,8 @@ describe("Actual quantity-unit documentation", () => {
     for (const changed of [{ ...item, quantity: 31 }, { ...item, strength: "150MG" }, { ...item, metadata: { unit: "BOX" } }]) {
       expect(calculateActualGrossMargin(applyActualUnitDecisions([changed], [approval])[0], [stock]).purchaseCost).toBeNull();
     }
-    expect(calculateActualGrossMargin(applyActualUnitDecisions([{ ...item, id: "other" }], [approval])[0], [stock]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin(applyActualUnitDecisions([{ ...item, id: "other" }], [approval])[0], [stock]))
+      .toMatchObject({ purchaseCost: 16.89, units: { provenance: "pharmacy_tablet_policy" } });
     expect(calculateActualGrossMargin(bind(), [{ ...stock, package_quantity: 28 }]).purchaseCost).toBeNull();
     expect(calculateActualGrossMargin(bind(), [{ ...stock, cost_price: 1 }]).purchaseCost).toBe(30);
     expect(calculateActualGrossMargin(applyActualUnitDecisions([{ ...item, source_classification: "phif-supplier" }], [approval])[0], [stock]).status).toBe("phif_supplier_excluded");
@@ -110,7 +111,7 @@ describe("Actual quantity-unit documentation", () => {
     const documented = bind(linked, target);
     expect(calculateActualGrossMargin(documented, [target]).purchaseCost).toBe(42);
     expect(applyActualUnitDecisions([documented], [])[0].manual_stock_link).toEqual(link);
-    expect(calculateActualGrossMargin(applyActualUnitDecisions([documented], [])[0], [target]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin(applyActualUnitDecisions([documented], [])[0], [target]).purchaseCost).toBe(42);
     expect(calculateActualGrossMargin(applyActualStockLinks([documented], [])[0], [target]).status).toBe("needs_match_review");
     expect(documented.brand).toBe("VILDAGLIPTIN");
   });
@@ -120,7 +121,7 @@ describe("Actual quantity-unit documentation", () => {
     const edited = applyActualUnitDecisions([first], [decision(item, stock, "strip", "tablet", 2)])[0];
     expect(calculateActualGrossMargin(edited, [stock]).purchaseCost).toBeCloseTo(30 * 14 * 0.563);
     const revoked = applyActualUnitDecisions([edited], [{ ...decision(), is_active: false, version: 3 }])[0];
-    expect(calculateActualGrossMargin(revoked, [stock]).purchaseCost).toBeNull();
+    expect(calculateActualGrossMargin(revoked, [stock])).toMatchObject({ purchaseCost: 16.89, units: { provenance: "pharmacy_tablet_policy" } });
     expect(matchActualInvoiceItemToStock(revoked, [stock]).status).toBe("matched");
     expect(calculateActualGrossMargin(JSON.parse(JSON.stringify(first)), [stock]).purchaseCost).toBeCloseTo(16.89);
   });
@@ -144,9 +145,10 @@ describe("Actual quantity-unit documentation", () => {
 
   it("keeps request-local audit caches separate for different unit approvals and manual links", () => {
     const second = { ...item, id: "b", phif_invoice_id: "f2" };
-    const report = buildManagementAuditReport({ invoices: [{ id: "f1" }, { id: "f2" }], items: [bind(), second], stocks: [stock] });
+    const report = buildManagementAuditReport({ invoices: [{ id: "f1" }, { id: "f2" }], items: [bind(item, stock, "strip"), second], stocks: [stock] });
     expect(report.actual.summary).toMatchObject({ matched: 1, unmatched: 0 });
-    expect(report.financial.summary).toMatchObject({ complete_invoices: 1, incomplete_invoices: 1, actual_cost_review_items: 1 });
+    expect(report.financial.summary).toMatchObject({ complete_invoices: 2, incomplete_invoices: 0, actual_cost_review_items: 0 });
+    expect(report.actual.summary.automatic_cost_items).toBe(1);
     expect(report.actual.documented_units).toHaveLength(1);
   });
 
@@ -238,7 +240,7 @@ describe("Actual quantity-unit documentation", () => {
     await expect(readReportPages(() => ({ async range() { return { data: [rows[0]], count: 3 }; } }))).rejects.toThrow("ترتيب");
   });
 
-  it("reproduces the medicine-only Cloud costs after explicit tablet/pen decisions, never before them", () => {
+  it("reproduces Cloud tablet costs by policy and preserves explicit manager decisions", () => {
     for (const [brand, strength, form, cost] of [
       ["Lipover", "20MG", "TABS", 1.077], ["Lipover", "40MG", "TABS", 1.378],
       ["FORMIN", "850MG", "TABS", 0.350], ["FORMIN", "500MG", "TABS", 0.284],
@@ -250,7 +252,7 @@ describe("Actual quantity-unit documentation", () => {
       const target = { ...stock, brand_name: brand, strength, dosage_unit: form, cost_price: cost,
         package_quantity: brand.startsWith("SYNJARDY") ? 60 : brand.startsWith("XARELTO") ? 28 : 30 };
       expect(matchActualInvoiceItemToStock(source, [target]).status).toBe("matched");
-      expect(calculateActualGrossMargin(source, [target]).purchaseCost).toBeNull();
+      expect(calculateActualGrossMargin(source, [target]).purchaseCost).toBeCloseTo(source.quantity * cost);
       expect(calculateActualGrossMargin(bind(source, target), [target]).purchaseCost).toBeCloseTo(source.quantity * cost);
     }
   });

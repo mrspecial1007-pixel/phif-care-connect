@@ -34,7 +34,7 @@ export function actualUnitPreview(input: { invoices: any[]; items: any[]; stocks
       quantity: item.quantity, version: decision?.version ?? 0, signature: actualUnitSourceSignature(item),
       stockSignature: actualStockUnitSignature(match.stock), decision: decision ?? null,
       units, saleValue: invoiceItemValue(item), suggestion: actualUnitSuggestion(item, match, invoiceItemValue(item)),
-      complete: margin.status === "matched" };
+      complete: margin.status === "matched", purchaseCost: margin.purchaseCost, profit: margin.grossMargin };
     eligible.push({ item, stock: match.stock, row }); rows.push(row);
   }
   rows.sort((a, b) => Number(b.suggestion.status === "high_confidence" && !b.complete) - Number(a.suggestion.status === "high_confidence" && !a.complete));

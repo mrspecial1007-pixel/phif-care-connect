@@ -41,8 +41,8 @@ function stock(overrides: Record<string, unknown>) {
 
 describe("management audit center", () => {
   it("separates a matched identity with unknown units from unmatched items and incomplete financials", () => {
-    const item = actualItem({ brand: "Allopurinol", strength: "100MG", metadata: {} });
-    const candidate = stock({ brand_name: "Allopurinol", strength: "100MG", dosage_unit: "TABS" });
+    const item = actualItem({ brand: "Unverified injection", strength: "100MG", metadata: {} });
+    const candidate = stock({ brand_name: "Unverified injection", strength: "100MG", dosage_unit: "INJ" });
     const report = buildManagementAuditReport({ invoices: [invoice], items: [item], stocks: [candidate] });
     expect(report.actual.summary).toMatchObject({ matched: 1, unmatched: 0, ambiguous: 0, cost_review: 1, match_ratio: 1 });
     expect(report.actual.issues).toHaveLength(0);

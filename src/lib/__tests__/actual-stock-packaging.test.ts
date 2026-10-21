@@ -23,12 +23,13 @@ function stock(example = examples[0]) {
 }
 
 describe("Actual imported package descriptions", () => {
-  it("keeps Cloud identities matched but requires documented quantity units rather than brand suffixes", () => {
+  it("costs confirmed Cloud tablets by invoice quantity, not commercial package suffixes", () => {
     for (const example of examples) {
       const result = calculateActualGrossMargin(item(example), [stock(example)]);
-      expect(result.status).toBe("pricing_unit_unverified");
+      expect(result.status).toBe("matched");
       expect(result.stock?.brand_product_id).toBe(example.product);
-      expect(result.purchaseCost).toBeNull();
+      expect(result.purchaseCost).toBeCloseTo(example.quantity * Number(example.cost), 6);
+      expect(result.units?.provenance).toBe("pharmacy_tablet_policy");
       const documented = calculateActualGrossMargin({ ...item(example), metadata: { quantity_unit: "TAB" } }, [stock(example)]);
       expect(documented.purchaseCost).toBeCloseTo(example.quantity * Number(example.cost), 6);
       expect(documented.grossMargin).toBeCloseTo(example.value - example.quantity * Number(example.cost), 6);
@@ -40,8 +41,8 @@ describe("Actual imported package descriptions", () => {
     const report = buildManagementAuditReport({ invoices: rows.map(row => ({ id: row.phif_invoice_id, dispensing_date: "2026-04-01" })),
       items: rows, stocks: [...examples.map(stock), stock(examples[2]), stock(examples[2])] });
     expect(report.actual.summary.matched).toBe(3);
-    expect(report.financial.summary.complete_invoices).toBe(0);
-    expect(report.financial.summary.actual_cost_review_items).toBe(3);
+    expect(report.financial.summary.complete_invoices).toBe(3);
+    expect(report.financial.summary.actual_cost_review_items).toBe(0);
     expect(report.financial.summary.actual_unmatched_items).toBe(0);
   });
 
@@ -55,7 +56,7 @@ describe("Actual imported package descriptions", () => {
       const candidate = { ...stock(), brand_name: "Xigduo® 5/1000 Tabs", strength: "5MG / 1000MG", package_quantity: "60", cost_price: "4.350000" };
       expect(matchActualInvoiceItemToStock(row, [candidate]).status).toBe("matched");
       expect(calculateActualGrossMargin({ ...row, metadata: { unit: "TAB" } }, [candidate]).purchaseCost).toBe(261);
-      expect(calculateActualGrossMargin(row, [candidate]).purchaseCost).toBeNull();
+      expect(calculateActualGrossMargin(row, [candidate]).purchaseCost).toBe(261);
       expect(matchActualInvoiceItemToStock({ ...row, strength: "5MG/850MG" }, [candidate]).status).toBe("needs_match_review");
     }
   });
@@ -89,12 +90,12 @@ describe("Actual imported package descriptions", () => {
     expect(matchActualInvoiceItemToStock(row, [{ ...stock(), brand_name: "PRODUCT 15MG TABS", package_quantity: "30" }]).status).toBe("needs_match_review");
   });
 
-  it("never calculates unknown or conflicting quantity units as a documented unit cost", () => {
+  it("preserves explicit box units and rejects conflicting evidence while costing confirmed tablets", () => {
     expect(matchActualInvoiceItemToStock({ ...item(), metadata: { unit: "BOX" } }, [stock()]).status).toBe("matched");
     expect(matchActualInvoiceItemToStock({ ...item(), metadata: { unit: "BOX", dosage_form: "CAPS" } }, [stock()])).toMatchObject({ status: "needs_match_review", reason: "unit_mismatch" });
     expect(calculateActualGrossMargin({ ...item(), metadata: { unit: "BOX" } }, [stock()]).purchaseCost).toBeCloseTo(28 * 28 * 12.089);
     expect(calculateActualGrossMargin({ ...item(), metadata: { unit: "BOX", quantity_unit: "TAB" } }, [stock()]).purchaseCost).toBeNull();
-    expect(calculateActualGrossMargin({ ...item(), brand: "XARELTO" }, [{ ...stock(), brand_name: "XARELTO" }])).toMatchObject({ status: "pricing_unit_unverified", purchaseCost: null });
+    expect(calculateActualGrossMargin({ ...item(), brand: "XARELTO" }, [{ ...stock(), brand_name: "XARELTO" }])).toMatchObject({ status: "matched", purchaseCost: 338.492 });
     expect(calculateActualGrossMargin(item(), [{ ...stock(), cost_price: null }]).purchaseCost).toBeNull();
   });
 });

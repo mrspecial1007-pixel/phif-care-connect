@@ -17,17 +17,17 @@ function link(source = item, overrides: Partial<ActualStockLink> = {}): ActualSt
 }
 
 describe("manual Actual stock identity links", () => {
-  it("confirms only the specified VILDAGLIPTIN item as VILDATIC without rewriting imported fields or certifying unknown units", () => {
+  it("confirms only the linked VILDAGLIPTIN item and applies the pharmacy tablet policy without rewriting imports", () => {
     const before = JSON.stringify(item);
     expect(matchActualInvoiceItemToStock(item, [target]).status).toBe("needs_match_review");
     const [bound] = applyActualStockLinks([item], [link()]);
     expect(matchActualInvoiceItemToStock(bound, [target])).toMatchObject({ status: "matched", reason: "manual_link" });
-    expect(calculateActualGrossMargin(bound, [target])).toMatchObject({ status: "pricing_unit_unverified", purchaseCost: null, grossMargin: null });
+    expect(calculateActualGrossMargin(bound, [target])).toMatchObject({ status: "matched", purchaseCost: 42, grossMargin: 8.46, reason: "confirmed_tablet_quantity" });
     expect(actualReferenceItem(bound).brand).toBe("VILDATIC");
     expect(bound.brand).toBe("VILDAGLIPTIN");
     expect(JSON.stringify(item)).toBe(before);
     const report = buildManagementAuditReport({ invoices: [{ id: "invoice" }], items: [bound], stocks: [target] });
-    expect(report.actual.summary).toMatchObject({ matched: 1, unmatched: 0, cost_review: 1 });
+    expect(report.actual.summary).toMatchObject({ matched: 1, unmatched: 0, cost_review: 0, automatic_cost_items: 1 });
     expect(report.actual.manual_matches[0].manual_match).toBe(true);
   });
 

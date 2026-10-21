@@ -103,15 +103,18 @@ export function UnitForm({ data, scope, onSave }: { data: any; scope: any; onSav
             setExcluded(previous => { const next = new Set(previous); e.target.checked ? next.delete(row.id) : next.add(row.id); return next; }); setConfirmed(false);
           }} />
           <span className="min-w-0">فاتورة {row.invoice_number} · {row.date}<br />الكمية الأصلية: {row.quantity}
-            <span className="block text-xs text-muted-foreground">{row.units.provenance === "manual" ? "موثق يدويًا" : row.units.provenance === "stock_price_check" ? "محسوب آليًا بوحدة المخزون والتحقق المالي" : row.units.provenance === "source" ? "وحدة مسجلة من المصدر" : "وحدة غير موثقة"}
+            <span className="block text-xs text-muted-foreground">{row.units.provenance === "manual" ? "موثق يدويًا" : row.units.provenance === "pharmacy_tablet_policy" ? "كمية بالأقراص وفق اعتماد الصيدلية" : row.units.provenance === "stock_price_check" ? "محسوب آليًا بوحدة المخزون والتحقق المالي" : row.units.provenance === "source" ? "وحدة مسجلة من المصدر" : "وحدة غير موثقة"}
               {row.units.dispensingUnit && ` · ${ACTUAL_UNITS[row.units.dispensingUnit as ActualUnit]}`}
               {row.units.issue && ` · ${ACTUAL_UNIT_REASONS[row.units.issue] ?? "التكلفة تحتاج مراجعة"}`}</span>
             {row.decision && <span className="block text-xs text-muted-foreground">{row.decision.is_active ? "آخر اعتماد" : "ملغى"}: {row.decision.updated_actor} · {new Date(row.decision.updated_at).toLocaleString("ar-LY")}</span>}
           </span>
         </label>
-        <div className={`mt-2 rounded-md p-2 text-xs ${row.suggestion.status === "high_confidence" ? "bg-teal-50 text-teal-950" : "bg-amber-50 text-amber-950"}`}>
+        <div className={`mt-2 rounded-md p-2 text-xs ${row.complete || row.suggestion.status === "high_confidence" ? "bg-teal-50 text-teal-950" : "bg-amber-50 text-amber-950"}`}>
           <p>قيمة الصرف: {money(row.saleValue)} د.ل</p>
-          <p>{UNIT_SUGGESTION_REASONS[row.suggestion.reason]}</p>
+          {row.units.provenance === "pharmacy_tablet_policy" ? <>
+            <p>تكلفة القرص معتمدة؛ اختلاف سعر البيع الحالي لا يمنع الحساب.</p>
+            {row.purchaseCost != null && <p>التكلفة: {money(row.purchaseCost)} · المكسب: {money(row.profit)} د.ل وفق تكلفة المخزون الحالية</p>}
+          </> : <p>{UNIT_SUGGESTION_REASONS[row.suggestion.reason]}</p>}
           {row.suggestion.status === "high_confidence" && <>
             <p>الوحدة المقترحة: {ACTUAL_UNITS[row.suggestion.dispensingUnit as ActualUnit]} · معامل التحويل: {row.suggestion.factor}</p>
             <p dir="ltr">{row.quantity} × {row.suggestion.factor} × {money(row.suggestion.salePrice)} = {money(row.suggestion.expectedValue)} LYD</p>
