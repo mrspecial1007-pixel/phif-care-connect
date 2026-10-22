@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ReportBackLink } from "./ReportBackLink";
 import { getReferenceItem, listReferenceItems } from "@/lib/items-reference.functions";
+import { SupplierPriceBasisEditor } from "./SupplierPriceBasisEditor";
 
 type Src = "Actual" | "PHIF Supplier";
 const money = (v: number | null) => (v == null ? "غير متاح" : `${v.toLocaleString("ar-LY", { maximumFractionDigits: 3 })} د.ل`);
@@ -77,6 +78,7 @@ export function ItemsReferencePage() {
                   {item.form && <p className="mt-0.5 text-xs text-muted-foreground">{item.form}</p>}
                 </div>
                 <SourceBadges sources={item.sources} />
+                {item.latestPhifSale && <p className="text-xs text-muted-foreground">آخر سعر بيع PHIF Supplier: {item.latestPhifSale.conflict ? "أسعار متعددة تحتاج مراجعة" : money(item.latestPhifSale.price)} · {dateLabel(item.latestPhifSale.date)}{item.latestPhifSale.basis === "invoice_value_divided_by_quantity" && <span className="block">لكل وحدة كمية بالفاتورة (قيمة البند ÷ الكمية)</span>}</p>}
               </div>
               <div className="flex shrink-0 items-center gap-2"><span className="text-xs font-medium">{item.beneficiaries} مستفيد</span><ChevronLeft className="size-4 text-muted-foreground" /></div>
             </div>
@@ -115,7 +117,7 @@ export function ItemReferenceDetailsPage({ itemId }: { itemId: string }) {
     </DetailSection>
 
     <DetailSection title="PHIF Supplier" icon={Boxes}>
-      <Card className="p-3"><div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"><div className="min-w-0"><p className="text-xs text-muted-foreground">سعر الشراء الداخلي</p><strong className="mt-1 block">{item.phif.price == null ? "غير محدد" : money(item.phif.price)}</strong><p className="mt-1 text-[11px] text-muted-foreground">{item.phif.unit ? `لكل ${item.phif.unit}` : "السعر لكل وحدة صرف"} · {item.phif.count} صرفية</p></div><Button size="sm" variant="outline" onClick={() => undefined}>تعديل السعر</Button></div></Card>
+      <Card className="space-y-1 p-3"><p className="text-sm">{item.phif.count} صرفية · تكلفة مستقلة لكل بند فاتورة</p>{item.latestPhifSale && <p className="text-xs text-muted-foreground">آخر سعر بيع: {item.latestPhifSale.conflict ? "أسعار متعددة تحتاج مراجعة" : money(item.latestPhifSale.price)} · {dateLabel(item.latestPhifSale.date)}</p>}</Card>
     </DetailSection>
 
     <DetailSection title="منتجات Actual" icon={Boxes}>
@@ -123,7 +125,11 @@ export function ItemReferenceDetailsPage({ itemId }: { itemId: string }) {
     </DetailSection>
 
     <DetailSection title="حركة الصرف" icon={CalendarClock}>
-      {item.movements.length ? <Card className="divide-y p-0">{item.movements.map((m: any) => <div key={m.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 p-3"><div className="min-w-0"><strong className="block truncate text-sm">صرف {m.quantity ?? "—"} · {m.beneficiary ?? "—"}</strong><span className="text-xs text-muted-foreground">{m.source}{m.brand ? ` · ${m.brand}` : ""}</span>{m.manualMatch && <span className="block text-xs text-teal-800">مطابقة يدوية · {m.referenceBrand}</span>}</div><time className="shrink-0 text-xs text-muted-foreground">{dateLabel(m.date)}</time></div>)}</Card> : <Empty text="لا توجد حركة صرف" />}
+      {item.movements.length ? <Card className="divide-y p-0">{item.movements.map((m: any) => <div key={m.id} className="space-y-2 p-3"><div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"><div className="min-w-0"><strong className="block break-words text-sm">صرف {m.quantity ?? "—"} · {m.beneficiary ?? "—"}</strong><span className="text-xs text-muted-foreground">{m.source}{m.brand ? ` · ${m.brand}` : ""} · فاتورة {m.invoiceNumber || "—"}</span>{m.manualMatch && <span className="block text-xs text-teal-800">مطابقة يدوية · {m.referenceBrand}</span>}</div><time className="shrink-0 text-xs text-muted-foreground">{dateLabel(m.date)}</time></div>
+        {m.supplierCost && <div className="space-y-1 text-sm"><p>تكلفة الشراء الإجمالية: <strong>{money(m.supplierCost.total)}</strong></p>{m.supplierCost.unitPrice != null && <p className="text-xs text-muted-foreground">سعر وحدة الكمية: {money(m.supplierCost.unitPrice)}</p>}</div>}
+        {m.source === "PHIF Supplier" && item.phif.canEditPrice && <SupplierPriceBasisEditor itemId={m.id} label={[item.ingredient, item.strength, `فاتورة ${m.invoiceNumber || "—"}`].filter(Boolean).join(" · ")} unit={m.supplierUnit} savedBasis={m.supplierPriceBasis} />}
+        {m.supplierCostHistory?.length > 0 && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">سجل تعديل التكلفة ({m.supplierCostHistory.length})</summary>{m.supplierCostHistory.map((entry: any, index: number) => <p key={index} className="mt-1 break-words">{dateLabel(entry.at)} · {entry.user_id ? `المستخدم ${entry.user_id}` : "جلسة الصيدلية المصرح بها"} · {money(entry.next?.value ?? null)}</p>)}</details>}
+      </div>)}</Card> : <Empty text="لا توجد حركة صرف" />}
     </DetailSection>
   </div>;
 }

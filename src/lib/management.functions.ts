@@ -1173,7 +1173,8 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { pharmacy_id } = await requireTiryaqPermission("phif_purchase_price_write");
+    const priceSession = await requireTiryaqPermission("phif_purchase_price_write");
+    const { pharmacy_id } = priceSession;
     const { data: item, error: itemError } = await supabaseAdmin
       .from("phif_invoice_items")
       .select("id, phif_invoice_id, source_classification, phif_financial_fields, metadata, quantity")
@@ -1211,11 +1212,20 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
       internal_purchase_unit: data.purchaseCostMode === "unit_price" ? purchaseUnit : null,
       purchase_price_unit: data.purchaseCostMode === "unit_price" ? purchaseUnit : null,
       internal_purchase_price_updated_at: new Date().toISOString(),
+      internal_purchase_price_basis: null,
+      internal_purchase_history: [...(Array.isArray(item.phif_financial_fields?.internal_purchase_history) ? item.phif_financial_fields.internal_purchase_history : []), {
+        user_id: priceSession.session.data.user_id ?? null, at: new Date().toISOString(),
+        previous: Object.fromEntries(Object.entries(item.phif_financial_fields ?? {}).filter(([key]) => key.startsWith("internal_purchase_") && key !== "internal_purchase_history")),
+        next: { mode: data.purchaseCostMode, value: purchaseValue, unit: purchaseUnit ?? null },
+      }],
     };
-    const { error } = await supabaseAdmin
+    let update = supabaseAdmin
       .from("phif_invoice_items")
       .update({ phif_financial_fields: fields })
-      .eq("id", data.itemId);
+      .eq("id", data.itemId).eq("phif_invoice_id", item.phif_invoice_id);
+    update = item.phif_financial_fields == null ? update.is("phif_financial_fields", null) : update.eq("phif_financial_fields", JSON.stringify(item.phif_financial_fields));
+    const { data: savedItem, error } = await update.select("id").maybeSingle();
     if (error) throw new Error(error.message);
+    if (!savedItem) throw new Error("تغيّرت تكلفة البند من جلسة أخرى؛ أعد تحميل الفاتورة");
     return { ok: true };
   });

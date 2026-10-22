@@ -1,5 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { actualReferenceItem } from "./actual-stock-links.helpers";
+import { latestPhifSale } from "./items-reference-prices.helpers";
+import { supplierSavedCost } from "./phif-supplier-price-basis.helpers";
+import { supplierInvoiceUnit } from "./phif-supplier-quick-cost.helpers";
 import { z } from "zod";
 import { hasPermission } from "@/lib/user-permissions";
 import { TIRYAQ_PHARMACY_NAME } from "@/lib/pharmacy-isolation";
@@ -24,11 +27,12 @@ function toId(key: string) {
 
 async function pagedAll(build: (from: number, to: number) => any) {
   const out: any[] = [];
-  for (let from = 0; ; from += 1000) {
+  for (let from = 0; ; ) {
     const { data, error } = await build(from, from + 999);
     if (error) throw new Error(error.message);
     out.push(...(data ?? []));
-    if (!data || data.length < 1000) break;
+    if (!data?.length) break;
+    from += data.length;
   }
   return out;
 }
@@ -85,8 +89,8 @@ function sourceMovementsVisible(source: Src, access: ItemAccess) {
 
 async function loadAll(admin: any, pharmacyId: string, range: { dateFrom?: string; dateTo?: string } | undefined, access: ItemAccess) {
   const invoices = await pagedAll((a, b) => {
-    let query = admin.from("phif_invoices").select("id, beneficiary_name, insurance_card_number, patient_id, dispensing_date")
-      .eq("pharmacy_id", pharmacyId).order("dispensing_date", { ascending: false }).range(a, b);
+    let query = admin.from("phif_invoices").select("id, invoice_number, beneficiary_name, insurance_card_number, patient_id, dispensing_date, dispensing_time")
+      .eq("pharmacy_id", pharmacyId).order("dispensing_date", { ascending: false }).order("id").range(a, b);
     if (range?.dateFrom) query = query.gte("dispensing_date", range.dateFrom);
     if (range?.dateTo) query = query.lte("dispensing_date", range.dateTo);
     return query;
@@ -98,7 +102,7 @@ async function loadAll(admin: any, pharmacyId: string, range: { dateFrom?: strin
     items.push(...(await pagedAll((a, b) => {
       let query = admin.from("phif_invoice_items")
         .select("id, phif_invoice_id, active_ingredient, strength, brand, quantity, supplier, source_classification, phif_financial_fields, metadata")
-        .in("phif_invoice_id", batch).range(a, b);
+        .in("phif_invoice_id", batch).order("id").range(a, b);
       if (access.actualItems && !access.phifItems) query = query.neq("source_classification", "phif-supplier");
       if (access.phifItems && !access.actualItems) query = query.eq("source_classification", "phif-supplier");
       return query;
@@ -107,7 +111,7 @@ async function loadAll(admin: any, pharmacyId: string, range: { dateFrom?: strin
   const stock = access.actualItems ? await pagedAll((a, b) =>
     admin.from("phif_stock_items")
       .select("id, source_stock_id, brand_product_id, brand_name, active_ingredient, strength, dosage_unit, stock_quantity, source_quantity_unit, cost_price, sale_price, supplier_name, synced_at")
-      .eq("pharmacy_id", pharmacyId).eq("is_current", true).range(a, b)) : [];
+      .eq("pharmacy_id", pharmacyId).eq("is_current", true).order("id").range(a, b)) : [];
   const { loadActualStockLinks } = await import("./actual-stock-links.server");
   return { invoices, items: (await loadActualStockLinks(admin, pharmacyId, items)).items, stock };
 }
@@ -167,7 +171,8 @@ export const listReferenceItems = createServerFn({ method: "POST" })
   assertCanViewItems(access);
   const index = buildIndex(await loadAll(admin, pharmacyId, data, access), access);
   return [...index.values()]
-    .map((r) => ({ id: r.id as string, ingredient: r.ingredient as string, strength: r.strength as string, form: r.form as string, beneficiaries: r.patients.size as number, sources: [...r.sources] as Src[] }))
+    .map((r) => ({ id: r.id as string, ingredient: r.ingredient as string, strength: r.strength as string, form: r.form as string, beneficiaries: r.patients.size as number, sources: [...r.sources] as Src[],
+      latestPhifSale: access.phifItems && access.phifRevenue ? latestPhifSale(r.items) : null }))
     .sort((a, b) => a.ingredient.localeCompare(b.ingredient, "en"));
 });
 
@@ -177,7 +182,8 @@ export const getReferenceItem = createServerFn({ method: "POST" })
     const { admin, pharmacyId, session: currentSession } = await session();
     const access = itemAccess(currentSession);
     assertCanViewItems(access);
-    const index = buildIndex(await loadAll(admin, pharmacyId, undefined, access), access);
+    const dataset = await loadAll(admin, pharmacyId, undefined, access);
+    const index = buildIndex(dataset, access);
     const row = [...index.values()].find((r) => r.id === data.id);
     if (!row) return null;
     const beneficiaries = new Map<string, { name: string; count: number }>();
@@ -190,7 +196,6 @@ export const getReferenceItem = createServerFn({ method: "POST" })
       beneficiaries.set(k, b);
     }
     const phifItems = row.items.filter((it: any) => it.source_classification === "phif-supplier");
-    const priced = phifItems.find((it: any) => it.phif_financial_fields?.internal_purchase_price != null);
     const movements = row.items
       .filter((it: any) => it.invoice)
       .sort((a: any, b: any) => String(b.invoice.dispensing_date ?? "").localeCompare(String(a.invoice.dispensing_date ?? "")))
@@ -204,6 +209,11 @@ export const getReferenceItem = createServerFn({ method: "POST" })
         source: itemSource(it),
         manualMatch: Boolean(it.manual_stock_link?.is_active),
         referenceBrand: actualReferenceItem(it).brand ?? null,
+        invoiceNumber: it.invoice.invoice_number ?? null,
+        supplierCost: itemSource(it) === "PHIF Supplier" && access.phifCost ? supplierSavedCost(it) : null,
+        supplierUnit: itemSource(it) === "PHIF Supplier" ? supplierInvoiceUnit(it).unit : null,
+        supplierPriceBasis: itemSource(it) === "PHIF Supplier" && access.phifCost ? it.phif_financial_fields?.internal_purchase_price_basis ?? null : null,
+        supplierCostHistory: itemSource(it) === "PHIF Supplier" && access.phifCost ? it.phif_financial_fields?.internal_purchase_history ?? [] : [],
       }));
     return {
       id: row.id as string,
@@ -214,11 +224,11 @@ export const getReferenceItem = createServerFn({ method: "POST" })
       beneficiaryCount: row.patients.size as number,
       dispenseCount: row.items.length as number,
       canSeeCost: access.actualCost,
+      latestPhifSale: access.phifItems && access.phifRevenue ? latestPhifSale(phifItems) : null,
       beneficiaries: [...beneficiaries.values()].sort((a, b) => b.count - a.count),
       phif: {
         count: phifItems.length as number,
-        price: access.phifCost && priced ? Number(priced.phif_financial_fields.internal_purchase_price) : null,
-        unit: priced?.phif_financial_fields?.internal_purchase_unit ?? null,
+        canEditPrice: access.phifItems && access.phifCost && access.phifMovements && can(currentSession, "phif_purchase_price_write"),
       },
       actualProducts: row.stock.map((s: any) => ({
         id: s.id as string,
