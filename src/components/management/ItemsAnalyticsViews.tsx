@@ -294,7 +294,7 @@ function Movements({ rows }: { rows: AnalyticsRow[] }) {
           <p className="text-sm">
             {number(r.quantity)} {r.unit ? ACTUAL_UNITS[r.unit] : "وحدة غير موثقة"} ·{" "}
             {r.boxes == null ? "التحويل إلى علب غير موثق" : `${number(r.boxes)} علبة`}
-            {r.source === "phif" && r.unitProvenance && r.unitProvenance !== "source" && <span className="mr-1 text-xs text-teal-800">وحدة موثقة يدويًا</span>}
+            {r.source === "phif" && r.unit && r.unitProvenance && r.unitProvenance !== "source" && <span className="mr-1 text-xs text-teal-800">وحدة موثقة يدويًا</span>}
           </p>
           <Finance
             row={{
