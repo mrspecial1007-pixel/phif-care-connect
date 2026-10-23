@@ -2,10 +2,14 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // PDF JSX runs inside a worker, where React Refresh's window runtime is unavailable.
+  react: { exclude: [/node_modules/, /profit-analysis-export\.pdf\.tsx$/] },
   tanstackStart: {
     server: { entry: "server" },
   },
   vite: {
+    worker: { format: "es" },
+    optimizeDeps: { include: ["@react-pdf/renderer", "exceljs"] },
     plugins: [
       VitePWA({
         registerType: "autoUpdate",

@@ -27,6 +27,7 @@ import {
 } from "@/lib/reports.helpers";
 import { hasPermission, type TiryaqPermission } from "@/lib/user-permissions";
 import { scientificReportIdentity } from "./items-analytics.helpers";
+import { canExportProfit, profitExportPayload, validProfitExportRange } from "./profit-analysis-export.model";
 
 const rangeSchema = z.object({
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -1070,16 +1071,25 @@ export const getProfitAnalysisReport = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => rangeSchema.parse(d))
   .handler(({ data }) => buildProfitAnalysisReport(data));
 
+export const getProfitAnalysisExport = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => rangeSchema.refine(r => validProfitExportRange(r.dateFrom, r.dateTo), "الفترة الزمنية غير صحيحة").parse(d))
+  .handler(async ({ data }) => {
+    const report = await buildProfitAnalysisReport(data, false, true);
+    return profitExportPayload(report, report.export_metadata!);
+  });
+
 export const getTreasuryReport = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => rangeSchema.parse(d))
   .handler(({ data }) => buildProfitAnalysisReport(data, true));
 
-async function buildProfitAnalysisReport(data: z.infer<typeof rangeSchema>, treasury = false) {
+async function buildProfitAnalysisReport(data: z.infer<typeof rangeSchema>, treasury = false, exporting = false) {
     const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const session = await requireTiryaqPermission("reports_read");
+    const session = await requireTiryaqPermission(exporting ? "reports_export" : "reports_read");
     const { pharmacy_id } = session;
     const access = treasury ? treasuryFinanceAccess(session, financeAccess(session)) : financeAccess(session);
+    const can_export = canExportProfit(session.session.data, data.source, access);
+    if (exporting && !can_export) throw new Error("تصدير التقرير المالي يتطلب صلاحيات التقارير والتصدير والحركات والإيرادات والتكاليف والأرباح لكل مصدر مختار، وقراءة تكلفة المخزون عند تضمين Actual");
     const { rows } = await loadProfitRows(supabaseAdmin, pharmacy_id, data, access);
     const invoiceMap = new Map<string, any>();
     const beneficiaryMap = new Map<string, any>();
@@ -1170,6 +1180,9 @@ async function buildProfitAnalysisReport(data: z.infer<typeof rangeSchema>, trea
       invoice_ids: undefined,
     }));
     const report = {
+      can_export,
+      export_metadata: exporting ? { pharmacy: session.pharmacy_name, dateFrom: data.dateFrom, dateTo: data.dateTo, source: data.source, issuedAt: new Date().toISOString() } : undefined,
+      export_details: exporting ? { items: [...itemMap.values()], beneficiaries: [...beneficiaries] } : undefined,
       summary: {
         total_revenue: rows.reduce((sum, row) => sum + reportNumberValue(row.revenue), 0),
         known_cost: rows.reduce((sum, row) => sum + reportNumberValue(row.purchase_cost), 0),
