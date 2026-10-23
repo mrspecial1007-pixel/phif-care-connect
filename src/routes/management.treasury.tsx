@@ -79,6 +79,7 @@ function TreasuryPage() {
         queryClient.invalidateQueries({ queryKey: ["management_profit_analysis"] }),
         queryClient.invalidateQueries({ queryKey: ["report_item_tracking"] }),
         queryClient.invalidateQueries({ queryKey: ["management_audit"] }),
+        queryClient.invalidateQueries({ queryKey: ["items_analytics"] }),
       ]);
       toast.success("تم حفظ سعر الشراء");
     },

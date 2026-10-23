@@ -1,7 +1,11 @@
 import { invoiceItemValue } from "./phif-stock.helpers";
 
 export function latestPhifSale(items: any[]) {
-  const priced = items.filter(i => i.source_classification === "phif-supplier").flatMap(item => {
+  return latestInvoiceSale(items, "phif-supplier");
+}
+
+export function latestInvoiceSale(items: any[], source: "phif-supplier" | "actual-supplier", roundUnit = true) {
+  const priced = items.filter(i => i.source_classification === source).flatMap(item => {
     const fields = item.phif_financial_fields ?? {};
     const explicit = [fields.sale_price,fields.salePrice,fields.unit_price,fields.unitPrice,fields.price]
       .find(v => v != null && v !== "" && Number.isFinite(Number(v)) && Number(v) >= 0);
@@ -9,7 +13,7 @@ export function latestPhifSale(items: any[]) {
     const hasSaleValue = ["total_amount", "totalAmount", "total", "itemTotal", "actual_value", "actualValue", "phifValue", "insurance_amount", "insuranceAmount", "outside_insurance_amount", "outsideInsuranceAmount"]
       .some(key => fields[key] != null && fields[key] !== "" && Number.isFinite(Number(fields[key])));
     const price = explicit != null ? Number(explicit) : quantity > 0 && value >= 0 && hasSaleValue
-      ? Math.round(value / quantity * 1000000) / 1000000 : null;
+      ? roundUnit ? Math.round(value / quantity * 1000000) / 1000000 : value / quantity : null;
     return price == null ? [] : [{ price, date: item.invoice?.dispensing_date ?? null, time: item.invoice?.dispensing_time ?? null,
       basis: explicit != null ? "recorded_unit_price" : "invoice_value_divided_by_quantity" }];
   });

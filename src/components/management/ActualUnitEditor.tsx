@@ -11,7 +11,7 @@ import { UNIT_SUGGESTION_REASONS } from "@/lib/actual-unit-suggestions.helpers";
 import { ActualUnitAccessNotice } from "./ActualUnitAccessNotice";
 
 const queryKeys = ["actual_units", "management_audit", "treasury_report", "management_profit_analysis", "management_monthly_report",
-  "report_item_tracking", "report_item_search", "reference_items", "reference_item"];
+  "report_item_tracking", "report_item_search", "reference_items", "reference_item", "items_analytics"];
 const money = (value: number) => value.toLocaleString("ar-LY", { maximumFractionDigits: 3 });
 
 export function ActualUnitEditor({ itemId, onClose, access }: { itemId: string; onClose: () => void; access?: { allowed: boolean; subject?: string; code: string; message: string } }) {

@@ -26,6 +26,7 @@ import {
   type TopSort,
 } from "@/lib/reports.helpers";
 import { hasPermission, type TiryaqPermission } from "@/lib/user-permissions";
+import { scientificReportIdentity } from "./items-analytics.helpers";
 
 const rangeSchema = z.object({
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -344,6 +345,8 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
   const dataset = await loadReportDataset(supabaseAdmin, pharmacyId, data.dateFrom, data.dateTo);
   const stocks = await loadStockWithCosts(supabaseAdmin, pharmacyId);
   const invoiceById = new Map(dataset.invoices.map((invoice) => [invoice.id, invoice]));
+  // Request-local only: retain every financial, link and unit-decision input.
+  const profitCache = new Map<string, ReturnType<typeof profitForItem>>();
   const rows = dataset.items
     .filter((item) => {
       if (data.source === "actual") return reportItemSource(item) === "actual";
@@ -352,7 +355,9 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
     })
     .map((item) => {
       const invoice: any = invoiceById.get(item.phif_invoice_id);
-       const profit = profitForItem(item, invoice, stocks);
+      const cacheKey = JSON.stringify({ ...item, id: undefined, phif_invoice_id: undefined });
+      let profit = profitCache.get(cacheKey);
+      if (!profit) { profit = profitForItem(item, invoice, stocks); profitCache.set(cacheKey, profit); }
       const units = profit.source === "actual" ? profit.units : null;
       return {
         item_id: item.id,
@@ -397,6 +402,25 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
       };
     });
   return { invoices: dataset.invoices, items: dataset.items, rows: access ? redactProfitRows(rows, access) : rows, stocks };
+}
+
+/** Server-side input for item analytics; never return this raw dataset from an API. */
+export async function loadItemAnalyticsDataset(authorize?: (context: any, access: FinanceAccess) => void) {
+  const { requirePharmacySession } = await import("./pharmacy-session.server");
+  const { TIRYAQ_PHARMACY_NAME } = await import("./pharmacy-isolation");
+  const session = await requirePharmacySession();
+  if (session.pharmacy_name !== TIRYAQ_PHARMACY_NAME) throw new Error("Unauthorized");
+  const access = financeAccess(session);
+  if (!session.session.data.user_id && !session.session.data.user_role) {
+    // Preserve the existing, server-verified legacy PIN manager's report access.
+    for (const rights of [access.actual, access.phif]) Object.keys(rights).forEach(key => { (rights as any)[key] = true; });
+    access.actual.purchasePriceWrite = false;
+  }
+  if (!access.actual.items && !access.phif.items) throw new Error("لا تملك صلاحية عرض الأصناف");
+  authorize?.(session, access);
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const dataset = await loadProfitRows(supabaseAdmin, session.pharmacy_id, { dateFrom: "1900-01-01", dateTo: "9999-12-31", source: "all" });
+  return { ...dataset, session, access, admin: supabaseAdmin };
 }
 
 function isKnownCostRow(row: any) {
@@ -447,12 +471,15 @@ function auditStatusPriority(status: string) {
   return 1;
 }
 
-export function buildManagementAuditReport(input: { invoices: any[]; items: any[]; stocks: any[] }) {
+export function buildManagementAuditReport(input: { invoices: any[]; items: any[]; stocks: any[]; withProfitIndicators?: boolean }) {
   const invoiceById = new Map(input.invoices.map((invoice) => [invoice.id, invoice]));
   const actualGroups = new Map<string, any>();
   const financialInvoices = new Map<string, any>();
   const profitCache = new Map<string, ReturnType<typeof profitForItem>>();
   const matchCache = new Map<string, ReturnType<typeof matchActualInvoiceItemToStock>>();
+  const lossItems = new Map<string, { complete: boolean; profit: number }>();
+  const lossInvoices = new Map<string, { complete: boolean; profit: number }>();
+  let missingCosts = 0;
   const actualAuditKey = (item: any) => JSON.stringify({
     source: item.source_classification ?? null,
     brand: item.brand ?? null,
@@ -514,6 +541,16 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     if (invoiceAudit) invoiceAudit.item_count += 1;
 
     const profit = cachedProfit(item, invoice);
+    if (input.withProfitIndicators) {
+      const identity = scientificReportIdentity(item, supplierInvoiceForm(item) || profit.stock?.dosage_unit).key;
+      for (const [map, key] of [[lossItems, identity], [lossInvoices, item.phif_invoice_id]] as const) {
+        const entry = map.get(key) ?? { complete: true, profit: 0 };
+        entry.complete &&= profit.purchaseCost != null && profit.grossMargin != null;
+        entry.profit += profit.grossMargin ?? 0;
+        map.set(key, entry);
+      }
+      if (profit.purchaseCost == null) missingCosts++;
+    }
     if (profit.source === "phif") {
       if (invoiceAudit && profit.status === "needs_purchase_price") {
         invoiceAudit.phif_missing_cost_count += 1;
@@ -634,6 +671,11 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
 
   return {
     generated_at: new Date().toISOString(),
+    profitability: input.withProfitIndicators ? {
+      losingItems: [...lossItems.values()].filter(i => i.complete && i.profit < 0).length,
+      losingInvoices: [...lossInvoices.values()].filter(i => i.complete && i.profit < 0).length,
+      missingCosts,
+    } : null,
     actual: {
       summary: actualSummary,
       issues: actualItems
@@ -1006,7 +1048,9 @@ export const getManagementAuditReport = createServerFn({ method: "POST" })
       const { isTreasuryManager } = await import("./treasury-financials.helpers");
       const { actualUnitAccess } = await import("./actual-units.auth");
       const unit_access = await actualUnitAccess(supabaseAdmin, context, process.env.SESSION_SECRET);
-      return { ...buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks }), can_manage_links: isTreasuryManager(context),
+      const rights = financeAccess(context);
+      const withProfitIndicators = sessionHasPermission(context, "stock_cost_read") && [rights.actual, rights.phif].every(r => r.items && r.revenue && r.cost && r.profit);
+      return { ...buildManagementAuditReport({ invoices: dataset.invoices, items: dataset.items, stocks, withProfitIndicators }), can_manage_links: isTreasuryManager(context),
         can_manage_units: unit_access.allowed, unit_access };
     } catch (error: any) {
       console.error("management audit failed", {

@@ -60,7 +60,7 @@ export function SupplierPriceBasisEditor({ itemId, label, unit, savedBasis }: {
       setSelected(previous => previous.filter(id => !completed.has(id)));
       if (failures.length) setError(`تعذر حفظ بعض البنود: ${[...new Set(failures)].join(" · ")} أعد المعاينة قبل المحاولة مجددًا.`);
       try {
-        await Promise.all(["reference_items", "reference_item", "treasury_report", "management_profit_analysis", "report_item_tracking", "management_audit"].map(key => client.invalidateQueries({ queryKey: [key] })));
+        await Promise.all(["reference_items", "reference_item", "treasury_report", "management_profit_analysis", "report_item_tracking", "management_audit", "items_analytics"].map(key => client.invalidateQueries({ queryKey: [key] })));
       } finally { setBusy(false); lock.current = false; }
     }
   }

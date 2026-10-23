@@ -132,6 +132,7 @@ function PhifSyncPage() {
         qc.invalidateQueries({ queryKey: ["phif_review_cases"] }),
         qc.invalidateQueries({ queryKey: ["phif_invoices_archive"] }),
         qc.invalidateQueries({ queryKey: ["phif_invoice_archive_stats"] }),
+        qc.invalidateQueries({ queryKey: ["items_analytics"] }),
       ]);
     } catch (error: any) {
       toast.error(error?.message ?? "فشل حفظ فواتير PHIF");
@@ -155,6 +156,7 @@ function PhifSyncPage() {
       const result = await inspectItemCompletion({ data: { invoice_key: invoiceKey, dry_run: dryRun } });
       setCompletionResult(result);
       setCompletionMode("single");
+      if (!dryRun) await qc.invalidateQueries({ queryKey: ["items_analytics"] });
       toast.success(dryRun ? "تمت معاينة استكمال الأصناف" : `تمت إضافة ${result.added_item_count} صنف`);
     } catch (error: any) {
       toast.error(error?.message ?? "تعذر استكمال أصناف الفاتورة");
@@ -180,6 +182,7 @@ function PhifSyncPage() {
       });
       setCompletionResult(result);
       setCompletionMode("range");
+      if (!dryRun) await qc.invalidateQueries({ queryKey: ["items_analytics"] });
       toast.success(dryRun ? "تمت معاينة نطاق الاستكمال" : `تم استكمال ${result.completed_invoice_count} فاتورة`);
     } catch (error: any) {
       toast.error(error?.message ?? "تعذر استكمال نطاق الفواتير");

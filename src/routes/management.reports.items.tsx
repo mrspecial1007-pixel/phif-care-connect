@@ -1,12 +1,14 @@
 import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
-import { ItemsReferencePage } from "@/components/management/ItemsReferenceViews";
+import { ItemsAnalyticsPage } from "@/components/management/ItemsAnalyticsViews";
+import { validateAnalyticsSearch } from "@/lib/items-analytics.helpers";
 
 export const Route = createFileRoute("/management/reports/items")({
   component: ItemsReferenceLayout,
-  head: () => ({ meta: [{ title: "الأصناف — PHIF Tracker" }, { name: "description", content: "مرجع مركزي للأدوية بالاسم العلمي" }, { property: "og:title", content: "الأصناف — PHIF Tracker" }, { property: "og:description", content: "مرجع الأدوية والمنتجات حسب الاسم العلمي" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
+  validateSearch: validateAnalyticsSearch,
+  head: () => ({ meta: [{ title: "تقرير الأصناف والاستهلاك — PHIF Tracker" }, { name: "description", content: "الاستهلاك الشهري والأصناف بالاسم العلمي والعلب" }] }),
 });
 
 function ItemsReferenceLayout() {
   const location = useLocation();
-  return location.pathname === "/management/reports/items" ? <ItemsReferencePage /> : <Outlet />;
+  return location.pathname === "/management/reports/items" ? <ItemsAnalyticsPage /> : <Outlet />;
 }

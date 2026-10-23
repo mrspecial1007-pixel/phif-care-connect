@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Link2, RefreshCw, ShieldCheck } from "lucide-react";
@@ -203,6 +203,12 @@ function ManagementAuditPage() {
 
       {isLoading && <Card className="p-4 text-sm text-muted-foreground">جاري تشغيل التدقيق...</Card>}
       {error && <Card className="border-red-200 p-4 text-sm text-red-700">تعذر تشغيل التدقيق: {auditErrorMessage(error)}</Card>}
+
+      {data?.profitability && <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Link to="/management/reports/item-profit" search={{ month: "all", result: "loss" } as any}><Card className="border-red-200 p-3"><span className="text-xs">أصناف تُباع بخسارة</span><strong className="block text-xl text-red-700">{data.profitability.losingItems}</strong></Card></Link>
+        <Link to="/management/reports/invoice-profit" search={{ month: "all", result: "loss" } as any}><Card className="border-red-200 p-3"><span className="text-xs">فواتير خاسرة</span><strong className="block text-xl text-red-700">{data.profitability.losingInvoices}</strong></Card></Link>
+        <Link to="/management/reports/item-profit" search={{ month: "all", result: "incomplete" } as any}><Card className="border-amber-200 p-3"><span className="text-xs">بنود تنقصها تكلفة</span><strong className="block text-xl text-amber-800">{data.profitability.missingCosts}</strong></Card></Link>
+      </div>}
 
       {data && actual && financial && (
         <>

@@ -33,7 +33,7 @@ export function ActualStockLinks({ itemIds = [], onClose }: { itemIds?: string[]
     lock.current = true; setBusy(true); setError(""); setNotice("");
     try {
       await save({ data: { itemId, targetId: revoke ? null : targetId, expectedVersion: existing?.version ?? 0, confirmed: true, revoke } });
-      await queryClient.invalidateQueries({ predicate: q => ["actual_stock_links", "management_audit", "treasury_report", "management_profit_analysis", "report_item_tracking", "report_item_search", "reference_items", "reference_item", "management_monthly_report"].includes(String(q.queryKey[0])) });
+      await queryClient.invalidateQueries({ predicate: q => ["actual_stock_links", "management_audit", "treasury_report", "management_profit_analysis", "report_item_tracking", "report_item_search", "reference_items", "reference_item", "management_monthly_report", "items_analytics"].includes(String(q.queryKey[0])) });
       setTargetId(""); setConfirmed(false);
       await query.refetch();
       setNotice(revoke ? "تم إلغاء الربط والعودة للمطابقة الآلية" : "تم حفظ المطابقة اليدوية");

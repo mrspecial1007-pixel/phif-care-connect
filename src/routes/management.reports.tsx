@@ -11,9 +11,27 @@ export const Route = createFileRoute("/management/reports")({
 const reportCards = [
   {
     to: "/management/reports/items",
-    title: "الأصناف",
-    desc: "مرجع الأدوية بالاسم العلمي",
+    title: "تقرير الأصناف والاستهلاك",
+    desc: "الاستهلاك الشهري والعلب وأسعار البيع",
     icon: Boxes,
+  },
+  {
+    to: "/management/reports/item-profit",
+    title: "ربحية الأصناف",
+    desc: "أرباح وخسائر الأصناف والفواتير المرتبطة",
+    icon: TrendingUp,
+  },
+  {
+    to: "/management/reports/invoice-profit",
+    title: "ربحية الفواتير",
+    desc: "ترتيب الفواتير ومراجعة البنود الخاسرة",
+    icon: BarChart3,
+  },
+  {
+    to: "/management/reports/beneficiary-profit",
+    title: "ربحية المستفيدين",
+    desc: "الربح التراكمي وأعلى ربح فاتورة",
+    icon: TrendingUp,
   },
   {
     to: "/management/reports/summary",

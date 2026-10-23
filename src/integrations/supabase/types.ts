@@ -1196,6 +1196,12 @@ export type Database = {
           },
         ]
       }
+      phif_report_box_settings: {
+        Row: { id: string; pharmacy_id: string; item_identity: string; units_per_box: number; base_unit: string; version: number; updated_by: string; updated_at: string }
+        Insert: { id?: string; pharmacy_id: string; item_identity: string; units_per_box: number; base_unit: string; version?: number; updated_by: string; updated_at?: string }
+        Update: { units_per_box?: number; base_unit?: string; version?: number; updated_by?: string; updated_at?: string }
+        Relationships: []
+      }
       phif_stock_items: {
         Row: {
           active_ingredient: string | null
@@ -2048,6 +2054,10 @@ export type Database = {
       }
     }
     Functions: {
+      set_phif_report_box_setting: {
+        Args: { p_pharmacy_id: string; p_actor_id: string; p_identity: string; p_units_per_box: number; p_base_unit: string; p_expected_version: number }
+        Returns: Json
+      }
       register_gateway_device_with_code: {
         Args: { _code_hash: string; _device_name: string; _fcm_token?: string }
         Returns: Json

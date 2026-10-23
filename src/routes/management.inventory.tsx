@@ -64,6 +64,7 @@ function InventoryPage() {
       toast.success(`تمت مزامنة المخزون: ${result.imported_records} سجل جديد أو متغير`);
       qc.invalidateQueries({ queryKey: ["phif_stock_summary"] });
       qc.invalidateQueries({ queryKey: ["phif_stock_items"] });
+      qc.invalidateQueries({ queryKey: ["items_analytics"] });
     },
     onError: (error: any) => {
       toast.error(error?.message ?? "تعذرت مزامنة المخزون");
