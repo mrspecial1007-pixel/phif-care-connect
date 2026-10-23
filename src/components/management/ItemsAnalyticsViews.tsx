@@ -36,6 +36,10 @@ import {
   type AnalyticsView,
 } from "@/lib/items-analytics-export";
 import { useSession } from "@/lib/queries";
+import {
+  reportSettingRequest,
+  refreshReportAfterSettingSave,
+} from "@/lib/report-setting-save.helpers";
 
 const money = (v: number | null | undefined) =>
   v == null
@@ -129,25 +133,42 @@ function Finance({ row, profitLabel = "الربح / الخسارة" }: { row: an
     </div>
   );
 }
-function BoxEditor({ item, rows, unitsAvailable, onClose }: { item: any; rows: AnalyticsRow[]; unitsAvailable: boolean; onClose: () => void }) {
+function BoxEditor({
+  item,
+  rows,
+  unitsAvailable,
+  reportKey,
+  onClose,
+}: {
+  item: any;
+  rows: AnalyticsRow[];
+  unitsAvailable: boolean;
+  reportKey: readonly unknown[];
+  onClose: () => void;
+}) {
   const [count, setCount] = useState(String(item.setting?.units_per_box ?? ""));
   const [unit, setUnit] = useState<ActualUnit | "">(
     item.setting?.base_unit ?? actualUnit(item.form) ?? "",
   );
   const client = useQueryClient();
+  const saveLock = useRef(false);
   const save = useMutation({
     mutationFn: () =>
-      saveReportBoxSetting({
-        data: {
-          identity: item.id,
-          unitsPerBox: Number(count),
-          baseUnit: unit as ActualUnit,
-          version: item.setting?.version ?? 0,
-        },
-      }),
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ["items_analytics"] });
+      reportSettingRequest(() =>
+        saveReportBoxSetting({
+          data: {
+            identity: item.id,
+            unitsPerBox: Number(count),
+            baseUnit: unit as ActualUnit,
+            version: item.setting?.version ?? 0,
+          },
+        }),
+      ),
+    onSuccess: () => {
       toast.success("تم حفظ حجم العلبة");
+      refreshReportAfterSettingSave(client, reportKey, () =>
+        toast.error("حُفظ حجم العلبة، لكن تعذر تحديث التقرير. اضغط تحديث."),
+      );
       onClose();
     },
   });
@@ -168,7 +189,14 @@ function BoxEditor({ item, rows, unitsAvailable, onClose }: { item: any; rows: A
           className="mt-4 space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!save.isPending) save.mutate();
+            if (!saveLock.current) {
+              saveLock.current = true;
+              save.mutate(undefined, {
+                onSettled: () => {
+                  saveLock.current = false;
+                },
+              });
+            }
           }}
         >
           <label className="block text-sm">
@@ -212,7 +240,14 @@ function BoxEditor({ item, rows, unitsAvailable, onClose }: { item: any; rows: A
             {save.isPending && <Loader2 className="size-4 animate-spin" />}حفظ
           </Button>
         </form>
-        <div className="mt-4"><SupplierReportUnitEditor item={item} rows={rows} available={unitsAvailable} /></div>
+        <div className="mt-4">
+          <SupplierReportUnitEditor
+            item={item}
+            rows={rows}
+            available={unitsAvailable}
+            reportKey={reportKey}
+          />
+        </div>
       </SheetContent>
     </Sheet>
   );
@@ -376,16 +411,26 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
     setLimit(40);
     navigate({ to: ".", search: { ...filters, ...patch }, replace: true } as any);
   };
+  const reportReceivedAt = useRef<number | null>(null);
   const report = useQuery({
     queryKey: ["items_analytics", scope, view, filters],
-    queryFn: () =>
-      getItemsAnalytics({ data: { ...filters, financial: view !== "consumption", export: false } }),
+    queryFn: async () => {
+      const data = await getItemsAnalytics({ data: { ...filters, financial: view !== "consumption", export: false } });
+      reportReceivedAt.current = performance.now();
+      return data;
+    },
     gcTime: 0,
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     retry: false,
   });
+  useEffect(() => {
+    if (reportReceivedAt.current != null) {
+      console.info("phif_report_setting_client_timing", { phase: "report_ui_commit", ms: Math.round(performance.now() - reportReceivedAt.current) });
+      reportReceivedAt.current = null;
+    }
+  }, [report.dataUpdatedAt]);
   const shown = useMemo(
     () => (report.data ? selectAnalyticsRows(report.data, view, filters) : []),
     [report.data, view, JSON.stringify(filters)],
@@ -768,7 +813,15 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           {selected && <Movements key={`${view}:${selected.id}`} rows={selectedRows} />}
         </SheetContent>
       </Sheet>
-      {editing && <BoxEditor item={editing} rows={report.data?.historyMovements.filter(r => r.identity === editing.id) || []} unitsAvailable={Boolean(report.data?.supplierUnitsAvailable)} onClose={() => setEditing(null)} />}
+      {editing && (
+        <BoxEditor
+          item={editing}
+          rows={report.data?.historyMovements.filter((r) => r.identity === editing.id) || []}
+          unitsAvailable={Boolean(report.data?.supplierUnitsAvailable)}
+          reportKey={["items_analytics", scope, view, filters]}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }

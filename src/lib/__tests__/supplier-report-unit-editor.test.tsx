@@ -31,9 +31,15 @@ function render(form: string, saved?: string | null, count = 30) {
 
 describe("PHIF Supplier unit editor defaults are unsaved UI suggestions", () => {
   for (const [form, unit] of [
-    ["tablet", "tablet"], ["TABS", "tablet"], ["capsule", "capsule"],
-    ["CAPS", "capsule"], ["PEN", "pen"], ["VIAL", "vial"],
-    ["Eye Drops", "drops"], ["Inhaler", "inhaler"], ["Bottle", "bottle"],
+    ["tablet", "tablet"],
+    ["TABS", "tablet"],
+    ["capsule", "capsule"],
+    ["CAPS", "capsule"],
+    ["PEN", "pen"],
+    ["VIAL", "vial"],
+    ["Eye Drops", "drops"],
+    ["Inhaler", "inhaler"],
+    ["Bottle", "bottle"],
   ]) {
     it(`defaults a recognized ${form} form to ${unit}`, () => {
       expect(render(form, null)).toContain(`value="${unit}" selected=""`);
@@ -58,8 +64,10 @@ describe("PHIF Supplier unit editor defaults are unsaved UI suggestions", () => 
     expect(render("tablet", "")).toContain('value="" selected=""');
     expect(render("tablet")).toContain('value="">بدون اعتماد عام</option>');
     const source = readFileSync("src/components/management/SupplierReportUnitEditor.tsx", "utf8");
-    expect(source).toContain('() => item.setting?.supplier_quantity_unit ?? actualUnit(item.form) ?? ""');
-    expect(source).toContain("onClick={() => save.mutate()}");
+    expect(source).toContain(
+      '() => item.setting?.supplier_quantity_unit ?? actualUnit(item.form) ?? ""',
+    );
+    expect(source).toContain("if (saveLock.current) return");
     expect(source).not.toContain("useEffect");
     expect(source.match(/save\.mutate\(/g)).toHaveLength(1);
   });

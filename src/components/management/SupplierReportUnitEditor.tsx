@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,15 +6,22 @@ import { ACTUAL_UNITS, actualUnit } from "@/lib/actual-units.helpers";
 import { saveReportSupplierUnit } from "@/lib/items-analytics.functions";
 import { supplierBoxPreview } from "@/lib/report-supplier-units.helpers";
 import type { AnalyticsRow } from "@/lib/items-analytics.helpers";
+import {
+  reportSettingRequest,
+  refreshReportAfterSettingSave,
+} from "@/lib/report-setting-save.helpers";
+import { toast } from "sonner";
 
-export function SupplierReportUnitEditor({
+export const SupplierReportUnitEditor = memo(function SupplierReportUnitEditor({
   item,
   rows,
   available,
+  reportKey = ["items_analytics"],
 }: {
   item: any;
   rows: AnalyticsRow[];
   available: boolean;
+  reportKey?: readonly unknown[];
 }) {
   const [unit, setUnit] = useState(
     () => item.setting?.supplier_quantity_unit ?? actualUnit(item.form) ?? "",
@@ -25,24 +32,69 @@ export function SupplierReportUnitEditor({
   const [invoice, setInvoice] = useState("");
   const [override, setOverride] = useState("unknown");
   const client = useQueryClient();
-  const sourceRows = rows.filter((r) => r.source === "phif");
+  const saveLock = useRef(false);
+  const sourceRows = useMemo(() => rows.filter((r) => r.source === "phif"), [rows]);
   const choices = Object.entries(ACTUAL_UNITS).filter(([key]) =>
     ["box", "strip", actualUnit(item.form)].includes(key),
   );
   const save = useMutation({
     mutationFn: () =>
-      saveReportSupplierUnit({
-        data: {
-          identity: item.id,
-          unit: unit || null,
-          exceptions: Object.entries(exceptions).map(([invoiceId, unit]) => ({ invoiceId, unit })),
-          version: item.setting.version,
-        },
-      }),
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ["items_analytics"] });
+      reportSettingRequest(() =>
+        saveReportSupplierUnit({
+          data: {
+            identity: item.id,
+            unit: unit || null,
+            exceptions: Object.entries(exceptions).map(([invoiceId, unit]) => ({
+              invoiceId,
+              unit,
+            })),
+            version: item.setting.version,
+          },
+        }),
+      ),
+    onSuccess: () => {
+      refreshReportAfterSettingSave(client, reportKey, () =>
+        toast.error("حُفظ توثيق الوحدة، لكن تعذر تحديث التقرير. اضغط تحديث."),
+      );
     },
   });
+  const preview = useMemo(() => {
+    if (!item.setting) return [];
+    const start = performance.now();
+    const result = sourceRows.map((r) => {
+      const choice = exceptions[r.invoiceId];
+      const chosen =
+        choice === "unknown" || r.unitIssue === "conflict"
+          ? null
+          : r.unitProvenance === "source" && r.unit
+            ? r.unit
+            : actualUnit(choice || unit);
+      const conflict =
+        choice &&
+        choice !== "unknown" &&
+        r.unitProvenance === "source" &&
+        r.unit !== actualUnit(choice);
+      const boxes =
+        !conflict && chosen && r.quantity != null
+          ? chosen === r.unit && r.units != null
+            ? r.units / item.setting.units_per_box
+            : supplierBoxPreview(
+                r.quantity,
+                chosen,
+                item.setting.base_unit,
+                item.setting.units_per_box,
+                r.packageQuantity,
+                r.stripsPerPackage,
+              )
+          : null;
+      return { row: r, chosen, boxes };
+    });
+    console.info("phif_report_setting_client_timing", {
+      phase: "conversion_preview",
+      ms: Math.round(performance.now() - start),
+    });
+    return result;
+  }, [sourceRows, exceptions, unit, item.setting]);
   if (!available)
     return (
       <p className="border-t pt-3 text-sm text-amber-800">
@@ -145,42 +197,15 @@ export function SupplierReportUnitEditor({
           معاينة التحويل ({sourceRows.length} بند)
         </summary>
         <div className="max-h-48 overflow-y-auto text-xs">
-          {sourceRows.map((r) => {
-            const choice = exceptions[r.invoiceId];
-            const chosen =
-              choice === "unknown" || r.unitIssue === "conflict"
-                ? null
-                : r.unitProvenance === "source" && r.unit
-                  ? r.unit
-                  : actualUnit(choice || unit);
-            const conflict =
-              choice &&
-              choice !== "unknown" &&
-              r.unitProvenance === "source" &&
-              r.unit !== actualUnit(choice);
-            const boxes =
-              !conflict && chosen && r.quantity != null
-                ? chosen === r.unit && r.units != null
-                  ? r.units / item.setting.units_per_box
-                  : supplierBoxPreview(
-                      r.quantity,
-                      chosen,
-                      item.setting.base_unit,
-                      item.setting.units_per_box,
-                      r.packageQuantity,
-                      r.stripsPerPackage,
-                    )
-                : null;
-            return (
-              <p key={r.id} className="border-b py-2">
-                فاتورة {r.invoiceNumber}: {r.quantity}{" "}
-                {chosen ? ACTUAL_UNITS[chosen] : "وحدة غير موثقة"} ={" "}
-                {boxes == null
-                  ? "يحتاج مراجعة"
-                  : `${boxes.toLocaleString("en-US", { maximumFractionDigits: 4 })} علبة`}
-              </p>
-            );
-          })}
+          {preview.map(({ row: r, chosen, boxes }) => (
+            <p key={r.id} className="border-b py-2">
+              فاتورة {r.invoiceNumber}: {r.quantity}{" "}
+              {chosen ? ACTUAL_UNITS[chosen] : "وحدة غير موثقة"} ={" "}
+              {boxes == null
+                ? "يحتاج مراجعة"
+                : `${boxes.toLocaleString("en-US", { maximumFractionDigits: 4 })} علبة`}
+            </p>
+          ))}
         </div>
       </details>
       {save.error && (
@@ -196,11 +221,19 @@ export function SupplierReportUnitEditor({
       <Button
         type="button"
         disabled={save.isPending || save.isSuccess}
-        onClick={() => save.mutate()}
+        onClick={() => {
+          if (saveLock.current) return;
+          saveLock.current = true;
+          save.mutate(undefined, {
+            onSettled: () => {
+              saveLock.current = false;
+            },
+          });
+        }}
       >
         <Save className="size-4" />
         حفظ توثيق الوحدة
       </Button>
     </section>
   );
-}
+});
