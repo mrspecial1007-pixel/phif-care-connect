@@ -420,7 +420,9 @@ export async function loadItemAnalyticsDataset(authorize?: (context: any, access
   authorize?.(session, access);
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const dataset = await loadProfitRows(supabaseAdmin, session.pharmacy_id, { dateFrom: "1900-01-01", dateTo: "9999-12-31", source: "all" });
-  return { ...dataset, session, access, admin: supabaseAdmin };
+  const { readReportFormReferences } = await import("./report-medication-evidence.server");
+  const referenceForms = await readReportFormReferences(supabaseAdmin, session.pharmacy_id);
+  return { ...dataset, referenceForms, session, access, admin: supabaseAdmin };
 }
 
 function isKnownCostRow(row: any) {

@@ -75,6 +75,147 @@ function report(items: any[], invoices: any[], changes: any = {}) {
 }
 
 describe("item consumption and profitability analytics", () => {
+  it("unifies complete compound strengths and forms across brands and sources, not different doses", () => {
+    const variants = [
+      item("a", "v", "phif-supplier", {
+        active_ingredient: " Amlodipine+Valsartan ",
+        strength: "5 / 160 MG",
+      }),
+      item("b", "w", "actual-supplier", {
+        active_ingredient: "AMLODIPINE + VALSARTAN",
+        strength: "5MG/160MG",
+        brand: "different brand",
+        metadata: { unit: "TABLET" },
+      }),
+      item("c", "w", "phif-supplier", {
+        active_ingredient: "Amlodipine + Valsartan",
+        strength: "10MG/160MG",
+      }),
+    ];
+    const result = report(variants, [invoice("v"), invoice("w")]);
+    expect(result.items).toHaveLength(2);
+    expect(result.items.find((i) => i.dispenseCount === 2).beneficiaries).toBe(1);
+    expect(result.movements).toHaveLength(3);
+    expect(result.invoices).toHaveLength(2);
+  });
+  it("uses pharmacy reference forms without treating the form as an invoice quantity unit", () => {
+    const a = item("a", "v", "phif-supplier", { metadata: {} });
+    const result = report([a], [invoice("v")], {
+      referenceForms: [
+        { active_ingredient: "METFORMIN", strength: "500mg", dosage_form: "TABLETS" },
+      ],
+    });
+    expect(result.items[0]).toMatchObject({ form: "tablet", units: null, boxes: null });
+    const ambiguous = report([a], [invoice("v")], {
+      referenceForms: [
+        { active_ingredient: "Metformin", strength: "500mg", dosage_form: "tablet" },
+        { active_ingredient: "Metformin", strength: "500mg", dosage_form: "capsule" },
+      ],
+    });
+    expect(ambiguous.items).toHaveLength(0);
+    expect(ambiguous.reviewItems).toHaveLength(1);
+  });
+  it("uses historical oral confirmation and distinguishes purchase units, reporting boxes and dispensing", () => {
+    const a = item("a", "v", "phif-supplier", {
+      active_ingredient: "ACETYLSALICYLIC ACID",
+      strength: "100MG",
+      metadata: {},
+      phif_financial_fields: {
+        total_amount: 33.06,
+        internal_purchase_unit: "BOX",
+        internal_purchase_cost_value: 24,
+        internal_purchase_import: {
+          authorization: "explicit_pharmacy_owner_approval_historical_only",
+          unit_confirmation: "pharmacy_owner_individual_oral_units_confirmation",
+        },
+      },
+    });
+    const key = scientificReportIdentity(a, "tablet").key;
+    const result = report([a], [invoice("v")], {
+      referenceForms: [
+        { active_ingredient: a.active_ingredient, strength: a.strength, dosage_form: "TAB" },
+      ],
+      settings: [{ ...setting, item_identity: key }],
+      rows: [row(a, 33.06, 24)],
+    });
+    expect(result.items[0]).toMatchObject({
+      units: 30,
+      boxes: 1,
+      boxSale: 33.06,
+      cost: 24,
+      profit: 9.06,
+    });
+    expect(result.movements[0]).toMatchObject({ quantity: 30, unit: "tablet" });
+    expect((a.phif_financial_fields as Record<string, unknown>).internal_purchase_cost_value).toBe(
+      24,
+    );
+  });
+  it("looks up last reliable historical source prices outside the selected month and source", () => {
+    const a = item("a", "march"),
+      b = item("b", "now", "actual-supplier");
+    const result = report([a, b], [invoice("march", "2026-03-01"), invoice("now")], {
+      filters: { ...filters, source: "actual" },
+      rows: [row(a, 33.06), row(b, 90)],
+    });
+    expect(result.items[0]).toMatchObject({
+      boxes: 1,
+      boxSale: 33.06,
+      actualBoxSale: 90,
+      latestSale: { date: "2026-03-01" },
+      dispenseCount: 1,
+    });
+    expect(result.movements).toHaveLength(1);
+  });
+  it("keeps last sale date without a box setting and never fabricates a sale from costs", () => {
+    const a = item("a", "v");
+    expect(report([a], [invoice("v")], { settings: [] }).items[0]).toMatchObject({
+      boxSale: null,
+      latestSale: { date: "2026-09-10" },
+    });
+    const onlyCost = { ...a, phif_financial_fields: { internal_purchase_cost_value: 60 } };
+    expect(report([onlyCost], [invoice("v")]).items[0].latestSale).toBeNull();
+  });
+  it("reads normalized legacy box settings and refuses conflicting aliases without losing either", () => {
+    const a = item("a", "v");
+    const legacy = {
+      ...setting,
+      item_identity: '[" METFORMIN ","500 MG","TABLETS"]',
+      units_per_box: 28,
+      version: 4,
+    };
+    const resolved = report([a], [invoice("v")], { settings: [legacy] });
+    expect(resolved.items[0].setting).toEqual(legacy);
+    expect(resolved.items[0].boxes).toBe(30 / 28);
+    const conflict = report([a], [invoice("v")], { settings: [legacy, setting] });
+    expect(conflict.items[0]).toMatchObject({ settingConflict: true, setting: null, boxes: null });
+  });
+  it("separates monthly and historical unique text cards, without multiplying mixed sources or repeated IDs", () => {
+    const a = item("a", "old"),
+      b = item("b", "v"),
+      c = item("c", "w", "actual-supplier");
+    const result = report(
+      [a, b, c, c],
+      [invoice("old", "2026-04-01", "000456"), invoice("v"), invoice("w")],
+    );
+    expect(result.items[0]).toMatchObject({
+      beneficiaries: 1,
+      historicalBeneficiaries: 2,
+      dispenseCount: 2,
+      invoiceCount: 2,
+    });
+    expect(result.historyMovements).toHaveLength(3);
+    expect(result.movements.map((r) => r.card)).toEqual(["000123", "000123"]);
+  });
+  it("keeps unresolved movements and their financial totals in a separate review export", async () => {
+    const a = item("a", "v", "phif-supplier", { metadata: {}, active_ingredient: "Unknown drug" });
+    const result = report([a], [invoice("v")]);
+    expect(result.items).toHaveLength(0);
+    expect(result.reviewItems).toHaveLength(1);
+    expect(result.invoices[0].cost).toBe(30);
+    const book = await buildAnalyticsWorkbook(result, "consumption", filters);
+    expect(book.SheetNames).toContain("مراجعة الهوية");
+    expect(result.movements).toHaveLength(1);
+  });
   it("does not confuse the reporting box with the physical box on an old invoice", () => {
     const a = item("a", "v", "phif-supplier", {
       quantity: 1,
@@ -116,7 +257,9 @@ describe("item consumption and profitability analytics", () => {
       item("e", "v", "phif-supplier", { metadata: {} }),
       item("f", "v", "phif-supplier", { metadata: {} }),
     ];
-    expect(report(variants, [invoice("v")]).items).toHaveLength(6);
+    const result = report(variants, [invoice("v")]);
+    expect(result.items).toHaveLength(4);
+    expect(result.reviewItems).toHaveLength(2);
     expect(reportStrength("12.5/1000 MG")).toBe(reportStrength("12.5MG/1000MG"));
     expect(reportStrength("160MG")).not.toBe(reportStrength("160/25MG"));
     expect(reportStrength("400MCG")).toBe(reportStrength("0.4mg"));
@@ -283,7 +426,7 @@ describe("item consumption and profitability analytics", () => {
         },
       },
     };
-    expect(report([b], [invoice("v")]).items[0].boxes).toBeNull();
+    expect(report([b], [invoice("v")]).reviewItems[0].boxes).toBeNull();
   });
   it("preserves current manual cost changes and never reapplies historical import totals", () => {
     const a = item("a", "v");

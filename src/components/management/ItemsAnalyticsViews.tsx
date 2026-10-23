@@ -41,7 +41,7 @@ const money = (v: number | null | undefined) =>
     ? "غير مكتمل / محجوب"
     : `${Number(v).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} د.ل`;
 const number = (v: number | null | undefined) =>
-  v == null ? "غير متاح" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 4 });
+  v == null ? "غير محدد" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 4 });
 const titles: Record<AnalyticsView, string> = {
   consumption: "تقرير الأصناف والاستهلاك",
   items: "ربحية الأصناف",
@@ -92,7 +92,7 @@ function ItemTitle({ item }: { item: any }) {
         </>
       )}
       {item.form && (
-        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{item.form}</span>
+        <span className="mx-1 inline text-xs font-normal text-muted-foreground">{item.form}</span>
       )}
     </h2>
   );
@@ -306,6 +306,8 @@ function Movements({ rows }: { rows: AnalyticsRow[] }) {
               label={`${r.ingredient} · ${r.strength} · فاتورة ${r.invoiceNumber || "—"}`}
               unit={r.unit}
               savedBasis={r.supplierBasis}
+              quantity={r.quantity}
+              reportingBox={r.reportingBox}
             />
           )}
           {r.source === "actual" && (
@@ -386,7 +388,10 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
   const selectedRows = useMemo(
     () =>
       selected && report.data
-        ? report.data.movements.filter((r) => movementMatches(r, selected, view))
+        ? (view === "consumption" || view === "items"
+            ? report.data.historyMovements
+            : report.data.movements
+          ).filter((r) => movementMatches(r, selected, view))
         : [],
     [selected, report.data, view],
   );
@@ -535,12 +540,6 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
               موثقة.
             </p>
           )}
-          {report.data.period.averageRange && view === "consumption" && (
-            <p className="text-xs text-muted-foreground">
-              متوسط الصرف المسجل (3 أشهر مكتملة): {report.data.period.averageRange.from} —{" "}
-              {report.data.period.averageRange.to}
-            </p>
-          )}
           {view === "consumption" && (
             <div className="grid grid-cols-2 gap-3 border-y py-3 text-xs sm:grid-cols-4">
               {[
@@ -558,7 +557,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           )}
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             {shown.slice(0, limit).map((row) => (
-              <Card key={row.id} className="min-w-0 space-y-3 p-3">
+              <Card key={row.id} className="min-w-0 space-y-2 rounded-lg p-3">
                 <button
                   type="button"
                   className="block w-full min-w-0 space-y-2 text-right"
@@ -579,7 +578,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                       </p>
                     </>
                   )}
-                  {row.sources && (
+                  {view !== "consumption" && row.sources && (
                     <div className="flex flex-wrap gap-1">
                       {row.sources.map((s: "actual" | "phif") => (
                         <span
@@ -593,10 +592,10 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                   )}
                   {view === "consumption" ? (
                     <>
-                      <div className="border-y py-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b pb-2">
                         <strong className="block break-words text-lg text-emerald-700">
-                          {row.boxSale != null
-                            ? `${number(row.boxSale)} د.ل / علبة`
+                          {(row.boxSale ?? (!row.latestSale ? row.actualBoxSale : null)) != null
+                            ? `${number(row.boxSale ?? row.actualBoxSale)} د.ل / علبة`
                             : row.setting
                               ? row.latestSale?.conflict
                                 ? "سعر البيع يحتاج مراجعة"
@@ -606,10 +605,21 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                         <p className="mt-1 text-xs text-muted-foreground">
                           {row.setting &&
                             `${row.setting.units_per_box} ${ACTUAL_UNITS[row.setting.base_unit as ActualUnit]} / علبة · `}
-                          آخر بيع PHIF Supplier{row.latestSale?.date && ` · ${row.latestSale.date}`}
+                          {row.latestSale
+                            ? "PHIF Supplier"
+                            : row.latestActualSale
+                              ? "Actual"
+                              : "سعر غير متاح"}
+                          {(row.latestSale?.date || row.latestActualSale?.date) &&
+                            ` · ${row.latestSale?.date || row.latestActualSale?.date}`}
+                          {(row.latestSale?.date || row.latestActualSale?.date)?.slice(0, 7) !==
+                            filters.month &&
+                          (row.latestSale || row.latestActualSale)
+                            ? " · سعر تاريخي"
+                            : ""}
                         </p>
                       </div>
-                      {row.actualBoxSale != null && (
+                      {row.latestSale && row.actualBoxSale != null && (
                         <p className="text-xs text-muted-foreground">
                           آخر بيع Actual: <strong>{money(row.actualBoxSale)} / علبة</strong> ·{" "}
                           {row.latestActualSale?.date}
@@ -633,23 +643,13 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                         {row.beneficiaries == null
                           ? "عدد المستفيدين محجوب"
                           : `${row.beneficiaries} مستفيد برقم بطاقة`}{" "}
-                        · {row.dispenseCount} بند
+                        {filters.month === "all" ? " · كل التاريخ" : " · خلال الشهر"}
+                        {(row.units == null || row.settingConflict) && (
+                          <span className="mr-2 inline-block rounded border border-amber-200 px-1 text-amber-800">
+                            مراجعة
+                          </span>
+                        )}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        السابق: {number(row.previousBoxes)} علبة · المتوسط:{" "}
-                        {number(row.averageBoxes)} علبة
-                        {row.changePercent != null && ` · التغير ${number(row.changePercent)}%`}
-                      </p>
-                      {row.units == null && (
-                        <p className="text-xs text-amber-700">
-                          بعض وحدات الصرف أو تحويلاتها غير موثقة؛ افتح السجل للتفاصيل.
-                        </p>
-                      )}
-                      {!row.identityComplete && (
-                        <p className="text-xs text-amber-700">
-                          هوية غير مكتملة؛ يحتفظ البند بسجل مستقل.
-                        </p>
-                      )}
                     </>
                   ) : (
                     <>
@@ -672,20 +672,33 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                     </>
                   )}
                 </button>
-                {view === "consumption" && report.data.canManageBoxes && row.identityComplete && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!report.data.settingsAvailable}
-                    onClick={() => setEditing(row)}
-                  >
-                    <Settings2 className="size-4" />
-                    {row.setting ? "تعديل حجم العلبة" : "حدد حجم العلبة"}
-                  </Button>
-                )}
               </Card>
             ))}
           </div>
+          {(view === "consumption" || view === "items") && report.data.reviewItems.length > 0 && (
+            <details className="border-y py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-amber-800">
+                مراجعة هوية الأصناف ({report.data.reviewItems.length})
+              </summary>
+              <p className="py-2 text-xs text-muted-foreground">
+                بنود محفوظة لم تُدمج لأن الشكل أو التركيز غير موثق أو متعارض.
+              </p>
+              {report.data.reviewItems.map((r: any) => (
+                <button
+                  key={r.id}
+                  className="block w-full border-t py-2 text-right text-sm"
+                  onClick={() => setSelected(r)}
+                >
+                  <bdi>
+                    {r.ingredient} · {r.strength}
+                  </bdi>
+                  <span className="block text-xs text-muted-foreground">
+                    {r.dispenseCount} بند · عرض التفاصيل
+                  </span>
+                </button>
+              ))}
+            </details>
+          )}
           {shown.length > limit && (
             <Button variant="outline" className="w-full" onClick={() => setLimit((v) => v + 40)}>
               عرض المزيد
@@ -719,6 +732,52 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
               سجل الصرف · {selected?.strength} · {selectedRows.length} بند
             </SheetDescription>
           </SheetHeader>
+          {selected && (view === "consumption" || view === "items") && (
+            <div className="mt-3 space-y-2 border-y py-3 text-xs">
+              <p>
+                مرات الصرف في الفترة: {selected.dispenseCount} · الفواتير: {selected.invoiceCount}
+              </p>
+              <p>
+                مستفيدو الفترة: {number(selected.beneficiaries)} · تاريخيًا:{" "}
+                {number(selected.historicalBeneficiaries)}
+              </p>
+              <p>
+                الشهر السابق: {number(selected.previousBoxes)} علبة · متوسط 3 أشهر مكتملة:{" "}
+                {number(selected.averageBoxes)} علبة
+              </p>
+              {report.data?.period.averageRange && (
+                <p>
+                  {report.data.period.averageRange.from} — {report.data.period.averageRange.to}
+                </p>
+              )}
+              {selected.changePercent != null && <p>التغير: {number(selected.changePercent)}%</p>}
+              {selected.units == null && (
+                <p className="text-amber-800">
+                  توجد وحدة صرف أو تحويل غير موثق؛ الكمية غير المحددة ليست صفرًا.
+                </p>
+              )}
+              {selected.settingConflict && (
+                <p className="text-red-700">
+                  تعارض بين إعدادات أحجام العلب القديمة؛ لم يُستبدل أي إعداد.
+                </p>
+              )}
+              {selected.identityComplete && report.data?.canManageBoxes && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!report.data.settingsAvailable || selected.settingConflict}
+                  onClick={() => {
+                    setEditing(selected);
+                    setSelected(null);
+                  }}
+                >
+                  <Settings2 className="size-4" />
+                  {selected.setting ? "تعديل حجم العلبة" : "تحديد حجم العلبة"}
+                </Button>
+              )}
+              <Finance row={selected} />
+            </div>
+          )}
           {selected && <Movements key={`${view}:${selected.id}`} rows={selectedRows} />}
         </SheetContent>
       </Sheet>

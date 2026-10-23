@@ -93,10 +93,23 @@ export const saveReportBoxSetting = createServerFn({ method: "POST" })
     const formUnit = actualUnit(item.form);
     if (formUnit && formUnit !== data.baseUnit)
       throw new Error("وحدة محتوى العلبة تتعارض مع الشكل الدوائي المسجل");
+    const { readReportPages } = await import("./report-pages.server");
+    const existing = await readReportPages(() =>
+      supabaseAdmin
+        .from("phif_report_box_settings")
+        .select("id,item_identity,units_per_box,base_unit,version", { count: "exact" })
+        .eq("pharmacy_id", context.pharmacy_id)
+        .order("id"),
+    );
+    const { reportSettingKey } = await import("./report-medication-evidence.helpers");
+    const aliases = existing.filter((s: any) => reportSettingKey(s.item_identity) === item.id);
+    if (aliases.length > 1)
+      throw new Error("إعدادات قديمة متعارضة لهذا الصنف؛ يلزم مراجعتها دون استبدال صامت");
+    const stored = aliases.find((s: any) => s.item_identity === item.id) || aliases[0];
     const { data: saved, error } = await supabaseAdmin.rpc("set_phif_report_box_setting", {
       p_pharmacy_id: context.pharmacy_id,
       p_actor_id: user.user_id,
-      p_identity: item.id,
+      p_identity: stored?.item_identity || item.id,
       p_units_per_box: data.unitsPerBox,
       p_base_unit: data.baseUnit,
       p_expected_version: data.version,

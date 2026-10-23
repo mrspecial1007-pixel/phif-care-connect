@@ -1,7 +1,11 @@
 import { z } from "zod";
-import { normalizeActiveIngredient, normalizeDosageForm } from "./medication-normalize";
 import { actualUnit, actualSourceUnit, type ActualUnit } from "./actual-units.helpers";
-import { supplierInvoiceForm, supplierInvoiceUnit } from "./phif-supplier-quick-cost.helpers";
+import {
+  supplierQuantityEvidence,
+  resolveReportIdentities,
+  reportSettingKey,
+} from "./report-medication-evidence.helpers";
+export { reportStrength, scientificReportIdentity } from "./report-medication-evidence.helpers";
 import { latestInvoiceSale } from "./items-reference-prices.helpers";
 import type { SearchSchemaInput } from "@tanstack/react-router";
 import { hasPermission, type TiryaqPermission } from "./user-permissions";
@@ -94,69 +98,13 @@ export type AnalyticsRow = {
   financialReason: string | null;
   canEditCost: boolean;
   supplierBasis: any;
+  reportingBox: BoxSetting | null;
+  unitIssue: string | null;
 };
 
-const text = (value: unknown) =>
-  String(value ?? "")
-    .normalize("NFKC")
-    .trim();
 export const roundReport = (value: number) => Math.round((value + Number.EPSILON) * 1000) / 1000;
 function supplierReportEvidence(item: any) {
-  const source = supplierInvoiceUnit(item);
-  const basis = item.phif_financial_fields?.internal_purchase_price_basis;
-  // Only an explicit saved confirmation documents the quantity unit. A price
-  // denominator or a purchase unit alone is not dispensing evidence.
-  const confirmed =
-    source.issue === "missing" && basis?.quantity_unit_confirmed === true
-      ? actualUnit(basis.unit)
-      : null;
-  return confirmed ? { unit: confirmed, issue: null } : source;
-}
-export function reportStrength(value: unknown) {
-  const raw = text(value).toLowerCase().replace(/\s+/g, "").replace(/[µμ]g/g, "mcg");
-  // Only a full, unambiguous dose chain shares a trailing unit. Keep all components.
-  const chain = /^(\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)*)\s*(mg|mcg|g)$/.exec(raw);
-  if (chain)
-    return chain[1]
-      .split("/")
-      .map((n) => `${Number(n) * (chain[2] === "g" ? 1000 : chain[2] === "mcg" ? 0.001 : 1)}mg`)
-      .join("/");
-  return raw.replace(
-    /(\d+(?:\.\d+)?)(mcg|mg|g)(?=\/|$)/g,
-    (_, n, unit) => `${Number(n) * (unit === "g" ? 1000 : unit === "mcg" ? 0.001 : 1)}mg`,
-  );
-}
-export function scientificReportIdentity(item: any, formHint?: unknown) {
-  const ingredient = normalizeActiveIngredient(text(item.active_ingredient));
-  const strength = reportStrength(item.strength);
-  const confirmed = supplierReportEvidence(item);
-  const confirmedForm = [
-    "tablet",
-    "capsule",
-    "pen",
-    "vial",
-    "ampoule",
-    "drops",
-    "inhaler",
-  ].includes(actualUnit(confirmed.unit) || "")
-    ? confirmed.unit
-    : null;
-  const rawForm = text(formHint || supplierInvoiceForm(item) || confirmedForm);
-  const form =
-    actualUnit(rawForm) ||
-    (/^(inj|injection|injections)$/i.test(rawForm) ? "injection" : normalizeDosageForm(rawForm));
-  // Missing identity components never merge potentially different products.
-  return {
-    key: JSON.stringify([
-      ingredient,
-      strength,
-      form,
-      ...(!ingredient || !strength || !form ? ["unresolved", item.id] : []),
-    ]),
-    ingredient: text(item.active_ingredient) || "اسم علمي غير مسجل",
-    strength: text(item.strength),
-    form,
-  };
+  return supplierQuantityEvidence(item);
 }
 export function monthWindow(month: string, offset = 0) {
   const [y, m] = month.split("-").map(Number);
@@ -171,8 +119,29 @@ const total = (
   key: "revenue" | "cost" | "profit" | "afterDiscount" | "units" | "boxes",
 ) =>
   rows.every((r) => r[key] != null)
-    ? roundReport(rows.reduce((n, r) => n + Number(r[key]), 0))
+    ? ["units", "boxes"].includes(key)
+      ? rows.reduce((n, r) => n + Number(r[key]), 0)
+      : roundReport(rows.reduce((n, r) => n + Number(r[key]), 0))
     : null;
+const hasRecordedSale = (item: any) =>
+  [
+    "total_amount",
+    "totalAmount",
+    "total",
+    "itemTotal",
+    "actual_value",
+    "actualValue",
+    "phifValue",
+    "insurance_amount",
+    "insuranceAmount",
+    "outside_insurance_amount",
+    "outsideInsuranceAmount",
+  ].some(
+    (key) =>
+      item.phif_financial_fields?.[key] != null &&
+      item.phif_financial_fields[key] !== "" &&
+      Number.isFinite(Number(item.phif_financial_fields[key])),
+  );
 export function financialSummary(rows: AnalyticsRow[]) {
   const revenue = total(rows, "revenue"),
     cost = total(rows, "cost"),
@@ -206,6 +175,7 @@ export function buildItemsAnalytics(input: {
   invoices: any[];
   rows: any[];
   stocks: any[];
+  referenceForms?: any[];
   settings: BoxSetting[];
   access: AnalyticsAccess;
   filters: AnalyticsFilters;
@@ -215,7 +185,17 @@ export function buildItemsAnalytics(input: {
 }) {
   const invoiceMap = new Map(input.invoices.map((i) => [i.id, i]));
   const financial = new Map(input.rows.map((r) => [r.item_id, r]));
-  const settings = new Map(input.settings.map((s) => [s.item_identity, s]));
+  const settingGroups = new Map<string, BoxSetting[]>();
+  for (const setting of input.settings) {
+    const key = reportSettingKey(setting.item_identity);
+    if (key) settingGroups.set(key, [...(settingGroups.get(key) || []), setting]);
+  }
+  const identities = resolveReportIdentities(
+    input.items,
+    input.rows,
+    input.stocks,
+    input.referenceForms,
+  );
   const seen = new Set<string>();
   const groups = new Map<string, any>();
   for (const item of input.items) {
@@ -227,46 +207,28 @@ export function buildItemsAnalytics(input: {
         : item.source_classification === "actual-supplier"
           ? "actual"
           : null;
-    if (
-      !source ||
-      !input.access[source].items ||
-      (input.filters.source !== "all" && input.filters.source !== source)
-    )
-      continue;
+    if (!source || !input.access[source].items) continue;
     const rights = input.access[source],
       f = financial.get(item.id);
     const invoice = invoiceMap.get(item.phif_invoice_id);
     if (!invoice || !f) continue;
-    const stock =
-      source === "actual"
-        ? input.stocks.find((s) => s.source_stock_id === f.matched_stock_id)
-        : null;
+    const identity = identities.get(item.id)!;
     const evidence =
       source === "actual"
         ? { unit: actualUnit(f.invoice_quantity_unit), issue: null }
-        : supplierReportEvidence(item);
-    const confirmedForm = [
-      "tablet",
-      "capsule",
-      "pen",
-      "vial",
-      "ampoule",
-      "drops",
-      "inhaler",
-    ].includes(actualUnit(evidence.unit) || "")
-      ? evidence.unit
-      : null;
-    const identity = scientificReportIdentity(
-      item,
-      supplierInvoiceForm(item) || stock?.dosage_unit || confirmedForm,
-    );
+        : supplierReportEvidence({ ...item, report_form: identity.form });
     const term = input.filters.q.toLowerCase().replace(/\s+/g, "");
     if (
       term &&
       !`${identity.ingredient}${identity.strength}`.toLowerCase().replace(/\s+/g, "").includes(term)
     )
       continue;
-    const setting = settings.get(identity.key);
+    const candidates = settingGroups.get(identity.key) || [];
+    const settingConflict =
+      new Set(candidates.map((s) => `${s.units_per_box}:${s.base_unit}`)).size > 1;
+    const setting = settingConflict
+      ? undefined
+      : candidates.find((s) => s.item_identity === identity.key) || candidates[0];
     const unit =
       actualUnit(evidence.unit) || (source === "actual" ? actualSourceUnit(item).unit : null);
     const quantity = item.quantity == null || item.quantity === "" ? NaN : Number(item.quantity);
@@ -344,7 +306,11 @@ export function buildItemsAnalytics(input: {
       invoiceNumber: invoice.invoice_number,
       date: String(invoice.dispensing_date || ""),
       beneficiary: rights.movements ? invoice.beneficiary_name : null,
-      card: rights.movements ? String(invoice.insurance_card_number ?? "").trim() || null : null,
+      card: rights.movements
+        ? String(invoice.insurance_card_number ?? "")
+            .normalize("NFKC")
+            .replace(/[\s\u200e\u200f]/g, "") || null
+        : null,
       source,
       quantity: Number.isFinite(quantity) ? quantity : null,
       unit,
@@ -363,11 +329,14 @@ export function buildItemsAnalytics(input: {
         source === "phif" && rights.cost
           ? (item.phif_financial_fields?.internal_purchase_price_basis ?? null)
           : null,
+      reportingBox: setting || null,
+      unitIssue: evidence.issue || (units == null ? "undocumented_conversion" : null),
     };
     const group = groups.get(identity.key) ?? {
       id: identity.key,
       ...identity,
       setting: setting || null,
+      settingConflict,
       rows: [],
       saleItems: [],
       actualSaleItems: [],
@@ -377,10 +346,10 @@ export function buildItemsAnalytics(input: {
     if (
       source === "phif" &&
       rights.revenue &&
-      setting &&
       units != null &&
       units > 0 &&
-      f.revenue != null
+      f.revenue != null &&
+      hasRecordedSale(item)
     ) {
       group.saleItems.push({
         ...item,
@@ -392,10 +361,10 @@ export function buildItemsAnalytics(input: {
     if (
       source === "actual" &&
       rights.revenue &&
-      setting &&
       units != null &&
       units > 0 &&
-      f.revenue != null
+      f.revenue != null &&
+      hasRecordedSale(item)
     ) {
       group.actualSaleItems.push({
         ...item,
@@ -416,11 +385,16 @@ export function buildItemsAnalytics(input: {
     : null;
   const summaries: any[] = [];
   const movements: AnalyticsRow[] = [];
+  const historyMovements: AnalyticsRow[] = [];
   for (const g of groups.values()) {
-    const rows = g.rows.filter(
+    const scoped = g.rows.filter(
+      (r: AnalyticsRow) => input.filters.source === "all" || input.filters.source === r.source,
+    );
+    const rows = scoped.filter(
       (r: AnalyticsRow) => !selectedRange || inWindow(r.date, selectedRange),
     );
     if (!rows.length) continue;
+    historyMovements.push(...scoped);
     const sourceTotal = (src: string, metric: "units" | "boxes") =>
       total(
         rows.filter((r: AnalyticsRow) => r.source === src),
@@ -428,13 +402,13 @@ export function buildItemsAnalytics(input: {
       );
     const previous = comparisonRange
       ? total(
-          g.rows.filter((r: AnalyticsRow) => inWindow(r.date, comparisonRange)),
+          scoped.filter((r: AnalyticsRow) => inWindow(r.date, comparisonRange)),
           "boxes",
         )
       : null;
     const lastThree = averageRange
       ? total(
-          g.rows.filter((r: AnalyticsRow) => inWindow(r.date, averageRange)),
+          scoped.filter((r: AnalyticsRow) => inWindow(r.date, averageRange)),
           "boxes",
         )
       : null;
@@ -451,6 +425,7 @@ export function buildItemsAnalytics(input: {
       form: g.form,
       identityComplete: !g.key.includes('"unresolved"'),
       setting: g.setting,
+      settingConflict: g.settingConflict,
       sources: [...new Set(rows.map((r: AnalyticsRow) => r.source))],
       actualUnits: sourceTotal("actual", "units"),
       phifUnits: sourceTotal("phif", "units"),
@@ -460,6 +435,9 @@ export function buildItemsAnalytics(input: {
       boxes,
       beneficiaries: rows.every((r: AnalyticsRow) => input.access[r.source].movements)
         ? new Set(rows.map((r: AnalyticsRow) => r.card).filter(Boolean)).size
+        : null,
+      historicalBeneficiaries: scoped.every((r: AnalyticsRow) => input.access[r.source].movements)
+        ? new Set(scoped.map((r: AnalyticsRow) => r.card).filter(Boolean)).size
         : null,
       beneficiariesWithoutCard: new Set(
         rows
@@ -526,10 +504,12 @@ export function buildItemsAnalytics(input: {
     };
   });
   return {
-    items: summaries,
+    items: summaries.filter((s) => s.identityComplete),
+    reviewItems: summaries.filter((s) => !s.identityComplete),
     invoices,
     beneficiaries,
     movements,
+    historyMovements,
     summary: {
       actualBoxes: total(
         movements.filter((r) => r.source === "actual"),

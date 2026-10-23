@@ -1,5 +1,6 @@
 import { normalizeSupplierUnit, supplierInvoiceUnit, supplierQuickCostIdentity } from "./phif-supplier-quick-cost.helpers";
 import { hasPermission, type TiryaqPermission } from "./user-permissions";
+import { supplierQuantityEvidence } from "./report-medication-evidence.helpers";
 
 export type SupplierPriceBasis = { amount: number; count: number; unit: string; confirmQuantityUnit?: boolean };
 
@@ -25,9 +26,13 @@ export function supplierBasisCost(quantity: unknown, basis: SupplierPriceBasis) 
 
 export function validateSupplierBasis(item: any, basis: SupplierPriceBasis) {
   if (item.source_classification !== "phif-supplier") throw new Error("هذا الإجراء خاص بـ PHIF Supplier فقط");
-  const recorded = supplierInvoiceUnit(item);
+  const recorded = supplierQuantityEvidence(item);
   const unit = normalizeSupplierUnit(basis.unit);
-  if (recorded.issue === "conflict" || (recorded.unit && recorded.unit !== unit)) throw new Error("وحدة السعر تتعارض مع وحدة كمية الفاتورة");
+  const imported = item.phif_financial_fields?.internal_purchase_import;
+  if (imported?.authorization === "explicit_pharmacy_owner_approval_historical_only"
+    && imported.unit_confirmation === "pharmacy_owner_individual_oral_units_confirmation"
+    && unit !== "TAB" && unit !== "CAP") throw new Error("التوثيق التاريخي يثبت حبات مفردة؛ لا يجوز تفسيرها كعلب أو أشرطة");
+  if (recorded.issue === "unknown" || recorded.issue === "conflict" || (recorded.unit && recorded.unit !== unit)) throw new Error("وحدة السعر تتعارض مع وحدة كمية الفاتورة أو غير موثقة");
   if (!recorded.unit && !basis.confirmQuantityUnit) throw new Error("أكد وحدة الكمية لهذا البند قبل اعتماد سعرها");
   return supplierBasisCost(item.quantity, basis);
 }

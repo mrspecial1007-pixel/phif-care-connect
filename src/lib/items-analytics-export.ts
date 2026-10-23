@@ -45,6 +45,8 @@ export async function buildAnalyticsWorkbook(
   const XLSX = await import("xlsx");
   const selected = selectAnalyticsRows(report, view, filters);
   const ids = new Set(selected.map((r) => r.id));
+  if (view === "consumption" || view === "items")
+    for (const row of report.reviewItems || []) ids.add(row.id);
   const movements: AnalyticsRow[] = report.movements.filter((r: AnalyticsRow) =>
     ids.has(
       view === "consumption" || view === "items"
@@ -90,6 +92,9 @@ export async function buildAnalyticsWorkbook(
             علب_PHIF: r.phifBoxes,
             إجمالي_العلب: r.boxes,
             المستفيدون_بالبطاقة: r.beneficiaries,
+            المستفيدون_تاريخيًا: r.historicalBeneficiaries,
+            مرات_الصرف: r.dispenseCount,
+            عدد_الفواتير: r.invoiceCount,
             متوسط_ثلاثة_أشهر_بالعلب: r.averageBoxes,
             متوسط_من: report.period.averageRange?.from ?? null,
             متوسط_إلى: report.period.averageRange?.to ?? null,
@@ -115,6 +120,24 @@ export async function buildAnalyticsWorkbook(
           },
     ),
   );
+  if ((view === "consumption" || view === "items") && report.reviewItems?.length)
+    add(
+      "مراجعة الهوية",
+      report.reviewItems.map((r: any) => ({
+        الاسم_العلمي: r.ingredient,
+        التركيز: r.strength,
+        الشكل: r.form || null,
+        عدد_البنود: r.dispenseCount,
+        قيمة_البيع: r.revenue,
+        تكلفة_الشراء: r.cost,
+        الربح: r.profit,
+        السبب: "هوية غير مكتملة؛ لم تدمج تخمينيًا",
+        معرّفات_البنود: report.movements
+          .filter((m: AnalyticsRow) => m.identity === r.id)
+          .map((m: AnalyticsRow) => m.id)
+          .join(" | "),
+      })),
+    );
   add(
     "سجل الصرف",
     movements.map((r) => ({
