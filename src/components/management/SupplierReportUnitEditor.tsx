@@ -16,7 +16,9 @@ export function SupplierReportUnitEditor({
   rows: AnalyticsRow[];
   available: boolean;
 }) {
-  const [unit, setUnit] = useState(item.setting?.supplier_quantity_unit || "");
+  const [unit, setUnit] = useState(
+    () => item.setting?.supplier_quantity_unit ?? actualUnit(item.form) ?? "",
+  );
   const [exceptions, setExceptions] = useState<Record<string, string>>(
     item.setting?.supplier_unit_exceptions || {},
   );
