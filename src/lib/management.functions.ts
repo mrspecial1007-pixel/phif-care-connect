@@ -605,6 +605,8 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
       candidates: [],
       item_ids: [],
       manual_match: false,
+      link_state: item.manual_link_conflict || (item.manual_stock_link?.is_active && status !== "matched") ? "review" : status === "matched" ? "linked" : "unlinked",
+      linked_stock_name: item.manual_stock_link?.target?.brand_name || (match.status === "matched" ? match.stock.brand_name : null),
       documented_unit_count: 0,
       cost_reasons: [],
       unit_scopes: [],
@@ -616,6 +618,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
     if (scope) scope.count += 1;
     else row.unit_scopes.push({ signature: scopeKey, item_id: item.id, brand: item.brand, count: 1 });
     if (item.manual_stock_link?.is_active) row.manual_match = true;
+    if (item.manual_link_conflict) row.link_state = "review";
     if (costNeedsReview) row.cost_review_count += 1;
     if (costNeedsReview && actualUnitSuggestion(item, match, invoiceItemValue(item)).status === "high_confidence") row.suggested_unit_count += 1;
     if (profit.status === "matched" && ["verified_stock_sale_price", "confirmed_tablet_quantity"].includes(profit.reason)) row.automatic_cost_count += 1;
@@ -641,6 +644,7 @@ export function buildManagementAuditReport(input: { invoices: any[]; items: any[
 
   const actualItems = [...actualGroups.values()].map((row) => ({
     ...row,
+    link_state: row.link_state === "review" || (row.status !== "matched" && row.manual_match) ? "review" : row.status === "matched" ? "linked" : "unlinked",
     unit_scopes: row.unit_scopes.map(({ signature, ...scope }: any) => scope),
     invoice_count: row.invoice_ids.size,
     invoice_ids: undefined,

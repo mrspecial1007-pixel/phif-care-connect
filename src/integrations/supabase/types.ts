@@ -1197,7 +1197,7 @@ export type Database = {
         ]
       }
       phif_report_box_settings: {
-        Row: { id: string; pharmacy_id: string; item_identity: string; units_per_box: number; base_unit: string; version: number; updated_by: string; updated_at: string }
+        Row: { id: string; pharmacy_id: string; item_identity: string; units_per_box: number; base_unit: string; supplier_quantity_unit: string | null; supplier_unit_exceptions: Json; version: number; updated_by: string; updated_at: string }
         Insert: { id?: string; pharmacy_id: string; item_identity: string; units_per_box: number; base_unit: string; version?: number; updated_by: string; updated_at?: string }
         Update: { units_per_box?: number; base_unit?: string; version?: number; updated_by?: string; updated_at?: string }
         Relationships: []
@@ -2054,6 +2054,10 @@ export type Database = {
       }
     }
     Functions: {
+      set_phif_report_supplier_unit: {
+        Args: { p_pharmacy_id: string; p_actor_id: string; p_identity: string; p_unit: string | null; p_exceptions: Json; p_expected_version: number }
+        Returns: Json
+      }
       set_phif_report_box_setting: {
         Args: { p_pharmacy_id: string; p_actor_id: string; p_identity: string; p_units_per_box: number; p_base_unit: string; p_expected_version: number }
         Returns: Json

@@ -85,12 +85,13 @@ describe("manual Actual stock identity links", () => {
     const calls: any[] = [];
     const db = (error: any = null) => ({ from(table: string) {
       calls.push(table);
-      const q = { select() { return q; }, eq(field: string, value: any) { calls.push([field, value]); return q; }, async in() { return { data: [link()], error }; } };
+      const q = { select() { return q; }, eq(field: string, value: any) { calls.push([field, value]); return q; }, order() { return q; },
+        async limit() { return {data:[],error}; }, async range(from: number) { return { data: from ? [] : [link()], count: 1, error }; } };
       return q;
     } });
     expect((await loadActualStockLinks(db(), "tiryaq", [item])).items[0].manual_stock_link).toBeDefined();
     expect(calls).toContainEqual(["pharmacy_id", "tiryaq"]);
-    expect(calls).toContainEqual(["is_active", true]);
+    expect(calls).not.toContainEqual(["is_active", true]);
     expect((await loadActualStockLinks(db({ code: "42P01" }), "tiryaq", [item])).available).toBe(false);
     await expect(loadActualStockLinks(db({ code: "42501" }), "tiryaq", [item])).rejects.toThrow();
   });
@@ -104,7 +105,7 @@ describe("manual Actual stock identity links", () => {
     expect(server).toContain("if (!isTreasuryManager(context)) throw");
     expect(server).toContain('confirmed: z.literal(true)');
     expect(server).toContain('.eq("invoice.pharmacy_id", pharmacyId)');
-    expect(server).toContain('db.rpc("set_phif_actual_stock_link"');
+    expect(server).toContain('db.rpc("set_phif_actual_identity_link"');
     const migration = readFileSync("supabase/migrations/20261020010000_add_phif_actual_stock_links.sql", "utf8");
     expect(migration).toContain("ENABLE ROW LEVEL SECURITY");
     expect(migration).toContain("FROM PUBLIC, anon, authenticated");

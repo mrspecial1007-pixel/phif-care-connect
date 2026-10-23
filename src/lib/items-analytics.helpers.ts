@@ -1,12 +1,11 @@
 import { z } from "zod";
 import { actualUnit, actualSourceUnit, type ActualUnit } from "./actual-units.helpers";
 import {
-  supplierQuantityEvidence,
   resolveReportIdentities,
   reportSettingKey,
 } from "./report-medication-evidence.helpers";
 export { reportStrength, scientificReportIdentity } from "./report-medication-evidence.helpers";
-import { latestInvoiceSale } from "./items-reference-prices.helpers";
+import { latestReportSupplierSale, reportSupplierUnit, type SupplierUnitSetting } from "./report-supplier-units.helpers";
 import type { SearchSchemaInput } from "@tanstack/react-router";
 import { hasPermission, type TiryaqPermission } from "./user-permissions";
 
@@ -41,7 +40,7 @@ export type AnalyticsAccess = Record<
     purchasePriceWrite?: boolean;
   }
 >;
-export type BoxSetting = {
+export type BoxSetting = SupplierUnitSetting & {
   id?: string;
   item_identity: string;
   units_per_box: number;
@@ -100,12 +99,14 @@ export type AnalyticsRow = {
   supplierBasis: any;
   reportingBox: BoxSetting | null;
   unitIssue: string | null;
+  boxSize?: number | null;
+  baseUnit?: ActualUnit | null;
+  unitProvenance?: string;
+  packageQuantity?: number | null;
+  stripsPerPackage?: number | null;
 };
 
 export const roundReport = (value: number) => Math.round((value + Number.EPSILON) * 1000) / 1000;
-function supplierReportEvidence(item: any) {
-  return supplierQuantityEvidence(item);
-}
 export function monthWindow(month: string, offset = 0) {
   const [y, m] = month.split("-").map(Number);
   const from = new Date(Date.UTC(y, m - 1 + offset, 1)),
@@ -118,7 +119,9 @@ const total = (
   rows: AnalyticsRow[],
   key: "revenue" | "cost" | "profit" | "afterDiscount" | "units" | "boxes",
 ) =>
-  rows.every((r) => r[key] != null)
+  rows.every((r) => r[key] != null) && (key !== "units" || new Set(rows.map(r=>r.baseUnit)).size < 2)
+    && (key !== "boxes" || new Set(rows.map(r => r.source)).size < 2
+    || (rows.every(r => r.boxSize && r.baseUnit) && new Set(rows.map(r => `${r.boxSize}:${r.baseUnit}`)).size === 1))
     ? ["units", "boxes"].includes(key)
       ? rows.reduce((n, r) => n + Number(r[key]), 0)
       : roundReport(rows.reduce((n, r) => n + Number(r[key]), 0))
@@ -182,8 +185,14 @@ export function buildItemsAnalytics(input: {
   canExport?: boolean;
   canManageBoxes?: boolean;
   settingsAvailable?: boolean;
+  supplierUnitsAvailable?: boolean;
 }) {
   const invoiceMap = new Map(input.invoices.map((i) => [i.id, i]));
+  const visibleSetting = (setting: BoxSetting | undefined) => {
+    if (!setting) return null;
+    const { supplier_unit_exceptions, ...publicSetting } = setting;
+    return input.canManageBoxes ? setting : publicSetting;
+  };
   const financial = new Map(input.rows.map((r) => [r.item_id, r]));
   const settingGroups = new Map<string, BoxSetting[]>();
   for (const setting of input.settings) {
@@ -213,10 +222,6 @@ export function buildItemsAnalytics(input: {
     const invoice = invoiceMap.get(item.phif_invoice_id);
     if (!invoice || !f) continue;
     const identity = identities.get(item.id)!;
-    const evidence =
-      source === "actual"
-        ? { unit: actualUnit(f.invoice_quantity_unit), issue: null }
-        : supplierReportEvidence({ ...item, report_form: identity.form });
     const term = input.filters.q.toLowerCase().replace(/\s+/g, "");
     if (
       term &&
@@ -225,14 +230,19 @@ export function buildItemsAnalytics(input: {
       continue;
     const candidates = settingGroups.get(identity.key) || [];
     const settingConflict =
-      new Set(candidates.map((s) => `${s.units_per_box}:${s.base_unit}`)).size > 1;
+      new Set(candidates.map((s) => JSON.stringify([s.units_per_box,s.base_unit,s.supplier_quantity_unit ?? null,
+        Object.entries(s.supplier_unit_exceptions || {}).sort(([a],[b])=>a.localeCompare(b))]))).size > 1;
     const setting = settingConflict
       ? undefined
       : candidates.find((s) => s.item_identity === identity.key) || candidates[0];
+    const evidence = source === "actual"
+      ? { unit: actualUnit(f.invoice_quantity_unit), issue: null, provenance: "actual_engine" }
+      : reportSupplierUnit({ ...item, report_form: identity.form }, setting);
     const unit =
       actualUnit(evidence.unit) || (source === "actual" ? actualSourceUnit(item).unit : null);
     const quantity = item.quantity == null || item.quantity === "" ? NaN : Number(item.quantity);
-    const baseUnit = setting?.base_unit || actualUnit(identity.form);
+    const baseUnit = source === "phif" ? setting?.base_unit || actualUnit(identity.form)
+      : actualUnit(f.actual_cost_unit) || actualUnit(identity.form);
     let units: number | null =
       Number.isFinite(quantity) && quantity >= 0 && !evidence.issue && unit && unit === baseUnit
         ? quantity
@@ -289,7 +299,9 @@ export function buildItemsAnalytics(input: {
     ) {
       units = quantity * Number(f.actual_conversion_factor);
     }
-    let boxes: number | null = units != null && setting ? units / setting.units_per_box : null;
+    const boxSize: number | null = source === "phif" ? setting?.units_per_box ?? null : packageQuantity;
+    let boxes: number | null = units != null && boxSize ? units / boxSize : null;
+    if (source === "actual" && unit === "box" && !evidence.issue && Number.isFinite(quantity) && quantity >= 0) boxes = quantity;
     if (units != null && !Number.isFinite(units)) {
       units = null;
       boxes = null;
@@ -329,17 +341,21 @@ export function buildItemsAnalytics(input: {
         source === "phif" && rights.cost
           ? (item.phif_financial_fields?.internal_purchase_price_basis ?? null)
           : null,
-      reportingBox: setting || null,
+      reportingBox: source === "phif" ? visibleSetting(setting) : null,
       unitIssue: evidence.issue || (units == null ? "undocumented_conversion" : null),
+      unitProvenance: evidence.provenance,
+      boxSize,
+      baseUnit,
+      packageQuantity,
+      stripsPerPackage: strips,
     };
     const group = groups.get(identity.key) ?? {
       id: identity.key,
       ...identity,
-      setting: setting || null,
+      setting: visibleSetting(setting),
       settingConflict,
       rows: [],
       saleItems: [],
-      actualSaleItems: [],
     };
     group.rows.push(row);
     // Only a verified dispensing unit can turn a recorded price into a box price.
@@ -352,21 +368,6 @@ export function buildItemsAnalytics(input: {
       hasRecordedSale(item)
     ) {
       group.saleItems.push({
-        ...item,
-        invoice,
-        quantity: units,
-        phif_financial_fields: { total_amount: f.revenue },
-      });
-    }
-    if (
-      source === "actual" &&
-      rights.revenue &&
-      units != null &&
-      units > 0 &&
-      f.revenue != null &&
-      hasRecordedSale(item)
-    ) {
-      group.actualSaleItems.push({
         ...item,
         invoice,
         quantity: units,
@@ -413,8 +414,7 @@ export function buildItemsAnalytics(input: {
         )
       : null;
     const boxes = total(rows, "boxes");
-    const lastSale = latestInvoiceSale(g.saleItems, "phif-supplier", false);
-    const lastActualSale = latestInvoiceSale(g.actualSaleItems, "actual-supplier", false);
+    const lastSale = latestReportSupplierSale(g.saleItems);
     const invoiceGroups = new Map<string, AnalyticsRow[]>();
     for (const r of rows)
       invoiceGroups.set(r.invoiceId, [...(invoiceGroups.get(r.invoiceId) ?? []), r]);
@@ -428,6 +428,9 @@ export function buildItemsAnalytics(input: {
       settingConflict: g.settingConflict,
       sources: [...new Set(rows.map((r: AnalyticsRow) => r.source))],
       actualUnits: sourceTotal("actual", "units"),
+      actualQuantities: [...new Set(rows.filter((r: AnalyticsRow) => r.source === "actual").map((r: AnalyticsRow) => r.unit))]
+        .map(unit => ({ unit, quantity: unit ? rows.filter((r: AnalyticsRow) => r.source === "actual" && r.unit === unit)
+          .reduce((n: number, r: AnalyticsRow) => r.quantity == null ? NaN : n + r.quantity, 0) : null })),
       phifUnits: sourceTotal("phif", "units"),
       actualBoxes: sourceTotal("actual", "boxes"),
       phifBoxes: sourceTotal("phif", "boxes"),
@@ -455,11 +458,8 @@ export function buildItemsAnalytics(input: {
         lastSale?.price != null && g.setting
           ? roundReport(lastSale.price * g.setting.units_per_box)
           : null,
-      latestActualSale: lastActualSale,
-      actualBoxSale:
-        lastActualSale?.price != null && g.setting
-          ? roundReport(lastActualSale.price * g.setting.units_per_box)
-          : null,
+      latestActualSale: null,
+      actualBoxSale: null,
       dispenseCount: rows.length,
       invoiceCount: invoiceGroups.size,
       losingInvoices: [...invoiceGroups.values()].filter((r) => {
@@ -528,6 +528,7 @@ export function buildItemsAnalytics(input: {
     canExport: Boolean(input.canExport),
     canManageBoxes: Boolean(input.canManageBoxes),
     settingsAvailable: input.settingsAvailable !== false,
+    supplierUnitsAvailable: input.supplierUnitsAvailable === true,
     audit: {
       losingItems: summaries.filter((i) => i.complete && i.profit < 0).length,
       losingInvoices: invoices.filter((i) => i.complete && i.profit! < 0).length,

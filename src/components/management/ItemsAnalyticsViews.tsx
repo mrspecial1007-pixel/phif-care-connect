@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/sheet";
 import { ReportBackLink } from "./ReportBackLink";
 import { SupplierPriceBasisEditor } from "./SupplierPriceBasisEditor";
+import { SupplierReportUnitEditor } from "./SupplierReportUnitEditor";
 import { getItemsAnalytics, saveReportBoxSetting } from "@/lib/items-analytics.functions";
 import { ACTUAL_UNITS, actualUnit, type ActualUnit } from "@/lib/actual-units.helpers";
 import {
@@ -49,6 +50,8 @@ const titles: Record<AnalyticsView, string> = {
   beneficiaries: "ربحية المستفيدين",
 };
 const sources = { actual: "Actual", phif: "PHIF Supplier" };
+const actualConsumption = (row: any) => (row.actualQuantities || []).map((q: any) => q.unit && Number.isFinite(q.quantity)
+  ? `${number(q.quantity)} ${ACTUAL_UNITS[q.unit as ActualUnit]}` : "كمية تحتاج مراجعة").join(" + ") || "0";
 
 function Options({
   label,
@@ -126,7 +129,7 @@ function Finance({ row, profitLabel = "الربح / الخسارة" }: { row: an
     </div>
   );
 }
-function BoxEditor({ item, onClose }: { item: any; onClose: () => void }) {
+function BoxEditor({ item, rows, unitsAvailable, onClose }: { item: any; rows: AnalyticsRow[]; unitsAvailable: boolean; onClose: () => void }) {
   const [count, setCount] = useState(String(item.setting?.units_per_box ?? ""));
   const [unit, setUnit] = useState<ActualUnit | "">(
     item.setting?.base_unit ?? actualUnit(item.form) ?? "",
@@ -156,7 +159,7 @@ function BoxEditor({ item, onClose }: { item: any; onClose: () => void }) {
         dir="rtl"
       >
         <SheetHeader>
-          <SheetTitle>حجم العلبة المعتمد</SheetTitle>
+          <SheetTitle>إعدادات علبة ووحدة PHIF Supplier</SheetTitle>
           <SheetDescription>
             {item.ingredient} · {item.strength} · {item.form}
           </SheetDescription>
@@ -193,7 +196,7 @@ function BoxEditor({ item, onClose }: { item: any; onClose: () => void }) {
             }
           />
           <p className="text-xs text-muted-foreground">
-            إعداد للعرض والتحليل فقط. لا يغيّر كمية الفاتورة أو يثبت وحدة صرف غير موثقة.
+            خاص بـPHIF Supplier فقط. لا يغيّر كمية الفاتورة أو بيانات Actual أو أي تكلفة محفوظة.
           </p>
           {save.error && (
             <p role="alert" className="text-sm text-destructive">
@@ -209,6 +212,7 @@ function BoxEditor({ item, onClose }: { item: any; onClose: () => void }) {
             {save.isPending && <Loader2 className="size-4 animate-spin" />}حفظ
           </Button>
         </form>
+        <div className="mt-4"><SupplierReportUnitEditor item={item} rows={rows} available={unitsAvailable} /></div>
       </SheetContent>
     </Sheet>
   );
@@ -289,7 +293,8 @@ function Movements({ rows }: { rows: AnalyticsRow[] }) {
           )}
           <p className="text-sm">
             {number(r.quantity)} {r.unit ? ACTUAL_UNITS[r.unit] : "وحدة غير موثقة"} ·{" "}
-            {r.boxes == null ? "تعذر التحويل إلى علب" : `${number(r.boxes)} علبة`}
+            {r.boxes == null ? "التحويل إلى علب غير موثق" : `${number(r.boxes)} علبة`}
+            {r.source === "phif" && r.unitProvenance && r.unitProvenance !== "source" && <span className="mr-1 text-xs text-teal-800">وحدة موثقة يدويًا</span>}
           </p>
           <Finance
             row={{
@@ -594,47 +599,29 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                     <>
                       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b pb-2">
                         <strong className="block break-words text-lg text-emerald-700">
-                          {(row.boxSale ?? (!row.latestSale ? row.actualBoxSale : null)) != null
-                            ? `${number(row.boxSale ?? row.actualBoxSale)} د.ل / علبة`
-                            : row.setting
-                              ? row.latestSale?.conflict
-                                ? "سعر البيع يحتاج مراجعة"
-                                : "لا يوجد سعر علبة موثق"
-                              : "حدد حجم العلبة"}
+                          {row.boxSale != null ? `${money(row.boxSale)} / علبة`
+                            : !row.latestSale ? "لا يوجد سعر بيع PHIF Supplier مسجل" : "حدد حجم علبة PHIF Supplier"}
                         </strong>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {row.setting &&
                             `${row.setting.units_per_box} ${ACTUAL_UNITS[row.setting.base_unit as ActualUnit]} / علبة · `}
-                          {row.latestSale
-                            ? "PHIF Supplier"
-                            : row.latestActualSale
-                              ? "Actual"
-                              : "سعر غير متاح"}
-                          {(row.latestSale?.date || row.latestActualSale?.date) &&
-                            ` · ${row.latestSale?.date || row.latestActualSale?.date}`}
-                          {(row.latestSale?.date || row.latestActualSale?.date)?.slice(0, 7) !==
-                            filters.month &&
-                          (row.latestSale || row.latestActualSale)
+                          PHIF Supplier
+                          {row.latestSale?.date && ` · ${row.latestSale.date}`}
+                          {row.latestSale?.date?.slice(0, 7) !== filters.month && row.latestSale
                             ? " · سعر تاريخي"
                             : ""}
                         </p>
                       </div>
-                      {row.latestSale && row.actualBoxSale != null && (
-                        <p className="text-xs text-muted-foreground">
-                          آخر بيع Actual: <strong>{money(row.actualBoxSale)} / علبة</strong> ·{" "}
-                          {row.latestActualSale?.date}
-                        </p>
-                      )}
                       <div className="grid grid-cols-3 gap-2 text-xs">
                         {[
-                          ["Actual", row.actualBoxes],
+                          ["Actual", actualConsumption(row)],
                           ["PHIF Supplier", row.phifBoxes],
                           ["الإجمالي", row.boxes],
                         ].map(([label, value]) => (
                           <div key={label as string}>
                             <span className="text-muted-foreground">{label}</span>
                             <strong className="mt-1 block text-sm">
-                              {number(value as number | null)} علبة
+                              {label === "Actual" ? value : `${number(value as number | null)} علبة`}
                             </strong>
                           </div>
                         ))}
@@ -772,7 +759,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                   }}
                 >
                   <Settings2 className="size-4" />
-                  {selected.setting ? "تعديل حجم العلبة" : "تحديد حجم العلبة"}
+                  إعدادات PHIF Supplier
                 </Button>
               )}
               <Finance row={selected} />
@@ -781,7 +768,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           {selected && <Movements key={`${view}:${selected.id}`} rows={selectedRows} />}
         </SheetContent>
       </Sheet>
-      {editing && <BoxEditor item={editing} onClose={() => setEditing(null)} />}
+      {editing && <BoxEditor item={editing} rows={report.data?.historyMovements.filter(r => r.identity === editing.id) || []} unitsAvailable={Boolean(report.data?.supplierUnitsAvailable)} onClose={() => setEditing(null)} />}
     </div>
   );
 }

@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getActualStockLinkEditor, saveActualStockLink } from "@/lib/actual-stock-links.functions";
+import { useSession } from "@/lib/queries";
 
 export function ActualStockLinks({ itemIds = [], onClose }: { itemIds?: string[]; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const session = useSession();
   const read = useServerFn(getActualStockLinkEditor);
   const save = useServerFn(saveActualStockLink);
   const [itemId, setItemId] = useState(itemIds[0] ?? "");
@@ -19,9 +21,9 @@ export function ActualStockLinks({ itemIds = [], onClose }: { itemIds?: string[]
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
-  const query = useQuery({ queryKey: ["actual_stock_links", itemId], queryFn: () => read({ data: { itemId: itemId || undefined } }), retry: false });
+  const query = useQuery({ queryKey: ["actual_stock_links", session.data?.pharmacy?.id, session.data?.user?.id, itemId], queryFn: () => read({ data: { itemId: itemId || undefined } }), retry: false });
   const data = query.data;
-  const existing = data?.history.find((link: any) => link.phif_invoice_item_id === itemId);
+  const existing = data?.existing;
   useEffect(() => { setTargetId(""); setSearch(""); setConfirmed(false); setError(""); setNotice(""); }, [itemId]);
   const candidates = (data?.stocks ?? []).filter((stock: any) => !search.trim()
     || [stock.brand_name, stock.strength, stock.dosage_unit].join(" ").toLowerCase().includes(search.trim().toLowerCase()))
@@ -32,7 +34,8 @@ export function ActualStockLinks({ itemIds = [], onClose }: { itemIds?: string[]
     if (lock.current || !confirmed) return;
     lock.current = true; setBusy(true); setError(""); setNotice("");
     try {
-      await save({ data: { itemId, targetId: revoke ? null : targetId, expectedVersion: existing?.version ?? 0, confirmed: true, revoke } });
+      await save({ data: { itemId, targetId: revoke ? null : targetId, expectedVersion: existing?.version ?? 0,
+        expectedMembers: data?.members || [], confirmed: true, revoke } });
       await queryClient.invalidateQueries({ predicate: q => ["actual_stock_links", "management_audit", "treasury_report", "management_profit_analysis", "report_item_tracking", "report_item_search", "reference_items", "reference_item", "management_monthly_report", "items_analytics"].includes(String(q.queryKey[0])) });
       setTargetId(""); setConfirmed(false);
       await query.refetch();
@@ -50,6 +53,7 @@ export function ActualStockLinks({ itemIds = [], onClose }: { itemIds?: string[]
         {notice && <p role="status" className="text-sm text-emerald-800">{notice}</p>}
         {data && !data.available && <p className="text-sm text-amber-900">الربط اليدوي غير مفعّل بعد. يلزم تطبيق migration الروابط قبل الحفظ.</p>}
         {data?.available && <>
+          {!data.scopeAvailable && <p className="text-sm text-amber-900">تظهر الروابط السابقة دون تكرار. تعديل العلاقة الدائمة يتطلب تطبيق الترحيل الجديد؛ لم تتغير البيانات المحفوظة.</p>}
           {itemIds.length > 1 && <label className="block text-sm">بند الفاتورة
             <select className="mt-1 w-full rounded-md border bg-background p-2" value={itemId} disabled={busy} onChange={e => setItemId(e.target.value)}>
               {itemIds.map((id, index) => <option key={id} value={id}>البند {index + 1}</option>)}
@@ -60,7 +64,10 @@ export function ActualStockLinks({ itemIds = [], onClose }: { itemIds?: string[]
               <strong className="block break-words">{data.item.brand} · {data.item.strength}</strong>
               <span className="text-muted-foreground">فاتورة {data.item.invoice?.invoice_number} · {data.item.invoice?.dispensing_date} · الكمية {data.item.quantity} · {data.item.unit || "وحدة غير مسجلة"}</span>
             </div>
-            {existing?.is_active && <p className="text-sm text-emerald-800">مطابقة يدوية: {existing.target?.brand_name} · {existing.target?.strength}</p>}
+            {data.itemException ? <p className="text-sm text-amber-800">غير مرتبط: يوجد إلغاء قديم خاص بهذا البند. اعتماد العلاقة يعيد إدراجه في الربط الموحد.</p>
+              : data.conflict ? <p role="alert" className="text-sm text-amber-800">يحتاج مراجعة: توجد روابط مختلفة للصنف نفسه. لا يُعتمد أحدها تلقائيًا.</p>
+              : existing?.is_active ? <p className="text-sm text-emerald-800">مرتبط: {existing.target?.brand_name} · {existing.target?.strength}</p>
+                : <p className="text-sm text-muted-foreground">غير مرتبط يدويًا</p>}
             <div className="relative"><Search className="absolute right-2 top-3 size-4 text-muted-foreground" /><Input className="pr-8" aria-label="بحث في مخزون الصيدلية" placeholder="اسم صنف المخزون أو التركيز" value={search} onChange={e => setSearch(e.target.value)} disabled={busy} /></div>
             <div className="max-h-56 space-y-1 overflow-y-auto">
               {candidates.length === 0 && <p className="p-3 text-sm text-muted-foreground">لا توجد نتائج.</p>}
@@ -70,19 +77,20 @@ export function ActualStockLinks({ itemIds = [], onClose }: { itemIds?: string[]
               </button>)}
             </div>
             {target && <div className="rounded-md border border-teal-200 p-3 text-sm"><p>من: {data.item.brand} · {data.item.strength} · {data.item.unit || "شكل / وحدة غير مسجلة"} · العبوة {data.item.package_quantity ?? "غير مسجلة"}</p><p>إلى: {target.brand_name} · {target.strength} · {target.dosage_unit} · العبوة {target.package_quantity ?? "غير مسجلة"}</p></div>}
-            <p className="text-xs text-muted-foreground">القرار يخص بند هذه الفاتورة فقط. لا يغيّر الاسم الأصلي ولا يؤكد وحدة التكلفة أو الربح.</p>
+            <p className="text-xs text-muted-foreground">الربط يخص هوية الصنف والاسم التجاري والتركيز والشكل داخل هذه الصيدلية، ويُعاد استخدامه للبنود المتوافقة. لا يغيّر اسم الفاتورة أو يثبت وحدة التكلفة.</p>
+            {(data.members?.length || 0)>1 && <p className="text-xs text-amber-800">علاقة واحدة مع {data.members.length} سجل قرار محفوظ؛ سيُحفظ تعديل العلاقة وسجل قراراتها معًا.</p>}
             <label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={busy} checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-1" />أؤكد هوية الصنف والتغيير المختار.</label>
             <div className="flex flex-wrap gap-2">
-              <Button disabled={!confirmed || !target || busy} onClick={() => submit()}><Link2 className="size-4" />حفظ الربط</Button>
-              {existing?.is_active && <Button variant="outline" disabled={!confirmed || busy} onClick={() => submit(true)}><Unlink className="size-4" />إلغاء الربط</Button>}
+              <Button disabled={!data.scopeAvailable || !confirmed || !target || busy} onClick={() => submit()}><Link2 className="size-4" />{existing?.is_active ? "تعديل الربط" : "حفظ الربط"}</Button>
+              {existing?.is_active && <Button variant="outline" disabled={!data.scopeAvailable || !confirmed || busy} onClick={() => submit(true)}><Unlink className="size-4" />إلغاء الربط</Button>}
             </div>
             {data.operations.length > 0 && <details className="border-t pt-2 text-xs"><summary>سجل التغييرات</summary>{data.operations.map((op: any, index: number) => <p className="py-1" key={index}>{op.action.endsWith("revoke") ? "إلغاء" : "حفظ / تعديل"} · {op.actor} · {op.at}</p>)}</details>}
           </>}
-          <details open={!itemId} className="border-t pt-2 text-sm"><summary>الروابط المحفوظة ({data.history.length})</summary>
-            {data.history.map((link: any) => <div key={link.id} className="flex items-center justify-between gap-2 border-b py-2">
-              <div className="min-w-0 break-words"><strong>{link.source?.brand} · {link.source?.strength}</strong><p className="text-xs">{link.target?.brand_name} · {link.is_active ? "مطابقة يدوية" : "ملغاة"}</p><p className="text-xs text-muted-foreground">{link.updated_actor} · {link.updated_at}</p></div>
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => setItemId(link.phif_invoice_item_id)}><Pencil className="size-4" />مراجعة</Button>
-            </div>)}
+          <details open={!itemId} className="border-t pt-2 text-sm"><summary>العلاقات المحفوظة ({data.groups.length})</summary>
+            {data.groups.map((group: any) => { const link=group.link; return <div key={group.identity} className="flex items-center justify-between gap-2 border-b py-2">
+              <div className="min-w-0 break-words"><strong>{link.source?.brand} · {link.source?.strength}</strong><p className="text-xs">{group.status === "review" ? "يحتاج مراجعة — روابط غير متوافقة أو متعارضة" : `${link.target?.brand_name} · ${group.status === "linked" ? "مرتبط" : "غير مرتبط"}`}</p><p className="text-xs text-muted-foreground">{group.members.length} سجل قرار · {link.updated_actor} · {link.updated_at}</p></div>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setItemId(link.phif_invoice_item_id)}><Pencil className="size-4" />{group.conflict ? "مراجعة التعارض" : "مراجعة / تعديل"}</Button>
+            </div>; })}
           </details>
         </>}
       </div>

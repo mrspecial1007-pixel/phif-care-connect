@@ -4,7 +4,6 @@ import {
   analyticsSearchSchema,
   authorizeAnalyticsRead,
   buildItemsAnalytics,
-  type BoxSetting,
 } from "./items-analytics.helpers";
 import { ACTUAL_UNITS } from "./actual-units.helpers";
 
@@ -21,32 +20,15 @@ export const getItemsAnalytics = createServerFn({ method: "POST" })
     const dataset = await loadItemAnalyticsDataset((context, access) => {
       rights = authorizeAnalyticsRead(context.session.data, access, data);
     });
-    let settings: BoxSetting[] = [],
-      missingTable = false;
-    const { readReportPages } = await import("./report-pages.server");
-    try {
-      settings = (await readReportPages(() =>
-        dataset.admin
-          .from("phif_report_box_settings")
-          .select("id,item_identity,units_per_box,base_unit,version", { count: "exact" })
-          .eq("pharmacy_id", dataset.session.pharmacy_id)
-          .order("id"),
-      )) as BoxSetting[];
-    } catch {
-      const { error } = await dataset.admin
-        .from("phif_report_box_settings")
-        .select("id")
-        .eq("pharmacy_id", dataset.session.pharmacy_id)
-        .limit(1);
-      missingTable = Boolean(error && ["42P01", "PGRST205"].includes(error.code));
-      if (!missingTable) throw new Error("تعذر تحميل إعدادات أحجام العلب؛ حاول مجددًا");
-    }
+    const { loadReportBoxSettings } = await import("./report-box-settings.server");
+    const { settings, available, supplierUnitsAvailable } = await loadReportBoxSettings(dataset.admin, dataset.session.pharmacy_id);
     return buildItemsAnalytics({
       ...dataset,
       settings,
       ...rights,
       filters: data,
-      settingsAvailable: !missingTable,
+      settingsAvailable: available,
+      supplierUnitsAvailable,
     });
   });
 
@@ -121,4 +103,49 @@ export const saveReportBoxSetting = createServerFn({ method: "POST" })
           : "تعذر حفظ حجم العلبة؛ ربما تغير الإعداد. حدّث الصفحة وأعد المحاولة",
       );
     return saved;
+  });
+
+const supplierUnitInput = z.object({
+  identity: z.string().min(5).max(1500),
+  unit: z.enum(Object.keys(ACTUAL_UNITS) as [keyof typeof ACTUAL_UNITS, ...(keyof typeof ACTUAL_UNITS)[]]).nullable(),
+  exceptions: z.array(z.object({ invoiceId: z.string().uuid(), unit: z.string().max(20) })).max(200),
+  version: z.number().int().min(1),
+});
+export const saveReportSupplierUnit = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => supplierUnitInput.parse(data))
+  .handler(async ({ data }) => {
+    const { requireTiryaqPermission } = await import("./user-management.functions");
+    const context = await requireTiryaqPermission("users_manage");
+    const user = context.session.data;
+    if (!user.user_id || user.user_role !== "admin") throw new Error("توثيق وحدة PHIF Supplier متاح للمدير فقط");
+    const { loadItemAnalyticsDataset } = await import("./management.functions");
+    const dataset = await loadItemAnalyticsDataset();
+    if (dataset.session.pharmacy_id !== context.pharmacy_id) throw new Error("تغيرت الصيدلية؛ أعد تحميل الصفحة");
+    const { loadReportBoxSettings } = await import("./report-box-settings.server");
+    const stored = await loadReportBoxSettings(dataset.admin, context.pharmacy_id);
+    if (!stored.supplierUnitsAvailable) throw new Error("يلزم تطبيق ترحيل توثيق وحدات PHIF Supplier أولًا");
+    const view = buildItemsAnalytics({ ...dataset, settings: stored.settings, access: dataset.access,
+      filters: analyticsSearchSchema.parse({ month: "all" }) });
+    const item = view.items.find(i => i.id === data.identity && i.identityComplete);
+    if (!item?.setting || item.settingConflict) throw new Error("احفظ حجم علبة PHIF Supplier غير متعارض أولًا");
+    const { reportSettingKey } = await import("./report-medication-evidence.helpers");
+    if (stored.settings.filter(s=>reportSettingKey(s.item_identity)===item.id).length!==1)
+      throw new Error("توجد إعدادات قديمة متعددة للصنف؛ يلزم مراجعتها دون استبدال أي إعداد بصمت");
+    const { actualUnit } = await import("./actual-units.helpers");
+    if (data.unit && !["box", "strip", actualUnit(item.form)].includes(data.unit))
+      throw new Error("وحدة الصرف تتعارض مع الشكل الدوائي");
+    const relevant = view.historyMovements.filter(r => r.identity === item.id && r.source === "phif");
+    const exceptions: Record<string, string> = {};
+    for (const exception of data.exceptions) {
+      if (!relevant.some(r => r.invoiceId === exception.invoiceId)
+        || (exception.unit !== "unknown" && (!actualUnit(exception.unit) || !["box", "strip", actualUnit(item.form)].includes(actualUnit(exception.unit))))
+        || exceptions[exception.invoiceId]) throw new Error("استثناء الفاتورة غير متوافق أو مكرر");
+      exceptions[exception.invoiceId] = exception.unit === "unknown" ? "unknown" : actualUnit(exception.unit)!;
+    }
+    const { error } = await dataset.admin.rpc("set_phif_report_supplier_unit", {
+      p_pharmacy_id: context.pharmacy_id, p_actor_id: user.user_id, p_identity: item.setting.item_identity,
+      p_unit: data.unit, p_exceptions: exceptions, p_expected_version: data.version,
+    });
+    if (error) throw new Error("تعذر حفظ توثيق الوحدة؛ تحقق من الترحيل وحدّث الصفحة قبل إعادة المحاولة");
+    return { saved: true };
   });

@@ -158,9 +158,9 @@ describe("item consumption and profitability analytics", () => {
       rows: [row(a, 33.06), row(b, 90)],
     });
     expect(result.items[0]).toMatchObject({
-      boxes: 1,
+      boxes: null,
       boxSale: 33.06,
-      actualBoxSale: 90,
+      actualBoxSale: null,
       latestSale: { date: "2026-03-01" },
       dispenseCount: 1,
     });
@@ -239,9 +239,9 @@ describe("item consumption and profitability analytics", () => {
     expect(result.items[0]).toMatchObject({
       actualUnits: 30,
       phifUnits: 30,
-      actualBoxes: 1,
+      actualBoxes: null,
       phifBoxes: 1,
-      boxes: 2,
+      boxes: null,
       beneficiaries: 1,
       dispenseCount: 2,
     });
@@ -350,12 +350,12 @@ describe("item consumption and profitability analytics", () => {
     expect(phif.access.phif.profit).toBe(true);
     expect(phif.access.actual.profit).toBe(false);
   });
-  it("retains conflicting latest prices for review instead of selecting arbitrarily", () => {
+  it("uses a deterministic invoice tie-breaker for the latest eligible historical sale", () => {
     const a = item("a", "v"),
       b = item("b", "w");
     expect(
       report([a, b], [invoice("v"), invoice("w")], { rows: [row(a, 60), row(b, 90)] }).items[0],
-    ).toMatchObject({ boxSale: null, latestSale: { conflict: true } });
+    ).toMatchObject({ boxSale: 90, latestSale: { conflict: false, invoiceNumber: "w" } });
   });
   it("requires documented units, rejects mixed unit sums and never derives a package size from strength", () => {
     const a = item("a", "v", "phif-supplier", {
