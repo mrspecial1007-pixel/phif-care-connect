@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { loadReportSettingScope } from "../report-setting-scope.server";
-import { reportSettingRequest, refreshReportAfterSettingSave } from "../report-setting-save.helpers";
+import {
+  reportSettingRequest,
+  refreshReportAfterSettingSave,
+} from "../report-setting-save.helpers";
 import { analyticsSearchSchema, buildItemsAnalytics } from "../items-analytics.helpers";
 
 const identity = JSON.stringify(["atorvastatin", "40mg", "tablet"]);
@@ -19,14 +22,20 @@ const item = (id: string, patch: any = {}) => ({
   ...patch,
 });
 
-function database(items: any[], stocks: any[] = []) {
+function database(items: any[], stocks: any[] = [], settings: any[] = []) {
   const calls: { table: string; fields?: string; filters: [string, any][] }[] = [];
   const db = {
     from(table: string) {
       const call = { table, fields: "", filters: [] as [string, any][] };
       calls.push(call);
       let rows =
-        table === "phif_invoice_items" ? items : table === "phif_stock_items" ? stocks : [];
+        table === "phif_invoice_items"
+          ? items
+          : table === "phif_stock_items"
+            ? stocks
+            : table === "phif_report_box_settings"
+              ? settings
+              : [];
       const query = {
         select(fields: string) {
           call.fields = fields;
@@ -48,6 +57,9 @@ function database(items: any[], stocks: any[] = []) {
         },
         order() {
           return query;
+        },
+        async limit(count: number) {
+          return { data: rows.slice(0, count), error: null };
         },
         async range(from: number, to: number) {
           return { data: rows.slice(from, to + 1), count: rows.length, error: null };
@@ -120,6 +132,32 @@ describe("report setting save performance and safety", () => {
     expect(source).toContain("p_expected_version: data.version");
     expect(source).toContain("relevant.get(exception.invoiceId) !== 1");
     expect(source).toContain("database_rpc_roundtrip");
+  });
+
+  it("reuses a persisted definition for saving settings on previously incomplete Supplier items", async () => {
+    const setting = {
+      id: "saved-definition",
+      pharmacy_id: "tiryaq",
+      item_identity: identity,
+      base_unit: "tablet",
+      units_per_box: 30,
+      version: 1,
+    };
+    const own = item("own", { metadata: {} });
+    const other = item("other", { metadata: {}, invoice: { pharmacy_id: "andalus" } });
+    const { db, calls } = database([own, other], [], [setting]);
+    const before = JSON.stringify([own, other, setting]);
+    const scope = await loadReportSettingScope(db, "tiryaq", identity);
+    expect(scope.items.map((i) => i.id)).toEqual(["own"]);
+    expect(
+      calls
+        .filter((c) => c.table === "phif_report_box_settings")
+        .every((c) =>
+          c.filters.some(([field, value]) => field === "pharmacy_id" && value === "tiryaq"),
+        ),
+    ).toBe(true);
+    expect(JSON.stringify([own, other, setting])).toBe(before);
+    expect(scope.items[0].metadata).toEqual({});
   });
 
   it("finishes a confirmed save before a slow report refresh and refetches only the active report", async () => {

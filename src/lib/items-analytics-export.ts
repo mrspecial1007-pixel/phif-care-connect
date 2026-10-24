@@ -130,7 +130,7 @@ export async function buildAnalyticsWorkbook(
         قيمة_البيع: r.revenue,
         تكلفة_الشراء: r.cost,
         الربح: r.profit,
-        السبب: "هوية غير مكتملة؛ لم تدمج تخمينيًا",
+        السبب: r.identityReviewReason || "هوية غير مكتملة؛ لم تدمج تخمينيًا",
         معرّفات_البنود: report.movements
           .filter((m: AnalyticsRow) => m.identity === r.id)
           .map((m: AnalyticsRow) => m.id)

@@ -48,9 +48,15 @@ export async function loadReportSettingScope(
     ),
   );
   let identities = new Map(candidates.map((i) => [i.id, scientificReportIdentity(i)]));
+  let definitions: Parameters<typeof resolveReportIdentities>[4];
   // Missing forms need the same pharmacy-scoped stock/reference evidence as the report.
   // Resolve once per scientific scope, not once per invoice or exception.
   if (candidates.some((i) => !identities.get(i.id)?.form)) {
+    const { loadReportBoxSettings } = await import("./report-box-settings.server");
+    const { settings } = await measure("definition_database_read", () =>
+      loadReportBoxSettings(db, pharmacyId),
+    );
+    definitions = { pharmacyId, settings };
     const stocks = await measure("form_database_read", () =>
       readReportPages(() =>
         db
@@ -65,7 +71,7 @@ export async function loadReportSettingScope(
       readReportFormReferences(db, pharmacyId),
     );
     identities = await measure("identity_resolution", () =>
-      resolveReportIdentities(candidates, [], stocks, references),
+      resolveReportIdentities(candidates, [], stocks, references, definitions),
     );
   }
   let items = candidates.filter((i) => identities.get(i.id)?.key === identity);
@@ -81,6 +87,7 @@ export async function loadReportSettingScope(
       dataset.rows,
       dataset.stocks,
       dataset.referenceForms,
+      definitions,
     );
     items = dataset.items.filter((i) => verified.get(i.id)?.key === identity);
   }

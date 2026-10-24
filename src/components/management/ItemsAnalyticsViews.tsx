@@ -725,7 +725,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                     {r.ingredient} · {r.strength}
                   </bdi>
                   <span className="block text-xs text-muted-foreground">
-                    {r.dispenseCount} بند · عرض التفاصيل
+                    {r.dispenseCount} بند · {r.identityReviewReason || "هوية غير مكتملة"} · عرض التفاصيل
                   </span>
                 </button>
               ))}

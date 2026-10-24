@@ -42,6 +42,7 @@ export type AnalyticsAccess = Record<
 >;
 export type BoxSetting = SupplierUnitSetting & {
   id?: string;
+  pharmacy_id?: string;
   item_identity: string;
   units_per_box: number;
   base_unit: ActualUnit;
@@ -174,6 +175,7 @@ export function resultMatches(
 
 /** Consumes the existing engine's results; does not calculate Actual purchase prices. */
 export function buildItemsAnalytics(input: {
+  pharmacyId?: string;
   items: any[];
   invoices: any[];
   rows: any[];
@@ -204,6 +206,7 @@ export function buildItemsAnalytics(input: {
     input.rows,
     input.stocks,
     input.referenceForms,
+    input.pharmacyId ? { pharmacyId: input.pharmacyId, settings: input.settings } : undefined,
   );
   const seen = new Set<string>();
   const groups = new Map<string, any>();
@@ -424,6 +427,7 @@ export function buildItemsAnalytics(input: {
       strength: g.strength,
       form: g.form,
       identityComplete: !g.key.includes('"unresolved"'),
+      identityReviewReason: g.reviewReason,
       setting: g.setting,
       settingConflict: g.settingConflict,
       sources: [...new Set(rows.map((r: AnalyticsRow) => r.source))],

@@ -50,11 +50,14 @@ export async function readSupplierPriceItem(
     const dataset = await loadItemAnalyticsDataset();
     if (dataset.session.pharmacy_id !== context.pharmacyId)
       throw new Error("الصيدلية لا تطابق جلسة الحفظ");
+    const { loadReportBoxSettings } = await import("./report-box-settings.server");
+    const { settings } = await loadReportBoxSettings(context.db, context.pharmacyId);
     return resolveReportIdentities(
       dataset.items,
       dataset.rows,
       dataset.stocks,
       dataset.referenceForms,
+      { pharmacyId: context.pharmacyId, settings },
     );
   })();
   const form = (await scoped.reportForms).get(data.id)?.form;

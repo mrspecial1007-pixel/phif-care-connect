@@ -28,6 +28,7 @@ export const getItemsAnalytics = createServerFn({ method: "POST" })
     );
     return measure("report_rebuild", () => buildItemsAnalytics({
       ...dataset,
+      pharmacyId: dataset.session.pharmacy_id,
       settings,
       ...rights,
       filters: data,

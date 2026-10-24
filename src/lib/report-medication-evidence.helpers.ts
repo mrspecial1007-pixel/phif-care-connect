@@ -96,12 +96,31 @@ export function supplierQuantityEvidence(item: any): ReturnType<typeof supplierI
   return recorded;
 }
 
-/** Resolve form only from explicit data or consistent evidence for this exact product. */
+export type ReportDefinitionScope = {
+  pharmacyId: string;
+  settings: readonly {
+    pharmacy_id?: string;
+    item_identity: string;
+    base_unit: unknown;
+  }[];
+};
+
+export const REPORT_IDENTITY_REASONS = {
+  missing_ingredient: "المادة العلمية غير مسجلة",
+  missing_strength: "التركيز غير مسجل",
+  missing_form: "الشكل الدوائي غير موثق",
+  conflicting_saved_forms: "أكثر من شكل دوائي معتمد؛ يلزم تحديد شكل هذا البند",
+  conflicting_form_evidence: "تعارض بين التعريف المحفوظ وأدلة الشكل الدوائي",
+  invalid_saved_definition: "التعريف المحفوظ يتضمن وحدة لا تتوافق مع شكله الدوائي",
+} as const;
+
+/** Resolve form without using reporting pack sizes as dispensing-unit evidence. */
 export function resolveReportIdentities(
   items: any[],
   rows: any[],
   stocks: any[],
   references: any[] = [],
+  definitions?: ReportDefinitionScope,
 ) {
   const finance = new Map(rows.map((r) => [r.item_id, r]));
   const stockById = new Map(stocks.map((s) => [s.source_stock_id, s]));
@@ -112,6 +131,23 @@ export function resolveReportIdentities(
       normalizeActiveIngredient(text(i.active_ingredient)),
       reportStrength(i.strength),
     ]);
+  const savedForms = new Map<string, Set<string>>();
+  const invalidSaved = new Set<string>();
+  for (const setting of definitions?.settings || []) {
+    if (!definitions?.pharmacyId || setting.pharmacy_id !== definitions.pharmacyId) continue;
+    const normalized = reportSettingKey(setting.item_identity);
+    if (!normalized) continue;
+    const [ingredient, strength, form] = JSON.parse(normalized);
+    const key = JSON.stringify([ingredient, strength]);
+    const unit = actualUnit(form);
+    if (unit && actualUnit(setting.base_unit) !== unit) {
+      invalidSaved.add(key);
+      continue;
+    }
+    const set = savedForms.get(key) || new Set<string>();
+    set.add(form);
+    savedForms.set(key, set);
+  }
   const addScientific = (item: any, form: string) => {
     if (!form || !item.active_ingredient || !item.strength) return;
     const key = scientificKey(item),
@@ -153,11 +189,47 @@ export function resolveReportIdentities(
     items.map((item) => {
       const known = forms.get(productKey(item));
       const scientific = scientificForms.get(scientificKey(item));
-      const form =
+      let form =
         direct.get(item.id) ||
         (known?.size === 1 ? [...known][0] : "") ||
         (scientific?.size === 1 ? [...scientific][0] : "");
-      return [item.id, scientificReportIdentity(item, form)];
+      let issue: keyof typeof REPORT_IDENTITY_REASONS | null = null;
+      const itemPharmacy = item.pharmacy_id ?? item.invoice?.pharmacy_id;
+      const useDefinition =
+        item.source_classification === "phif-supplier" &&
+        definitions?.pharmacyId &&
+        (!itemPharmacy || itemPharmacy === definitions.pharmacyId);
+      // Never feed saved Supplier forms back into the shared evidence maps or Actual.
+      if (useDefinition && !direct.get(item.id)) {
+        const key = scientificKey(item),
+          saved = savedForms.get(key);
+        if (invalidSaved.has(key)) {
+          form = "";
+          issue = "invalid_saved_definition";
+        } else if (saved?.size === 1) {
+          const approved = [...saved][0];
+          const evidence = known?.size ? known : scientific;
+          if (evidence?.size && (evidence.size !== 1 || !evidence.has(approved))) {
+            form = "";
+            issue = "conflicting_form_evidence";
+          } else form = approved;
+        } else if (saved && saved.size > 1 && known?.size !== 1) {
+          form = "";
+          issue = "conflicting_saved_forms";
+        }
+      }
+      const identity = scientificReportIdentity(item, form);
+      issue = !normalizeActiveIngredient(text(item.active_ingredient))
+        ? "missing_ingredient"
+        : !reportStrength(item.strength)
+          ? "missing_strength"
+          : !identity.form
+            ? issue || "missing_form"
+            : null;
+      return [
+        item.id,
+        { ...identity, reviewReason: issue ? REPORT_IDENTITY_REASONS[issue] : null },
+      ];
     }),
   );
 }

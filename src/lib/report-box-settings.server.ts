@@ -13,7 +13,7 @@ export async function loadReportBoxSettings(db: any, pharmacyId: string) {
   if (probe.error && !["42703", "PGRST204"].includes(probe.error.code))
     throw new Error("تعذر تحميل إعدادات وحدات PHIF Supplier");
   const fields =
-    "id,item_identity,units_per_box,base_unit,version" +
+    "id,pharmacy_id,item_identity,units_per_box,base_unit,version" +
     (supplierUnitsAvailable ? ",supplier_quantity_unit,supplier_unit_exceptions" : "");
   const settings = (await readReportPages(() =>
     db
