@@ -558,10 +558,11 @@ describe("item consumption and profitability analytics", () => {
   });
   it("scopes client report caches to pharmacy, user and permissions, and invalidates after cost edits", () => {
     const page = readFileSync("src/components/management/ItemsAnalyticsViews.tsx", "utf8");
-    expect(page).toContain("session.data.pharmacy.id");
-    expect(page).toContain("session.data.user?.permissions");
+    const cache = readFileSync("src/lib/items-analytics-cache.helpers.ts", "utf8");
+    expect(cache).toContain("session.pharmacy.id");
+    expect(cache).toContain("session.user?.permissions");
     expect(page).toContain('["items_analytics", scope, view, filters]');
-    expect(page).toContain("gcTime: 0");
+    expect(page).toContain("...itemsAnalyticsCacheOptions");
     expect(
       readFileSync("src/components/management/SupplierPriceBasisEditor.tsx", "utf8"),
     ).toContain('"items_analytics"');

@@ -19,8 +19,10 @@ export function refreshReportAfterSettingSave(
   onError: () => void,
 ) {
   const start = performance.now();
+  const scopeKey = key.slice(0, key.length > 1 ? 2 : 1);
   void client
-    .invalidateQueries({ queryKey: ["items_analytics"], refetchType: "none" })
+    .cancelQueries({ queryKey: scopeKey })
+    .then(() => client.invalidateQueries({ queryKey: scopeKey, refetchType: "none" }))
     .then(() =>
       client.refetchQueries({ queryKey: key, exact: true, type: "active" }, { throwOnError: true }),
     )

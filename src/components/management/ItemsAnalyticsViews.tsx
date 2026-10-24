@@ -36,6 +36,7 @@ import {
   type AnalyticsView,
 } from "@/lib/items-analytics-export";
 import { useSession } from "@/lib/queries";
+import { itemsAnalyticsCacheOptions, itemsAnalyticsScope } from "@/lib/items-analytics-cache.helpers";
 import { REPORT_BOX_REASONS } from "@/lib/report-box-quantity.helpers";
 import { REPORT_REVIEW_FORMS, reportReviewIdentity, reportReviewRequest } from "@/lib/report-identity-review.helpers";
 import {
@@ -436,18 +437,13 @@ export function ItemsAnalyticsPage({ view = "consumption" }: { view?: AnalyticsV
         تعذر التحقق من الجلسة الحالية
       </p>
     );
-  if (session.isFetching || !session.data?.unlocked)
+  if (!session.data?.unlocked)
     return (
       <p role="status" className="py-8 text-center text-sm">
         جارٍ التحقق من الجلسة
       </p>
     );
-  const scope = JSON.stringify([
-    session.data.pharmacy.id,
-    session.data.user?.id,
-    session.data.user?.role,
-    session.data.user?.permissions,
-  ]);
+  const scope = itemsAnalyticsScope(session.data)!;
   return <ItemsAnalyticsBody key={scope} view={view} scope={scope} />;
 }
 
@@ -477,17 +473,13 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
   };
   const reportReceivedAt = useRef<number | null>(null);
   const report = useQuery({
+    ...itemsAnalyticsCacheOptions,
     queryKey: ["items_analytics", scope, view, filters],
     queryFn: async () => {
       const data = await getItemsAnalytics({ data: { ...filters, financial: view !== "consumption", export: false } });
       reportReceivedAt.current = performance.now();
       return data;
     },
-    gcTime: 0,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    retry: false,
   });
   useEffect(() => {
     if (reportReceivedAt.current != null) {
@@ -641,8 +633,15 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           جارٍ تحميل التقرير
         </p>
       )}
+      {report.data && report.isFetching && (
+        <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3 animate-spin" />
+          جارٍ تحديث نتائج التقرير
+        </p>
+      )}
       {report.error && (
         <p role="alert" className="border-y py-6 text-sm text-destructive">
+          {report.data && "تعذر تحديث النتائج؛ البيانات المعروضة من آخر تحميل ناجح. "}
           {(report.error as Error).message || "تعذر تحميل التقرير"}
         </p>
       )}

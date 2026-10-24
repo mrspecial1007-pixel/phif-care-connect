@@ -168,6 +168,9 @@ describe("report setting save performance and safety", () => {
     const reads: any[] = [],
       failures: string[] = [];
     const client: any = {
+      cancelQueries: async (options: any) => {
+        reads.push({ cancel: options });
+      },
       invalidateQueries: async (options: any) => {
         reads.push(options);
       },
@@ -182,8 +185,9 @@ describe("report setting save performance and safety", () => {
     expect(
       refreshReportAfterSettingSave(client, key, () => failures.push("refresh")),
     ).toBeUndefined();
-    await Promise.resolve();
-    expect(reads).toContainEqual({ queryKey: ["items_analytics"], refetchType: "none" });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(reads).toContainEqual({ cancel: { queryKey: ["items_analytics", "tiryaq-manager"] } });
+    expect(reads).toContainEqual({ queryKey: ["items_analytics", "tiryaq-manager"], refetchType: "none" });
     expect(reads).toContainEqual({ queryKey: key, exact: true, type: "active" });
     expect(failures).toEqual([]);
     completeRefresh();
@@ -200,6 +204,7 @@ describe("report setting save performance and safety", () => {
       reportFailure = resolve;
     });
     const client: any = {
+      cancelQueries: async () => {},
       invalidateQueries: async () => {},
       refetchQueries: async () => {
         throw new Error("offline");
