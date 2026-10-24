@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { actualUnit, actualSourceUnit, type ActualUnit } from "./actual-units.helpers";
+import { actualReportPackages, reportBoxIssues } from "./report-box-quantity.helpers";
 import {
   resolveReportIdentities,
   reportSettingKey,
@@ -100,6 +101,7 @@ export type AnalyticsRow = {
   supplierBasis: any;
   reportingBox: BoxSetting | null;
   unitIssue: string | null;
+  boxIssue?: string | null;
   boxSize?: number | null;
   baseUnit?: ActualUnit | null;
   unitProvenance?: string;
@@ -121,8 +123,7 @@ const total = (
   key: "revenue" | "cost" | "profit" | "afterDiscount" | "units" | "boxes",
 ) =>
   rows.every((r) => r[key] != null) && (key !== "units" || new Set(rows.map(r=>r.baseUnit)).size < 2)
-    && (key !== "boxes" || new Set(rows.map(r => r.source)).size < 2
-    || (rows.every(r => r.boxSize && r.baseUnit) && new Set(rows.map(r => `${r.boxSize}:${r.baseUnit}`)).size === 1))
+    && (key !== "boxes" || reportBoxIssues(rows).length === 0)
     ? ["units", "boxes"].includes(key)
       ? rows.reduce((n, r) => n + Number(r[key]), 0)
       : roundReport(rows.reduce((n, r) => n + Number(r[key]), 0))
@@ -196,6 +197,7 @@ export function buildItemsAnalytics(input: {
     return input.canManageBoxes ? setting : publicSetting;
   };
   const financial = new Map(input.rows.map((r) => [r.item_id, r]));
+  const actualPackageFor = actualReportPackages(input.stocks, input.pharmacyId);
   const settingGroups = new Map<string, BoxSetting[]>();
   for (const setting of input.settings) {
     const key = reportSettingKey(setting.item_identity);
@@ -238,8 +240,13 @@ export function buildItemsAnalytics(input: {
     const setting = settingConflict
       ? undefined
       : candidates.find((s) => s.item_identity === identity.key) || candidates[0];
+    const originalActualUnit = source === "actual" ? actualSourceUnit(item) : null;
+    const actualEngineUnit = actualUnit(f.invoice_quantity_unit);
     const evidence = source === "actual"
-      ? { unit: actualUnit(f.invoice_quantity_unit), issue: null, provenance: "actual_engine" }
+      ? { unit: actualEngineUnit || originalActualUnit?.unit,
+          issue: originalActualUnit?.issue === "conflicting_dispensing_unit"
+            || (actualEngineUnit && originalActualUnit?.unit && actualEngineUnit !== originalActualUnit.unit)
+            ? "conflicting_dispensing_unit" : null, provenance: "actual_engine" }
       : reportSupplierUnit({ ...item, report_form: identity.form }, setting);
     const unit =
       actualUnit(evidence.unit) || (source === "actual" ? actualSourceUnit(item).unit : null);
@@ -260,11 +267,13 @@ export function buildItemsAnalytics(input: {
         ? counts[0]
         : null;
     };
-    const packageQuantity = uniqueCount([
+    const actualPackage = source === "actual" ? actualPackageFor(item, f, baseUnit) : null;
+    const packageQuantity = actualPackage ? actualPackage.size : uniqueCount([
       item.metadata?.package_quantity,
       item.metadata?.packageQuantity,
     ]);
-    const strips = uniqueCount([item.metadata?.strips_quantity, item.metadata?.stripsQuantity]);
+    const strips = actualPackage ? actualPackage.strips
+      : uniqueCount([item.metadata?.strips_quantity, item.metadata?.stripsQuantity]);
     if (
       unit === "box" &&
       ["tablet", "capsule"].includes(baseUnit || "") &&
@@ -305,6 +314,7 @@ export function buildItemsAnalytics(input: {
     const boxSize: number | null = source === "phif" ? setting?.units_per_box ?? null : packageQuantity;
     let boxes: number | null = units != null && boxSize ? units / boxSize : null;
     if (source === "actual" && unit === "box" && !evidence.issue && Number.isFinite(quantity) && quantity >= 0) boxes = quantity;
+    if (actualPackage?.issue || (unit === "strip" && actualPackage?.stripsIssue)) boxes = null;
     if (units != null && !Number.isFinite(units)) {
       units = null;
       boxes = null;
@@ -346,6 +356,10 @@ export function buildItemsAnalytics(input: {
           : null,
       reportingBox: source === "phif" ? visibleSetting(setting) : null,
       unitIssue: evidence.issue || (units == null ? "undocumented_conversion" : null),
+      boxIssue: boxes != null ? null : !Number.isFinite(quantity) || quantity < 0 ? "invalid_quantity"
+        : evidence.issue || (!unit ? "missing_dispensing_unit" : null)
+          || actualPackage?.issue || (unit === "strip" ? actualPackage?.stripsIssue : null)
+          || (!boxSize ? source === "actual" ? "missing_box_size" : "missing_supplier_box_size" : "undocumented_conversion"),
       unitProvenance: evidence.provenance,
       boxSize,
       baseUnit,
@@ -438,6 +452,9 @@ export function buildItemsAnalytics(input: {
       phifUnits: sourceTotal("phif", "units"),
       actualBoxes: sourceTotal("actual", "boxes"),
       phifBoxes: sourceTotal("phif", "boxes"),
+      actualBoxIssues: reportBoxIssues(rows.filter((r: AnalyticsRow) => r.source === "actual")),
+      phifBoxIssues: reportBoxIssues(rows.filter((r: AnalyticsRow) => r.source === "phif")),
+      boxIssues: reportBoxIssues(rows),
       units: total(rows, "units"),
       boxes,
       beneficiaries: rows.every((r: AnalyticsRow) => input.access[r.source].movements)
@@ -524,6 +541,7 @@ export function buildItemsAnalytics(input: {
         "boxes",
       ),
       boxes: total(movements, "boxes"),
+      boxIssues: reportBoxIssues(movements),
       beneficiaries: movements.every((r) => input.access[r.source].movements)
         ? new Set(movements.map((r) => r.card).filter(Boolean)).size
         : null,

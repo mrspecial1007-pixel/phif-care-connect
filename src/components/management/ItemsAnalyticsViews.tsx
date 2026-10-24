@@ -36,6 +36,7 @@ import {
   type AnalyticsView,
 } from "@/lib/items-analytics-export";
 import { useSession } from "@/lib/queries";
+import { REPORT_BOX_REASONS } from "@/lib/report-box-quantity.helpers";
 import {
   reportSettingRequest,
   refreshReportAfterSettingSave,
@@ -54,8 +55,36 @@ const titles: Record<AnalyticsView, string> = {
   beneficiaries: "ربحية المستفيدين",
 };
 const sources = { actual: "Actual", phif: "PHIF Supplier" };
-const actualConsumption = (row: any) => (row.actualQuantities || []).map((q: any) => q.unit && Number.isFinite(q.quantity)
-  ? `${number(q.quantity)} ${ACTUAL_UNITS[q.unit as ActualUnit]}` : "كمية تحتاج مراجعة").join(" + ") || "0";
+export function ReportBoxQuantities({ row }: { row: any }) {
+  const actualIssues: string[] = row.actualBoxIssues || [];
+  const phifIssues: string[] = row.phifBoxIssues || [];
+  const totalIssues: string[] = (row.boxIssues || []).filter((reason: string) =>
+    !actualIssues.includes(reason) && !phifIssues.includes(reason));
+  return (
+    <div className="min-w-0 space-y-1">
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        {[
+          ["Actual", row.actualBoxes],
+          ["PHIF Supplier", row.phifBoxes],
+          ["الإجمالي", row.boxes],
+        ].map(([label, value]) => (
+          <div key={label as string} className="min-w-0 break-words">
+            <span className="text-muted-foreground">{label}</span>
+            <strong className="mt-1 block text-sm">
+              {value == null ? "غير محدد" : `${number(value as number)} علبة`}
+            </strong>
+          </div>
+        ))}
+      </div>
+      {[["Actual", actualIssues], ["PHIF Supplier", phifIssues], ["الإجمالي", totalIssues]]
+        .map(([label, reasons]) => (reasons as string[]).length > 0 && (
+          <p key={label as string} className="break-words text-[11px] leading-5 text-amber-800">
+            {label}: {(reasons as string[]).map(reason => REPORT_BOX_REASONS[reason] || "التحويل يحتاج مراجعة").join("؛ ")}
+          </p>
+        ))}
+    </div>
+  );
+}
 
 function Options({
   label,
@@ -328,9 +357,14 @@ function Movements({ rows }: { rows: AnalyticsRow[] }) {
           )}
           <p className="text-sm">
             {number(r.quantity)} {r.unit ? ACTUAL_UNITS[r.unit] : "وحدة غير موثقة"} ·{" "}
-            {r.boxes == null ? "التحويل إلى علب غير موثق" : `${number(r.boxes)} علبة`}
+            {r.boxes == null ? REPORT_BOX_REASONS[r.boxIssue || ""] || "التحويل إلى علب غير موثق" : `${number(r.boxes)} علبة`}
             {r.source === "phif" && r.unit && r.unitProvenance && r.unitProvenance !== "source" && <span className="mr-1 text-xs text-teal-800">وحدة موثقة يدويًا</span>}
           </p>
+          {r.source === "actual" && r.boxSize && r.baseUnit && (
+            <p className="text-xs text-muted-foreground">
+              عبوة Actual: {number(r.boxSize)} {ACTUAL_UNITS[r.baseUnit]} / علبة
+            </p>
+          )}
           <Finance
             row={{
               revenue: r.revenue,
@@ -657,20 +691,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                             : ""}
                         </p>
                       </div>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        {[
-                          ["Actual", actualConsumption(row)],
-                          ["PHIF Supplier", row.phifBoxes],
-                          ["الإجمالي", row.boxes],
-                        ].map(([label, value]) => (
-                          <div key={label as string}>
-                            <span className="text-muted-foreground">{label}</span>
-                            <strong className="mt-1 block text-sm">
-                              {label === "Actual" ? value : `${number(value as number | null)} علبة`}
-                            </strong>
-                          </div>
-                        ))}
-                      </div>
+                      <ReportBoxQuantities row={row} />
                       <p className="text-xs">
                         {row.beneficiaries == null
                           ? "عدد المستفيدين محجوب"

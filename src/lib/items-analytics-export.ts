@@ -1,4 +1,5 @@
 import { resultMatches, type AnalyticsFilters, type AnalyticsRow } from "./items-analytics.helpers";
+import { REPORT_BOX_REASONS } from "./report-box-quantity.helpers";
 
 export type AnalyticsView = "consumption" | "items" | "invoices" | "beneficiaries";
 
@@ -90,6 +91,9 @@ export async function buildAnalyticsWorkbook(
             علب_Actual: r.actualBoxes,
             علب_PHIF: r.phifBoxes,
             إجمالي_العلب: r.boxes,
+            سبب_عدم_تحويل_Actual: (r.actualBoxIssues || []).map((reason: string) => REPORT_BOX_REASONS[reason] || reason).join("؛ "),
+            سبب_عدم_تحويل_PHIF: (r.phifBoxIssues || []).map((reason: string) => REPORT_BOX_REASONS[reason] || reason).join("؛ "),
+            سبب_عدم_جمع_العلب: (r.boxIssues || []).map((reason: string) => REPORT_BOX_REASONS[reason] || reason).join("؛ "),
             المستفيدون_بالبطاقة: r.beneficiaries,
             المستفيدون_تاريخيًا: r.historicalBeneficiaries,
             مرات_الصرف: r.dispenseCount,
@@ -152,6 +156,7 @@ export async function buildAnalyticsWorkbook(
       الكمية: r.quantity,
       الوحدة: r.unit,
       الكمية_بالعلب: r.boxes,
+      سبب_عدم_التحويل: r.boxes == null ? REPORT_BOX_REASONS[r.boxIssue || ""] || "التحويل يحتاج مراجعة" : null,
       قيمة_البيع: r.revenue,
       تكلفة_الشراء: r.cost,
       الربح: r.profit,
