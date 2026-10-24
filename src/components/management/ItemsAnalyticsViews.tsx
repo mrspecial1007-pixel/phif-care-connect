@@ -37,6 +37,7 @@ import {
 } from "@/lib/items-analytics-export";
 import { useSession } from "@/lib/queries";
 import { REPORT_BOX_REASONS } from "@/lib/report-box-quantity.helpers";
+import { REPORT_REVIEW_FORMS, reportReviewIdentity, reportReviewRequest } from "@/lib/report-identity-review.helpers";
 import {
   reportSettingRequest,
   refreshReportAfterSettingSave,
@@ -162,7 +163,7 @@ function Finance({ row, profitLabel = "الربح / الخسارة" }: { row: an
     </div>
   );
 }
-function BoxEditor({
+export function BoxEditor({
   item,
   rows,
   unitsAvailable,
@@ -175,26 +176,32 @@ function BoxEditor({
   reportKey: readonly unknown[];
   onClose: () => void;
 }) {
+  const reviewing = item.identityComplete === false;
+  const [form, setForm] = useState(item.form || "");
   const [count, setCount] = useState(String(item.setting?.units_per_box ?? ""));
   const [unit, setUnit] = useState<ActualUnit | "">(
     item.setting?.base_unit ?? actualUnit(item.form) ?? "",
   );
   const client = useQueryClient();
+  const reviewItemId = rows.find(r => r.source === "phif")?.id;
+  const reviewRequest = reviewing ? reportReviewRequest(item, form, count, unit, reviewItemId) : null;
   const saveLock = useRef(false);
   const save = useMutation({
-    mutationFn: () =>
-      reportSettingRequest(() =>
+    mutationFn: () => {
+      if (reviewing && !reviewRequest) throw new Error("أكمل الشكل الدوائي وحجم العبوة ووحدة محتواها أولًا");
+      return reportSettingRequest(() =>
         saveReportBoxSetting({
-          data: {
+          data: reviewRequest || {
             identity: item.id,
             unitsPerBox: Number(count),
             baseUnit: unit as ActualUnit,
             version: item.setting?.version ?? 0,
           },
         }),
-      ),
+      );
+    },
     onSuccess: () => {
-      toast.success("تم حفظ حجم العلبة");
+      toast.success(reviewing ? "تم حفظ تعريف الصنف وحجم عبوة PHIF Supplier" : "تم حفظ حجم العلبة");
       refreshReportAfterSettingSave(client, reportKey, () =>
         toast.error("حُفظ حجم العلبة، لكن تعذر تحديث التقرير. اضغط تحديث."),
       );
@@ -209,7 +216,7 @@ function BoxEditor({
         dir="rtl"
       >
         <SheetHeader>
-          <SheetTitle>إعدادات علبة ووحدة PHIF Supplier</SheetTitle>
+          <SheetTitle>{reviewing ? "تعريف صنف PHIF Supplier" : "إعدادات علبة ووحدة PHIF Supplier"}</SheetTitle>
           <SheetDescription>
             {item.ingredient} · {item.strength} · {item.form}
           </SheetDescription>
@@ -218,7 +225,7 @@ function BoxEditor({
           className="mt-4 space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!saveLock.current) {
+            if (!saveLock.current && !save.isPending && (!reviewing || reviewRequest)) {
               saveLock.current = true;
               save.mutate(undefined, {
                 onSettled: () => {
@@ -228,6 +235,28 @@ function BoxEditor({
             }
           }}
         >
+          {reviewing && (
+            <div className="space-y-2">
+              <span className="block text-sm">الشكل الدوائي</span>
+              <Options
+                label="الشكل الدوائي"
+                value={form}
+                onChange={(value) => {
+                  setForm(value);
+                  setUnit(actualUnit(value) || (unit === actualUnit(form) ? "" : unit));
+                }}
+                options={REPORT_REVIEW_FORMS}
+              />
+              <p className="text-xs text-muted-foreground">
+                يُستكمل الشكل الناقص لفواتير PHIF Supplier المطابقة، السابقة والجديدة. لا تُستبدل الأشكال الصريحة المختلفة، ولا تُعتمد وحدة الصرف تلقائيًا.
+              </p>
+              {!reportReviewIdentity(item.id, form || "tablet") && (
+                <p role="alert" className="text-xs text-amber-800">
+                  المادة العلمية أو التركيز ناقص؛ لا يمكن حل هذه الحالة بتحديد الشكل وحجم العبوة فقط.
+                </p>
+              )}
+            </div>
+          )}
           <label className="block text-sm">
             عدد الوحدات في العلبة
             <Input
@@ -264,19 +293,20 @@ function BoxEditor({
             type="submit"
             disabled={
               save.isPending || !unit || !Number.isInteger(Number(count)) || Number(count) < 1
+              || Number(count) > 10000 || (reviewing && !reviewRequest)
             }
           >
             {save.isPending && <Loader2 className="size-4 animate-spin" />}حفظ
           </Button>
         </form>
-        <div className="mt-4">
+        {!reviewing && <div className="mt-4">
           <SupplierReportUnitEditor
             item={item}
             rows={rows}
             available={unitsAvailable}
             reportKey={reportKey}
           />
-        </div>
+        </div>}
       </SheetContent>
     </Sheet>
   );
@@ -740,13 +770,19 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                 <button
                   key={r.id}
                   className="block w-full border-t py-2 text-right text-sm"
-                  onClick={() => setSelected(r)}
+                  onClick={() => {
+                    if (report.data.canManageBoxes && report.data.settingsAvailable
+                      && r.sources?.includes("phif") && !r.settingConflict) setEditing(r);
+                    else setSelected(r);
+                  }}
                 >
                   <bdi>
                     {r.ingredient} · {r.strength}
                   </bdi>
                   <span className="block text-xs text-muted-foreground">
-                    {r.dispenseCount} بند · {r.identityReviewReason || "هوية غير مكتملة"} · عرض التفاصيل
+                    {r.dispenseCount} بند · {r.identityReviewReason || "هوية غير مكتملة"} ·{" "}
+                    {report.data.canManageBoxes && report.data.settingsAvailable && r.sources?.includes("phif")
+                      && !r.settingConflict ? "تعديل التعريف" : "عرض التفاصيل"}
                   </span>
                 </button>
               ))}
@@ -814,7 +850,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                   تعارض بين إعدادات أحجام العلب القديمة؛ لم يُستبدل أي إعداد.
                 </p>
               )}
-              {selected.identityComplete && report.data?.canManageBoxes && (
+              {(selected.identityComplete || selected.sources?.includes("phif")) && report.data?.canManageBoxes && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -825,7 +861,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                   }}
                 >
                   <Settings2 className="size-4" />
-                  إعدادات PHIF Supplier
+                  {selected.identityComplete ? "إعدادات PHIF Supplier" : "تعديل هوية وحجم عبوة PHIF Supplier"}
                 </Button>
               )}
               <Finance row={selected} />

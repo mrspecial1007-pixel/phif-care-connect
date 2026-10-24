@@ -6,6 +6,8 @@ import {
   reportStrength,
 } from "./report-medication-evidence.helpers";
 import { normalizeActiveIngredient } from "./medication-normalize";
+import { reportReviewIdentity } from "./report-identity-review.helpers";
+import type { ActualUnit } from "./actual-units.helpers";
 type SettingMeasure = <R>(phase: string, fn: () => R) => Promise<Awaited<R>>;
 
 /** Fresh operational evidence only. Saving a reporting setting never needs profit calculations. */
@@ -14,6 +16,7 @@ export async function loadReportSettingScope(
   pharmacyId: string,
   identity: string,
   measure: SettingMeasure = (_phase, fn) => Promise.resolve(fn()),
+  review?: { itemId: string; baseUnit: ActualUnit },
 ) {
   const key = JSON.parse(identity);
   if (
@@ -47,17 +50,25 @@ export async function loadReportSettingScope(
         reportStrength(i.strength) === key[1],
     ),
   );
+  const reviewItem = review && candidates.find(i => i.id === review.itemId);
+  if (review && (!reviewItem || reviewItem.source_classification !== "phif-supplier"
+    || reportReviewIdentity(identity, key[2]) !== identity))
+    throw new Error("بند المراجعة لا يطابق الصيدلية أو هوية PHIF Supplier المطلوبة");
+  if (reviewItem && scientificReportIdentity(reviewItem).form
+    && scientificReportIdentity(reviewItem).form !== expected.form)
+    throw new Error("لا يمكن استبدال شكل دوائي صريح في الفاتورة بتعريف مختلف");
   let identities = new Map(candidates.map((i) => [i.id, scientificReportIdentity(i)]));
   let definitions: Parameters<typeof resolveReportIdentities>[4];
+  let stocks: any[] = [], references: any[] = [];
   // Missing forms need the same pharmacy-scoped stock/reference evidence as the report.
   // Resolve once per scientific scope, not once per invoice or exception.
-  if (candidates.some((i) => !identities.get(i.id)?.form)) {
+  if (review || candidates.some((i) => !identities.get(i.id)?.form)) {
     const { loadReportBoxSettings } = await import("./report-box-settings.server");
     const { settings } = await measure("definition_database_read", () =>
       loadReportBoxSettings(db, pharmacyId),
     );
     definitions = { pharmacyId, settings };
-    const stocks = await measure("form_database_read", () =>
+    stocks = await measure("form_database_read", () =>
       readReportPages(() =>
         db
           .from("phif_stock_items")
@@ -67,12 +78,26 @@ export async function loadReportSettingScope(
           .order("id"),
       ),
     );
-    const references = await measure("reference_database_read", () =>
+    references = await measure("reference_database_read", () =>
       readReportFormReferences(db, pharmacyId),
     );
     identities = await measure("identity_resolution", () =>
       resolveReportIdentities(candidates, [], stocks, references, definitions),
     );
+  }
+  if (review) {
+    // Preview the existing resolver with the proposed persistent definition.
+    // This never writes invoices, infers dispensing units, or supplies forms to Actual.
+    const proposed = { pharmacyId, settings: [...(definitions?.settings || []), {
+      pharmacy_id: pharmacyId, item_identity: identity, base_unit: review.baseUnit,
+    }] };
+    const reviewed = resolveReportIdentities(candidates, [], stocks, references, proposed);
+    const checked = reviewed.get(review.itemId);
+    if (!checked || checked.key !== identity || checked.reviewReason)
+      throw new Error(`تعذر اعتماد الشكل: ${checked?.reviewReason || "تعارض مع بيانات الصنف المسجلة"}`);
+    const items = candidates.filter(i => i.source_classification === "phif-supplier"
+      && reviewed.get(i.id)?.key === identity && !reviewed.get(i.id)?.reviewReason);
+    return { id: identity, form: expected.form, items };
   }
   let items = candidates.filter((i) => identities.get(i.id)?.key === identity);
   if (!items.length && candidates.some((i) => !identities.get(i.id)?.form)) {

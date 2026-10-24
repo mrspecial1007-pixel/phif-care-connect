@@ -44,6 +44,7 @@ const boxInput = z.object({
     Object.keys(ACTUAL_UNITS) as [keyof typeof ACTUAL_UNITS, ...(keyof typeof ACTUAL_UNITS)[]],
   ),
   version: z.number().int().min(0),
+  reviewItemId: z.string().uuid().optional(),
 });
 const settingReceipt = z.object({
   id: z.string().uuid(),
@@ -80,6 +81,7 @@ export const saveReportBoxSetting = createServerFn({ method: "POST" })
         context.pharmacy_id,
         data.identity,
         measure,
+        data.reviewItemId ? { itemId: data.reviewItemId, baseUnit: data.baseUnit } : undefined,
       );
       if (!item || data.baseUnit === "strip" || data.baseUnit === "box")
         throw new Error("هوية الصنف أو الوحدة الأساسية تحتاج مراجعة");
