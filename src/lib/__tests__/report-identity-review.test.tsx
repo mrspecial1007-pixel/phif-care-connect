@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { readFileSync } from "node:fs";
-import { BoxEditor } from "@/components/management/ItemsAnalyticsViews";
+import { Children, isValidElement } from "react";
+import { BoxEditor, ReportIdentityReview } from "@/components/management/ItemsAnalyticsViews";
 import { actualUnit } from "../actual-units.helpers";
 import { reportReviewIdentity, reportReviewRequest, REPORT_REVIEW_FORMS } from "../report-identity-review.helpers";
 import { loadReportSettingScope } from "../report-setting-scope.server";
@@ -56,6 +57,60 @@ function report(items: any[], settings: any[] = []) {
 }
 
 describe("manual Supplier identity review through existing report settings", () => {
+  function panel(patch: any = {}) {
+    return ReportIdentityReview({ items: report([item("a")]).reviewItems, canManage: true,
+      settingsAvailable: true, hasFilters: false, onEdit: vi.fn(), onSelect: vi.fn(), onShowAll: vi.fn(), ...patch });
+  }
+  function elements(node: any): any[] {
+    return Children.toArray(node).flatMap(child => isValidElement(child)
+      ? [child, ...elements((child.props as any).children)] : []);
+  }
+
+  it("keeps the review section visible and expanded with unresolved items", () => {
+    const html = renderToStaticMarkup(panel());
+    expect(html).toContain('aria-label="مراجعة هوية الأصناف"');
+    expect(html).toContain("<details open");
+    expect(html).toContain("مراجعة هوية الأصناف (1)");
+    expect(html).toContain("تعديل التعريف");
+  });
+
+  it("does not hide the section when search/month/source filters contain no review items", () => {
+    const onShowAll = vi.fn();
+    const tree = panel({ items: [], hasFilters: true, onShowAll });
+    const html = renderToStaticMarkup(tree);
+    expect(html).toContain("مراجعة هوية الأصناف (0)");
+    expect(html).toContain("لا توجد حالات مراجعة ضمن الفلاتر الحالية");
+    expect(html).toContain("عرض المراجعة دون فلاتر");
+    elements(tree).find(el => el.props.onClick === onShowAll).props.onClick();
+    expect(onShowAll).toHaveBeenCalledTimes(1);
+    expect(renderToStaticMarkup(panel({ items: [], hasFilters: false }))).not.toContain("عرض المراجعة دون فلاتر");
+  });
+
+  it("opens the existing manual editor with the exact unresolved Supplier item for an authorized manager", () => {
+    const onEdit = vi.fn(), onSelect = vi.fn();
+    const rows = report([item("a")]).reviewItems;
+    const tree = panel({ items: rows, onEdit, onSelect });
+    elements(tree).find(el => el.type === "button").props.onClick();
+    expect(onEdit).toHaveBeenCalledWith(rows[0]);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(reportReviewRequest(rows[0], "tablet", "30", "tablet", "a"))
+      .toMatchObject({ identity, unitsPerBox: 30, baseUnit: "tablet", reviewItemId: "a", version: 0 });
+  });
+
+  it.each([
+    { canManage: false },
+    { settingsAvailable: false },
+    { items: [{ id: raw, sources: ["actual"] }] },
+    { items: [{ id: raw, sources: ["phif"], settingConflict: true }] },
+  ])("keeps read-only details when editing is not authorized or safe: %j", patch => {
+    const onEdit = vi.fn(), onSelect = vi.fn();
+    const tree = panel({ ...patch, onEdit, onSelect });
+    elements(tree).find(el => el.type === "button").props.onClick();
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(renderToStaticMarkup(tree)).not.toContain("تعديل التعريف");
+  });
+
   it("builds a complete scientific key without changing the original unresolved key", () => {
     expect(reportReviewIdentity(raw, "tablet")).toBe(identity);
     expect(JSON.parse(raw)).toEqual(["amlodipine + valsartan", "10mg/160mg", "", "unresolved", "a"]);

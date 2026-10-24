@@ -164,6 +164,61 @@ function Finance({ row, profitLabel = "الربح / الخسارة" }: { row: an
     </div>
   );
 }
+export function ReportIdentityReview({
+  items,
+  canManage,
+  settingsAvailable,
+  hasFilters,
+  onEdit,
+  onSelect,
+  onShowAll,
+}: {
+  items: any[];
+  canManage: boolean;
+  settingsAvailable: boolean;
+  hasFilters: boolean;
+  onEdit: (item: any) => void;
+  onSelect: (item: any) => void;
+  onShowAll: () => void;
+}) {
+  return (
+    <section aria-label="مراجعة هوية الأصناف" className="min-w-0 border-y border-amber-200 py-3">
+      <details open>
+        <summary className="cursor-pointer text-sm font-semibold text-amber-800">
+          مراجعة هوية الأصناف ({items.length})
+        </summary>
+        <p className="py-2 text-xs text-muted-foreground">
+          {items.length
+            ? "حالات ضمن الفلاتر الحالية؛ افتح الصنف لمراجعة تعريفه."
+            : "لا توجد حالات مراجعة ضمن الفلاتر الحالية."}
+        </p>
+        {hasFilters && (
+          <Button type="button" variant="outline" size="sm" className="mb-2" onClick={onShowAll}>
+            عرض المراجعة دون فلاتر
+          </Button>
+        )}
+        {items.map(item => {
+          const canEdit = canManage && settingsAvailable && item.sources?.includes("phif") && !item.settingConflict;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className="block w-full border-t py-2 text-right text-sm"
+              onClick={() => canEdit ? onEdit(item) : onSelect(item)}
+            >
+              <bdi>{item.ingredient} · {item.strength}</bdi>
+              <span className="block text-xs text-muted-foreground">
+                {item.dispenseCount} بند · {item.identityReviewReason || "هوية غير مكتملة"} ·{" "}
+                {canEdit ? "تعديل التعريف" : "عرض التفاصيل"}
+              </span>
+            </button>
+          );
+        })}
+      </details>
+    </section>
+  );
+}
+
 export function BoxEditor({
   item,
   rows,
@@ -653,6 +708,17 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
               موثقة.
             </p>
           )}
+          {(view === "consumption" || view === "items") && (
+            <ReportIdentityReview
+              items={report.data.reviewItems}
+              canManage={report.data.canManageBoxes}
+              settingsAvailable={report.data.settingsAvailable}
+              hasFilters={filters.month !== "all" || filters.source !== "all" || Boolean(filters.q.trim())}
+              onEdit={setEditing}
+              onSelect={setSelected}
+              onShowAll={() => change({ month: "all", source: "all", q: "", result: "all" })}
+            />
+          )}
           {view === "consumption" && (
             <div className="grid grid-cols-2 gap-3 border-y py-3 text-xs sm:grid-cols-4">
               {[
@@ -757,42 +823,12 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
               </Card>
             ))}
           </div>
-          {(view === "consumption" || view === "items") && report.data.reviewItems.length > 0 && (
-            <details className="border-y py-3">
-              <summary className="cursor-pointer text-sm font-semibold text-amber-800">
-                مراجعة هوية الأصناف ({report.data.reviewItems.length})
-              </summary>
-              <p className="py-2 text-xs text-muted-foreground">
-                بنود محفوظة لم تُدمج لأن الشكل أو التركيز غير موثق أو متعارض.
-              </p>
-              {report.data.reviewItems.map((r: any) => (
-                <button
-                  key={r.id}
-                  className="block w-full border-t py-2 text-right text-sm"
-                  onClick={() => {
-                    if (report.data.canManageBoxes && report.data.settingsAvailable
-                      && r.sources?.includes("phif") && !r.settingConflict) setEditing(r);
-                    else setSelected(r);
-                  }}
-                >
-                  <bdi>
-                    {r.ingredient} · {r.strength}
-                  </bdi>
-                  <span className="block text-xs text-muted-foreground">
-                    {r.dispenseCount} بند · {r.identityReviewReason || "هوية غير مكتملة"} ·{" "}
-                    {report.data.canManageBoxes && report.data.settingsAvailable && r.sources?.includes("phif")
-                      && !r.settingConflict ? "تعديل التعريف" : "عرض التفاصيل"}
-                  </span>
-                </button>
-              ))}
-            </details>
-          )}
           {shown.length > limit && (
             <Button variant="outline" className="w-full" onClick={() => setLimit((v) => v + 40)}>
               عرض المزيد
             </Button>
           )}
-          {!shown.length && (
+          {!shown.length && !report.data.reviewItems.length && (
             <p className="border-y py-8 text-center text-sm text-muted-foreground">
               لا توجد نتائج ضمن الفلاتر المحددة
             </p>

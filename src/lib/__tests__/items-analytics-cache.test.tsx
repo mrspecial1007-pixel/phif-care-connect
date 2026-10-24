@@ -193,4 +193,29 @@ describe("retained item report cache", () => {
     expect(render()).toContain("تعذر التحقق من الجلسة الحالية");
     expect(render()).not.toContain("تقرير الأصناف والاستهلاك");
   });
+
+  it("renders identity review above the cards from cached results and retains the section after review is resolved", () => {
+    const c = client();
+    const rights = { items: true, movements: true, revenue: true, cost: true, profit: true };
+    const items = [
+      { id: "complete", phif_invoice_id: "invoice", source_classification: "phif-supplier",
+        active_ingredient: "Resolved marker medicine", strength: "5MG", quantity: 30, metadata: { dosage_form: "TAB" } },
+      { id: "review", phif_invoice_id: "invoice", source_classification: "phif-supplier",
+        active_ingredient: "Needs review medicine", strength: "10MG", quantity: 30, metadata: {} },
+    ];
+    const data = buildItemsAnalytics({ items, invoices: [{ id: "invoice", dispensing_date: "2026-10-24", insurance_card_number: "0001" }],
+      stocks: [], rows: items.map(item => ({ item_id: item.id, revenue: 90, purchase_cost: 24, gross_margin: 66 })),
+      settings: [], filters, canManageBoxes: true, access: { actual: rights, phif: rights } });
+    expect(data.reviewItems).toHaveLength(1);
+    c.setQueryData(key(), data);
+    auth.session = { data: session(), isFetching: false, error: null };
+    const render = () => renderToStaticMarkup(<QueryClientProvider client={c}><ItemsAnalyticsPage /></QueryClientProvider>);
+    const html = render();
+    expect(html).toContain("مراجعة هوية الأصناف (1)");
+    expect(html.indexOf("مراجعة هوية الأصناف")).toBeLessThan(html.indexOf("Resolved marker medicine"));
+    expect(html).toContain("تعديل التعريف");
+    c.setQueryData(key(), { ...data, reviewItems: [] });
+    expect(render()).toContain("مراجعة هوية الأصناف (0)");
+    expect(render()).not.toContain("جارٍ تحميل التقرير");
+  });
 });
