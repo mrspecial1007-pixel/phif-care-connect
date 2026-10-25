@@ -26,6 +26,7 @@ import { Route as PhifInvoicesIdRouteImport } from './routes/phif-invoices.$id'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as ManagementTreasuryRouteImport } from './routes/management.treasury'
 import { Route as ManagementReportsRouteImport } from './routes/management.reports'
+import { Route as ManagementOrdersRouteImport } from './routes/management.orders'
 import { Route as ManagementInventoryRouteImport } from './routes/management.inventory'
 import { Route as ManagementAuditRouteImport } from './routes/management.audit'
 import { Route as ManagementReportsSummaryRouteImport } from './routes/management.reports.summary'
@@ -126,6 +127,11 @@ const ManagementReportsRoute = ManagementReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => ManagementRoute,
 } as any)
+const ManagementOrdersRoute = ManagementOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => ManagementRoute,
+} as any)
 const ManagementInventoryRoute = ManagementInventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
@@ -217,6 +223,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteWithChildren
   '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
+  '/management/orders': typeof ManagementOrdersRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -250,6 +257,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRouteWithChildren
   '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
+  '/management/orders': typeof ManagementOrdersRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -284,6 +292,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteWithChildren
   '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
+  '/management/orders': typeof ManagementOrdersRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
   '/management/treasury': typeof ManagementTreasuryRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -319,6 +328,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/management/audit'
     | '/management/inventory'
+    | '/management/orders'
     | '/management/reports'
     | '/management/treasury'
     | '/patients/$id'
@@ -352,6 +362,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/management/audit'
     | '/management/inventory'
+    | '/management/orders'
     | '/management/reports'
     | '/management/treasury'
     | '/patients/$id'
@@ -385,6 +396,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/management/audit'
     | '/management/inventory'
+    | '/management/orders'
     | '/management/reports'
     | '/management/treasury'
     | '/patients/$id'
@@ -548,6 +560,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagementReportsRouteImport
       parentRoute: typeof ManagementRoute
     }
+    '/management/orders': {
+      id: '/management/orders'
+      path: '/orders'
+      fullPath: '/management/orders'
+      preLoaderRoute: typeof ManagementOrdersRouteImport
+      parentRoute: typeof ManagementRoute
+    }
     '/management/inventory': {
       id: '/management/inventory'
       path: '/inventory'
@@ -690,6 +709,7 @@ const ManagementReportsRouteWithChildren =
 interface ManagementRouteChildren {
   ManagementAuditRoute: typeof ManagementAuditRoute
   ManagementInventoryRoute: typeof ManagementInventoryRoute
+  ManagementOrdersRoute: typeof ManagementOrdersRoute
   ManagementReportsRoute: typeof ManagementReportsRouteWithChildren
   ManagementTreasuryRoute: typeof ManagementTreasuryRoute
 }
@@ -697,6 +717,7 @@ interface ManagementRouteChildren {
 const ManagementRouteChildren: ManagementRouteChildren = {
   ManagementAuditRoute: ManagementAuditRoute,
   ManagementInventoryRoute: ManagementInventoryRoute,
+  ManagementOrdersRoute: ManagementOrdersRoute,
   ManagementReportsRoute: ManagementReportsRouteWithChildren,
   ManagementTreasuryRoute: ManagementTreasuryRoute,
 }

@@ -4,6 +4,7 @@ import { PhifClient } from "./phif/client.js";
 import { parseFilterTransactionForm, parseHistoricalTransactions, parseInvoiceDetails, parseTodayTransactions } from "./phif/parsers.js";
 import { getPhifSessionStatus, phifSessionFetch, proxyPhifLoginRequest } from "./phif/sessionBridge.js";
 import { BridgeSessionStore, publicSession } from "./sessionStore.js";
+import { readCompletePhifOrders } from "./phif/orders.js";
 
 const DEFAULT_PORT = 5174;
 
@@ -121,6 +122,22 @@ async function handleApi(req, res, url, context) {
         pages: result.pages,
       },
     });
+  }
+
+  if (req.method === "GET" && action === "orders") {
+    if (!pharmacyId || session.pharmacy_id !== pharmacyId)
+      return json(res, 403, { ok: false, error: "A matching pharmacy identity is required" });
+    const client = new PhifClient({
+      fetchImpl: (input, options) => phifSessionFetch(session, input, { ...options, ...context }),
+      timeoutMs: context.timeoutMs,
+    });
+    try {
+      const report = await readCompletePhifOrders(client, process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID?.trim());
+      return json(res, 200, { ok: true, ...report });
+    } catch {
+      return json(res, 502, { ok: false,
+        error: "تعذر قراءة جميع طلبيات PHIF بأمان. تحقق من جلسة PHIF وهوية الصيدلية واتصال الخدمة ثم أعد المحاولة." });
+    }
   }
 
   if (req.method === "POST" && action === "historical-transactions") {

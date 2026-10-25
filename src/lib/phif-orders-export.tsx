@@ -1,0 +1,94 @@
+import React from "react";
+import { ORDER_STATES, ordersExportRows, ordersView, type OrdersFilters, type PhifOrdersReport } from "./phif-orders.helpers";
+
+export const orderDateLabel = (value: string | null) => value
+  ? new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Tripoli", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value))
+  : "غير متاح";
+export function ordersFilterLabel(filters: OrdersFilters) {
+  return `${filters.status === "all" ? "جميع الحالات" : ORDER_STATES[filters.status]} | ${filters.supplier === "all" ? "جميع الموردين" : filters.supplier}${filters.query ? ` | بحث: ${filters.query}` : ""}`;
+}
+
+export async function buildOrdersWorkbook(report: PhifOrdersReport, filters: OrdersFilters) {
+  const { Workbook } = await import("exceljs");
+  const workbook = new Workbook();
+  workbook.creator = report.pharmacy;
+  const summary = workbook.addWorksheet("الملخص", { views: [{ rightToLeft: true }] });
+  summary.columns = [{ width: 38 }, { width: 75 }];
+  summary.addRows([["متابعة طلبيات PHIF", report.pharmacy], ["آخر قراءة", report.fetchedAt],
+    ["الفلاتر", ordersFilterLabel(filters)], ["عدد الطلبات المتاحة", report.totalOrders],
+    ["بنود مستبعدة بكمية معتمدة صفر", report.excludedZero],
+    ...Object.entries(ordersView(report, filters).counts).map(([state, count]) => [ORDER_STATES[state as keyof typeof ORDER_STATES], count]),
+    ["مرجع المدة", "من إنشاء الطلب حتى آخر قراءة؛ ليست مدة منذ موافقة المورد"],
+    ["التواريخ غير المتاحة", "تاريخ موافقة المورد وتاريخ الاستلام الفعلي غير متاحين من المصدر"],
+  ]);
+  const sheet = workbook.addWorksheet("أصناف الطلبات", { views: [{ rightToLeft: true, state: "frozen", ySplit: 1 }] });
+  sheet.columns = [
+    { header: "رقم الطلب", key: "orderNumber", width: 26 },
+    { header: "تاريخ إنشاء الطلب", key: "createdAt", width: 20 },
+    { header: "الدواء", key: "medicine", width: 46 },
+    { header: "الشركة الموردة", key: "supplier", width: 46 },
+    { header: "التشغيلة", key: "batch", width: 22 },
+    { header: "الكمية المعتمدة", key: "quantity", width: 20 },
+    { header: "الحالة", key: "status", width: 28 },
+    { header: "أيام منذ إنشاء الطلب", key: "ageDays", width: 24 },
+  ];
+  for (const row of ordersExportRows(report, filters)) sheet.addRow({ ...row,
+    createdAt: row.createdAt ? new Date(`${orderDateLabel(row.createdAt)}T00:00:00Z`) : "غير متاح",
+    quantity: row.quantity ?? "غير موثقة", batch: row.batch || "غير متاحة", supplier: row.supplier || "غير متاح",
+    ageDays: row.ageDays ?? "غير محدد",
+  });
+  sheet.autoFilter = { from: "A1", to: "H1" };
+  for (const page of [summary, sheet]) {
+    page.eachRow((row, index) => {
+      row.alignment = { vertical: "middle", horizontal: "right", wrapText: true, readingOrder: "rtl" };
+      if (index === 1) {
+        row.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF17685D" } };
+      }
+    });
+  }
+  sheet.getColumn("createdAt").numFmt = "yyyy-mm-dd";
+  sheet.getColumn("quantity").numFmt = "0.####";
+  sheet.getColumn("batch").numFmt = "@";
+  return workbook;
+}
+
+export async function buildOrdersPdf(report: PhifOrdersReport, filters: OrdersFilters, fonts: { regular: string; bold: string }) {
+  const { Document, Page, Text, View, Font, pdf, StyleSheet } = await import("@react-pdf/renderer");
+  Font.register({ family: "OrdersArabic", fonts: [{ src: fonts.regular }, { src: fonts.bold, fontWeight: 700 }] });
+  Font.registerHyphenationCallback(word => word.length > 40 ? word.match(/.{1,24}/gu) || [word] : [word]);
+  const style = StyleSheet.create({
+    page: { paddingTop: 155, paddingBottom: 55, paddingHorizontal: 26, fontFamily: "OrdersArabic", fontSize: 10, color: "#20332f" },
+    header: { position: "absolute", left: 26, right: 26, top: 20, textAlign: "right" },
+    row: { flexDirection: "row-reverse", borderBottomWidth: .5, borderBottomColor: "#d0dbd7", minHeight: 28 },
+    cell: { padding: 4, lineHeight: 1.4, textAlign: "right" },
+    footer: { position: "absolute", bottom: 16, left: 26, right: 26, textAlign: "right", fontSize: 8, color: "#52645f" },
+  });
+  const columns = [
+    ["رقم الطلب", 13], ["تاريخ الإنشاء", 10], ["الدواء", 23], ["المورد", 21],
+    ["التشغيلة", 9], ["الكمية المعتمدة", 7], ["الحالة", 10], ["أيام منذ الإنشاء", 7],
+  ] as const;
+  const rows = ordersExportRows(report, filters, true);
+  const document = <Document title="كشف أصناف طلبيات PHIF غير المستلمة" author={report.pharmacy} language="ar">
+    <Page size="A4" orientation="landscape" style={style.page} wrap>
+      <View style={style.header} fixed>
+        <Text style={{ fontSize: 18, fontWeight: 700, color: "#17685d" }}>{report.pharmacy}</Text>
+        <Text style={{ fontSize: 14, fontWeight: 700 }}>كشف أصناف الطلبيات غير المستلمة</Text>
+        <Text style={{ fontSize: 9 }}>{ordersFilterLabel(filters)}</Text>
+        <Text style={{ fontSize: 9 }}>{`آخر قراءة: ${orderDateLabel(report.fetchedAt)} | عدد البنود: ${rows.length}`}</Text>
+      </View>
+      <View fixed style={[style.row, { position: "absolute", top: 116, left: 26, right: 26, backgroundColor: "#e1eee8" }]}>
+        {columns.map(([label, width]) => <Text key={label} style={[style.cell, { width: `${width}%`, fontSize: 9, fontWeight: 700 }]}>{label}</Text>)}
+      </View>
+      {rows.map((row, i) => <View key={i} wrap={false} style={[style.row, { backgroundColor: i % 2 ? "#f5f8f6" : "#ffffff" }]}>
+        {[row.orderNumber, orderDateLabel(row.createdAt), row.medicine, row.supplier || "غير متاح", row.batch || "غير متاحة",
+          row.quantity ?? "غير موثقة", row.status, row.ageDays ?? "غير محدد"].map((cell, c) =>
+          <Text key={c} style={[style.cell, { width: `${columns[c][1]}%`, direction: [0, 1, 4, 5, 7].includes(c) ? "ltr" : "rtl" }]}>{String(cell)}</Text>)}
+      </View>)}
+      {!rows.length && <Text style={{ textAlign: "right", marginTop: 15 }}>لا توجد أصناف غير مستلمة ضمن الفلاتر المحددة</Text>}
+      <Text fixed style={style.footer}>المدة منذ إنشاء الطلب، وليست منذ موافقة المورد. تاريخ الموافقة والاستلام الفعلي غير متاحين من المصدر.</Text>
+      <Text fixed style={{ position: "absolute", bottom: 34, left: 26, fontSize: 9 }} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+    </Page>
+  </Document>;
+  return pdf(document).toBlob();
+}

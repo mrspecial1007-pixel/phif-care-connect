@@ -105,6 +105,8 @@ export function isAllowedProxyRequest(method, pathname) {
 }
 
 export function isAllowedProxyGet(pathname) {
+  // Order details are read only through the tenant-checked orders API, not the login proxy.
+  if (/^\/(get-pharmacy-request-index|show-pharmacy-order)(?:\/|$)/.test(pathname)) return false;
   if (isAllowedReadPath(pathname)) return true;
   if (["/", "/login", "/two-factor-challenge", "/user/confirm-password"].includes(pathname)) return true;
   if (/^\/captcha\/default$/i.test(pathname)) return true;

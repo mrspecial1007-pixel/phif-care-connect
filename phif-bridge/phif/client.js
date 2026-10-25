@@ -9,6 +9,8 @@ const ALLOWED_GET_PATHS = [
   /^\/pharmacyFilteredtransactions$/,
   /^\/PosTransaction$/,
   /^\/get-pharmacy-stock$/,
+  /^\/get-pharmacy-request-index$/,
+  /^\/show-pharmacy-order\/\d+$/,
   /^\/getTransaction\/[^/?#]+$/,
 ];
 

@@ -37,7 +37,7 @@ export function bindItemsAnalyticsSessionCache(client: QueryClient) {
       ? itemsAnalyticsScope(state.data as ReportSession)
       : null;
     client.removeQueries({
-      predicate: query => query.queryKey[0] === "items_analytics" && query.queryKey[1] !== scope,
+      predicate: query => ["items_analytics", "phif_orders"].includes(String(query.queryKey[0])) && query.queryKey[1] !== scope,
     });
   });
 }
