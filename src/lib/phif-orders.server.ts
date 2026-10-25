@@ -7,7 +7,7 @@ const sourceReport = z.object({
     status: z.string(), detailError: z.string().nullable(), lines: z.array(z.object({
       id: z.string().regex(/^\d+$/), medicine: z.string().min(1), supplier: z.string().nullable(), batch: z.string().nullable(),
       approval: z.string(), approvedQuantity: z.number().finite().nonnegative().nullable(), quantityMissing: z.boolean(),
-      status: z.enum(["waiting", "received", "not_approved", "review"]), approvedAt: z.null(), receivedAt: z.null(),
+      status: z.enum(["waiting", "received", "not_approved", "review"]), approvedAt: z.null(), receivedAt: z.string().datetime().nullable(),
     })),
   })),
   totalOrders: z.number().int().nonnegative(), pages: z.number().int().positive(),
@@ -15,6 +15,8 @@ const sourceReport = z.object({
 }).refine(value => value.orders.length === value.totalOrders
   && new Set(value.orders.map(o => o.id)).size === value.orders.length
   && value.complete === value.orders.every(o => !o.detailError));
+
+export class OrdersSessionExpiredError extends Error {}
 
 /** Reads an existing session only: no creation, expiry writes, sync or receipt actions. */
 export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fetch): Promise<Omit<PhifOrdersReport, "pharmacy" | "canExport">> {
@@ -24,7 +26,7 @@ export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fe
     .order("expires_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error("تعذر قراءة جلسة PHIF للصيدلية الحالية");
   if (!data?.bridge_session_id || !Number.isFinite(Date.parse(data.expires_at)) || Date.parse(data.expires_at) <= Date.now())
-    throw new Error("لا توجد جلسة PHIF سارية؛ سجّل الدخول من إعدادات PHIF أولًا");
+    throw new OrdersSessionExpiredError("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
   const secret = process.env.PHIF_BRIDGE_SECRET?.trim();
   if (!secret) throw new Error("إعداد اتصال PHIF Bridge غير متاح على الخادم");
   const base = (process.env.PHIF_BRIDGE_BASE_URL?.trim() || "http://127.0.0.1:5174").replace(/\/+$/, "");
@@ -38,6 +40,8 @@ export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fe
   let payload: any;
   try { payload = await response.json(); }
   catch { throw new Error("تعذر قراءة استجابة خدمة طلبيات PHIF"); }
+  if (response.status === 404 && /session not found|session.*expired/i.test(payload?.error || ""))
+    throw new OrdersSessionExpiredError("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
   if (!response.ok || payload?.ok !== true) throw new Error(response.status === 404
     ? "خدمة الطلبيات غير متاحة؛ يلزم تحديث Bridge المحلي أو إعادة تسجيل جلسة PHIF"
     : "تعذر جلب جميع طلبيات PHIF بأمان. تحقق من جلسة PHIF وإعداد هوية الصيدلية ثم حدّث النتائج");
@@ -52,7 +56,7 @@ export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fe
       lines: (order.lines || []).map((line: any) => ({ id: String(line.id), medicine: String(line.medicine),
         supplier: line.supplier ?? null, batch: line.batch ?? null, approval: String(line.approval ?? ""),
         approvedQuantity: line.approvedQuantity ?? null, quantityMissing: line.quantityMissing === true,
-        status: line.status, approvedAt: null, receivedAt: null })),
+        status: line.status, approvedAt: null, receivedAt: line.receivedAt })),
     })),
     totalOrders: payload.totalOrders, pages: payload.pages, excludedZero: payload.excludedZero,
     complete: payload.complete, fetchedAt: payload.fetchedAt,

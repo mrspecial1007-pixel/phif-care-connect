@@ -3,10 +3,11 @@ import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getPhifOrders } from "@/lib/phif-orders.functions";
-import type { OrdersFilters } from "@/lib/phif-orders.helpers";
+import { authorizePhifOrdersSnapshot } from "@/lib/phif-orders.functions";
+import { ordersPeriodError, type OrdersFilters } from "@/lib/phif-orders.helpers";
+import type { OrdersSnapshot } from "@/lib/phif-orders-snapshot.helpers";
 
-export function OrdersExportButton({ enabled, filters }: { enabled: boolean; filters: OrdersFilters }) {
+export function OrdersExportButton({ enabled, filters, snapshot }: { enabled: boolean; filters: OrdersFilters; snapshot: OrdersSnapshot | null }) {
   const [busy, setBusy] = useState(false);
   const lock = useRef(false), worker = useRef<Worker | null>(null), url = useRef<string | null>(null);
   const mounted = useRef(true), timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -16,10 +17,12 @@ export function OrdersExportButton({ enabled, filters }: { enabled: boolean; fil
     if (url.current) URL.revokeObjectURL(url.current);
   }; }, []);
   async function run(format: "xlsx" | "pdf") {
-    if (lock.current || !enabled) return;
+    if (lock.current || !enabled || !snapshot) return;
     lock.current = true; setBusy(true);
     try {
-      const report = await getPhifOrders({ data: { export: true } });
+      const periodError = ordersPeriodError(filters);
+      if (periodError) throw new Error(periodError);
+      const report = await authorizePhifOrdersSnapshot({ data: { snapshot } });
       if (!mounted.current) return;
       const w = new Worker(new URL("../../lib/phif-orders-export.worker.ts", import.meta.url), { type: "module" });
       worker.current = w;
@@ -47,7 +50,7 @@ export function OrdersExportButton({ enabled, filters }: { enabled: boolean; fil
     }
   }
   return <DropdownMenu dir="rtl"><DropdownMenuTrigger asChild>
-    <Button variant="outline" disabled={!enabled || busy}>{busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}{busy ? "جارٍ إنشاء الكشف" : "تصدير"}</Button>
+    <Button variant="outline" disabled={!enabled || !snapshot || busy}>{busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}{busy ? "جارٍ إنشاء الكشف" : "تصدير"}</Button>
   </DropdownMenuTrigger><DropdownMenuContent align="end">
     <DropdownMenuItem onSelect={() => void run("xlsx")}><FileSpreadsheet className="size-4" />Excel حسب الفلاتر</DropdownMenuItem>
     <DropdownMenuItem onSelect={() => void run("pdf")}><FileText className="size-4" />PDF للأصناف غير المستلمة</DropdownMenuItem>

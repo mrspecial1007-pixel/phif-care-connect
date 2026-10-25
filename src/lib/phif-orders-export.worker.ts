@@ -8,6 +8,6 @@ self.onmessage = async ({ data: { report, filters, format, fonts } }) => {
     const buffer = new Uint8Array(bytes as ArrayBuffer).buffer;
     self.postMessage({ bytes: buffer, mime: format === "xlsx"
       ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf",
-      filename: `phif-orders-${report.fetchedAt.slice(0, 10)}.${format}` }, { transfer: [buffer] });
+      filename: `phif-orders-${filters.period === "all" ? "all-history" : `${filters.dateFrom}_${filters.dateTo}`}-${report.fetchedAt.slice(0, 10)}.${format}` }, { transfer: [buffer] });
   } catch { self.postMessage({ error: "تعذر إنشاء كشف الطلبيات" }); }
 };
