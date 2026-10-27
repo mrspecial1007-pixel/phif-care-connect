@@ -64,7 +64,7 @@ function PhifSyncPage() {
   const { data: status, refetch } = useQuery({
     queryKey: ["phif_session_status"],
     queryFn: () => sessionStatus(),
-    staleTime: 15_000,
+    staleTime: Infinity, refetchInterval: false, refetchOnWindowFocus: false, refetchOnReconnect: false, refetchOnMount: false, retry: false,
   });
   const { data: archive } = useQuery({
     queryKey: ["phif_invoice_archive_stats"],
@@ -89,7 +89,8 @@ function PhifSyncPage() {
   }
 
   async function handleInspect() {
-    if (!status?.authenticated) {
+    if (checking) return;
+    if (!status?.session_available) {
       toast.error("يجب تسجيل الدخول إلى PHIF أولاً");
       return;
     }
@@ -147,7 +148,7 @@ function PhifSyncPage() {
       toast.error("أدخل مفتاح الفاتورة أولًا");
       return;
     }
-    if (!status?.authenticated) {
+    if (!status?.session_available) {
       toast.error("يجب تسجيل الدخول إلى PHIF أولًا");
       return;
     }
@@ -166,7 +167,7 @@ function PhifSyncPage() {
   }
 
   async function handleRangeCompletion(dryRun: boolean) {
-    if (!status?.authenticated) {
+    if (!status?.session_available) {
       toast.error("يجب تسجيل الدخول إلى PHIF أولًا");
       return;
     }
@@ -201,7 +202,7 @@ function PhifSyncPage() {
           </p>
         </div>
         <Badge variant={status?.authenticated ? "default" : "outline"} className="shrink-0">
-          {status?.authenticated ? "جلسة متاحة" : "غير متصل"}
+          {status?.authenticated ? "مزامنة ناجحة مؤخرًا" : status?.session_available ? "جلسة غير مؤكدة" : "غير متصل"}
         </Badge>
       </div>
 
@@ -241,7 +242,7 @@ function PhifSyncPage() {
             {creatingLogin ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
             تسجيل الدخول إلى PHIF
           </Button>
-          <Button onClick={handleInspect} disabled={checking || !status?.authenticated} className="gap-2">
+          <Button onClick={handleInspect} disabled={checking || !status?.session_available} className="gap-2">
             {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             فحص الحركات الجديدة
           </Button>
@@ -313,7 +314,7 @@ function PhifSyncPage() {
           <Button
             variant="outline"
             onClick={() => handleSingleCompletion(true)}
-            disabled={completionRunning || !status?.authenticated}
+            disabled={completionRunning || !status?.session_available}
             className="gap-2 self-end"
           >
             {completionRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -321,7 +322,7 @@ function PhifSyncPage() {
           </Button>
           <Button
             onClick={() => handleSingleCompletion(false)}
-            disabled={completionRunning || !status?.authenticated || completionMode !== "single" || !completionResult || completionResult.dry_run !== true || completionResult.added_item_count === 0}
+            disabled={completionRunning || !status?.session_available || completionMode !== "single" || !completionResult || completionResult.dry_run !== true || completionResult.added_item_count === 0}
             className="gap-2 self-end"
           >
             {completionRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -365,14 +366,14 @@ function PhifSyncPage() {
             <Button
               variant="outline"
               onClick={() => handleRangeCompletion(true)}
-              disabled={completionRunning || !status?.authenticated}
+              disabled={completionRunning || !status?.session_available}
               className="gap-2"
             >
               معاينة النطاق
             </Button>
             <Button
               onClick={() => handleRangeCompletion(false)}
-              disabled={completionRunning || !status?.authenticated || completionMode !== "range" || !completionResult || completionResult.dry_run !== true || completionResult.added_item_count === 0}
+              disabled={completionRunning || !status?.session_available || completionMode !== "range" || !completionResult || completionResult.dry_run !== true || completionResult.added_item_count === 0}
               className="gap-2"
             >
               تأكيد حفظ النطاق

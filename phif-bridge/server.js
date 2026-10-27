@@ -5,6 +5,7 @@ import { parseFilterTransactionForm, parseHistoricalTransactions, parseInvoiceDe
 import { getPhifSessionStatus, phifSessionFetch, proxyPhifLoginRequest } from "./phif/sessionBridge.js";
 import { BridgeSessionStore, publicSession } from "./sessionStore.js";
 import { readCompletePhifOrders } from "./phif/orders.js";
+import { exclusiveManualRead } from "./phif/manualRead.js";
 
 const DEFAULT_PORT = 5174;
 
@@ -14,6 +15,7 @@ export function createPhifBridgeServer({
   fetchImpl,
   timeoutMs = Number(process.env.PHIF_BRIDGE_TIMEOUT_MS || 15000),
 } = {}) {
+  const manualReads = new Map();
   const server = createServer(async (req, res) => {
     try {
       setNoStore(res);
@@ -26,7 +28,7 @@ export function createPhifBridgeServer({
         return;
       }
       if (url.pathname.startsWith("/api/")) {
-        await handleApi(req, res, url, { secret, store, fetchImpl, timeoutMs });
+        await handleApi(req, res, url, { secret, store, fetchImpl, timeoutMs, manualReads });
         return;
       }
       json(res, 404, { ok: false, error: "Not found" });
@@ -102,42 +104,48 @@ async function handleApi(req, res, url, context) {
   }
 
   if (req.method === "GET" && action === "stock") {
-    const client = new PhifClient({
-      fetchImpl: (input, options) => phifSessionFetch(session, input, { ...options, ...context }),
-      timeoutMs: context.timeoutMs,
-    });
-    const result = await fetchCompleteStock(client);
-    if (!result.ok) return json(res, result.blocked ? 403 : 502, safeStockFailure(result));
-    const sourceCheck = validateStockSourcePharmacy(result.rows);
-    if (!sourceCheck.ok) return json(res, 502, safeStockFailure(sourceCheck));
-    return json(res, 200, {
-      ok: true,
-      rows: result.rows,
-      raw_count: result.rows.length,
-      recordsTotal: result.recordsTotal,
-      recordsFiltered: result.recordsFiltered,
-      metadata: {
-        source: "get-pharmacy-stock",
-        request_method: "GET",
-        pages: result.pages,
-      },
+    return exclusiveManualRead(res, session.pharmacy_id, context.manualReads, async signal => {
+      const client = new PhifClient({
+        signal,
+        fetchImpl: (input, options) => phifSessionFetch(session, input, { ...options, ...context }),
+        timeoutMs: context.timeoutMs,
+      });
+      const result = await fetchCompleteStock(client);
+      if (!result.ok) return json(res, result.blocked ? 403 : 502, safeStockFailure(result));
+      const sourceCheck = validateStockSourcePharmacy(result.rows);
+      if (!sourceCheck.ok) return json(res, 502, safeStockFailure(sourceCheck));
+      return json(res, 200, {
+        ok: true,
+        rows: result.rows,
+        raw_count: result.rows.length,
+        recordsTotal: result.recordsTotal,
+        recordsFiltered: result.recordsFiltered,
+        metadata: {
+          source: "get-pharmacy-stock",
+          request_method: "GET",
+          pages: result.pages,
+        },
+      });
     });
   }
 
   if (req.method === "GET" && action === "orders") {
     if (!pharmacyId || session.pharmacy_id !== pharmacyId)
       return json(res, 403, { ok: false, error: "A matching pharmacy identity is required" });
-    const client = new PhifClient({
-      fetchImpl: (input, options) => phifSessionFetch(session, input, { ...options, ...context }),
-      timeoutMs: context.timeoutMs,
+    return exclusiveManualRead(res, session.pharmacy_id, context.manualReads, async signal => {
+      const client = new PhifClient({
+        signal,
+        fetchImpl: (input, options) => phifSessionFetch(session, input, { ...options, ...context }),
+        timeoutMs: context.timeoutMs,
+      });
+      try {
+        const report = await readCompletePhifOrders(client, process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID?.trim());
+        return json(res, 200, { ok: true, ...report });
+      } catch {
+        return json(res, 502, { ok: false,
+          error: "تعذر قراءة جميع طلبيات PHIF بأمان. تحقق من جلسة PHIF وهوية الصيدلية واتصال الخدمة ثم أعد المحاولة." });
+      }
     });
-    try {
-      const report = await readCompletePhifOrders(client, process.env.PHIF_TIRYAQ_SOURCE_PHARMACY_ID?.trim());
-      return json(res, 200, { ok: true, ...report });
-    } catch {
-      return json(res, 502, { ok: false,
-        error: "تعذر قراءة جميع طلبيات PHIF بأمان. تحقق من جلسة PHIF وهوية الصيدلية واتصال الخدمة ثم أعد المحاولة." });
-    }
   }
 
   if (req.method === "POST" && action === "historical-transactions") {

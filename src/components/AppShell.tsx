@@ -21,6 +21,8 @@ import { hasPermission } from "@/lib/user-permissions";
 import type { ReactNode } from "react";
 import { UnlockScreen } from "./UnlockScreen";
 import { QuickSearchFab } from "./QuickSearchFab";
+import { PhifConnectionIndicator } from "./PhifConnectionIndicator";
+import { itemsAnalyticsScope } from "@/lib/items-analytics-cache.helpers";
 
 const TIRYAQ_PHARMACY_NAME = "صيدلية الترياق الشافي";
 
@@ -62,12 +64,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
       <header className="sticky top-0 z-30 border-b bg-card/80 backdrop-blur">
-        <div className="mx-auto flex max-w-[1200px] items-center gap-3 px-3 py-3 sm:px-4">
+        <div className="mx-auto flex max-w-[1200px] items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4">
           <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
             <Pill className="h-5 w-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-bold text-sm leading-tight">PHIF Tracker</div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <div className="whitespace-nowrap font-bold text-sm leading-tight">PHIF Tracker</div>
+              {isTiryaq && session?.unlocked && <PhifConnectionIndicator key={itemsAnalyticsScope(session)} scope={itemsAnalyticsScope(session)!} />}
+            </div>
             <div className="text-xs text-muted-foreground truncate">
               {session?.unlocked ? session.pharmacy?.name : ""}
               {session?.user?.name ? ` · ${session.user.name}` : ""}

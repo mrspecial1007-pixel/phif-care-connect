@@ -1,10 +1,10 @@
 import { buildOrdersPdf, buildOrdersWorkbook } from "./phif-orders-export";
 
-self.onmessage = async ({ data: { report, filters, format, fonts } }) => {
+self.onmessage = async ({ data: { report, filters, format, fonts, pendingOnly = true } }) => {
   try {
     const bytes = format === "xlsx"
       ? await (await buildOrdersWorkbook(report, filters)).xlsx.writeBuffer()
-      : await (await buildOrdersPdf(report, filters, fonts)).arrayBuffer();
+      : await (await buildOrdersPdf(report, filters, fonts, Date.now(), pendingOnly)).arrayBuffer();
     const buffer = new Uint8Array(bytes as ArrayBuffer).buffer;
     self.postMessage({ bytes: buffer, mime: format === "xlsx"
       ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf",

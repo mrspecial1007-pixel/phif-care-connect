@@ -65,9 +65,13 @@ function InventoryPage() {
       qc.invalidateQueries({ queryKey: ["phif_stock_summary"] });
       qc.invalidateQueries({ queryKey: ["phif_stock_items"] });
       qc.invalidateQueries({ queryKey: ["items_analytics"] });
+      qc.invalidateQueries({ queryKey: ["phif_connection_indicator"] });
+      qc.invalidateQueries({ queryKey: ["phif_session_status"] });
     },
     onError: (error: any) => {
       toast.error(error?.message ?? "تعذرت مزامنة المخزون");
+      qc.invalidateQueries({ queryKey: ["phif_stock_summary"] });
+      qc.invalidateQueries({ queryKey: ["phif_connection_indicator"] });
     },
   });
 

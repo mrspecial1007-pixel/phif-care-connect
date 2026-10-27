@@ -972,7 +972,8 @@ describe("PHIF sync foundation", () => {
     expect(stockFunctions).toContain('requireTiryaqPermission("inventory_read")');
     expect(stockFunctions).not.toContain("PHIF_TIRYAQ_SOURCE_PHARMACY_ID");
     expect(stockFunctions).not.toContain("assertExpectedTiryaqStockSource");
-    expect(stockFunctions).toContain('rpc("replace_phif_stock_snapshots"');
+    expect(stockFunctions).toContain("runManualStockSync");
+    expect(readProjectFile("src/lib/phif-stock-sync.server.ts")).toContain('rpc("replace_phif_stock_snapshots"');
     expect(stockFunctions).toContain('"actual_cost_read"');
     expect(stockFunctions).toContain("const { cost_price, ...safe } = row");
     expect(stockFunctions).toContain('.from("phif_stock_items")');

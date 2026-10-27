@@ -1,4 +1,5 @@
 import { hasPermission } from "./user-permissions";
+import { confirmedReceiptDate, receiptDateSource, type OrderReceiptRecord } from "./phif-order-receipts.helpers";
 
 export const ORDER_STATES = {
   waiting: "بانتظار الاستلام",
@@ -10,7 +11,7 @@ export type OrderState = keyof typeof ORDER_STATES;
 export type OrderLine = {
   id: string; medicine: string; batch: string | null; supplier: string | null;
   approval: string; approvedQuantity: number | null; quantityMissing: boolean;
-  status: OrderState; approvedAt: null; receivedAt: string | null;
+  status: OrderState; approvedAt: null; receivedAt: string | null; receipt?: OrderReceiptRecord;
 };
 export type PhifOrder = {
   id: string; number: string; createdAt: string | null; status: string;
@@ -22,9 +23,11 @@ export type PhifOrdersReport = {
 };
 export const ORDER_TABS = { approved: "الأصناف المعتمدة", not_approved: "بانتظار الموافقة", review: "مراجعة الحالة", orders: "الطلبات" } as const;
 export const ORDER_PERIODS = { this_month: "هذا الشهر", previous_month: "الشهر السابق", all: "كل التاريخ", custom: "نطاق مخصص" } as const;
+export const ORDER_DATE_BASES = { creation: "تاريخ إنشاء الطلب", receipt: "تاريخ الاستلام المؤكد", observation: "تاريخ أول رصد للاستلام (غير مؤكد)" } as const;
 export type OrdersFilters = {
   status: "all" | OrderState; supplier: string; query: string; tab: keyof typeof ORDER_TABS;
   period: keyof typeof ORDER_PERIODS; dateFrom: string; dateTo: string;
+  dateBasis?: keyof typeof ORDER_DATE_BASES;
 };
 export const defaultOrdersFilters: OrdersFilters = {
   status: "all", supplier: "all", query: "", tab: "approved", period: "all", dateFrom: "", dateTo: "",
@@ -66,11 +69,15 @@ export function orderAgeDays(createdAt: string | null, now = Date.now()) {
   const age = now - Date.parse(createdAt);
   return Number.isFinite(age) && age >= 0 ? Math.floor(age / 86400000) : null;
 }
-export function orderDuration(row: Pick<OrderLine, "status" | "receivedAt"> & { createdAt: string | null }, now = Date.now()) {
+export function orderDuration(row: Pick<OrderLine, "status" | "receivedAt" | "receipt"> & { createdAt: string | null }, now = Date.now()) {
   if (row.status === "received") {
-    if (!row.receivedAt) return { days: null, label: "تم الاستلام — تاريخ الاستلام غير متوفر" };
-    const received = Date.parse(row.receivedAt);
-    const days = Number.isFinite(received) && received <= now ? orderAgeDays(row.createdAt, received) : null;
+    const actual = confirmedReceiptDate(row);
+    if (!actual) return { days: null, label: "تم الاستلام — تاريخ الاستلام غير متوفر" };
+    const received = Date.parse(actual), createdDay = orderCreatedDate(row.createdAt), today = orderCreatedDate(new Date(now).toISOString())!;
+    const days = row.receipt?.confirmed_received_on
+      ? createdDay && actual >= createdDay && actual <= today && new Date(received).toISOString().slice(0,10) === actual
+        ? (received - Date.parse(createdDay)) / 86400000 : null
+      : Number.isFinite(received) && received <= now ? orderAgeDays(row.createdAt, received) : null;
     return { days, label: days == null ? "تم الاستلام — تعذر تحديد المدة من تواريخ الإنشاء والاستلام"
       : `مدة من إنشاء الطلب حتى الاستلام: ${days} يومًا` };
   }
@@ -83,19 +90,25 @@ export function ordersView(report: PhifOrdersReport, filters: OrdersFilters, now
   const matchesLine = (line: OrderLine, order: PhifOrder) => line.approvedQuantity !== 0
     && (filters.supplier === "all" || line.supplier === filters.supplier)
     && (!query || `${order.number} ${line.medicine} ${line.batch || ""}`.toLocaleLowerCase().includes(query));
-  const inPeriod = (order: PhifOrder) => {
+  const basis = filters.dateBasis || "creation";
+  const lineDate = (line: OrderLine, order: PhifOrder) => basis === "creation" ? orderCreatedDate(order.createdAt)
+    : line.status !== "received" ? null : basis === "receipt" ? orderCreatedDate(confirmedReceiptDate(line))
+      : orderCreatedDate(line.receipt?.first_received_observed_at || null);
+  const inPeriod = (order: PhifOrder, line?: OrderLine) => {
     if (periodError) return false;
     if (filters.period === "all") return true;
-    const date = orderCreatedDate(order.createdAt);
+    const date = line ? lineDate(line, order) : orderCreatedDate(order.createdAt);
     return date != null && date >= filters.dateFrom && date <= filters.dateTo;
   };
   const matchesOrder = (order: PhifOrder) => order.lines.some(line => matchesLine(line, order))
     || (filters.supplier === "all" && (!query || order.number.toLocaleLowerCase().includes(query)));
-  const orders = report.orders.filter(order => inPeriod(order) && matchesOrder(order))
+  const orders = report.orders.filter(order => matchesOrder(order) && (basis === "creation" ? inPeriod(order)
+    : order.lines.some(line => matchesLine(line, order) && inPeriod(order, line) && lineDate(line, order) != null)))
     .sort((a, b) => (a.createdAt ? Date.parse(a.createdAt) : Infinity) - (b.createdAt ? Date.parse(b.createdAt) : Infinity)
       || a.id.localeCompare(b.id, "en", { numeric: true }));
   // Statistics use the date/search/supplier scope, not the selected statistic or tab.
-  const scopedRows = orders.flatMap(order => order.lines.filter(line => matchesLine(line, order)).map(line => ({ ...line,
+  const scopedRows = orders.flatMap(order => order.lines.filter(line => matchesLine(line, order)
+    && (basis === "creation" || (lineDate(line, order) != null && inPeriod(order, line)))).map(line => ({ ...line,
     orderId: order.id, orderNumber: order.number, createdAt: order.createdAt,
   })));
   const rows = scopedRows.filter(line => filters.tab === "orders"
@@ -111,7 +124,7 @@ export function ordersView(report: PhifOrdersReport, filters: OrdersFilters, now
   const countsFor = (lines: OrderLine[]) => Object.fromEntries(Object.keys(ORDER_STATES).map(state =>
     [state, lines.filter(line => line.status === state).length])) as Record<OrderState, number>;
   return { rows, orders: orders.map(order => ({ ...order,
-      counts: countsFor(order.lines.filter(line => matchesLine(line, order))) })), orderCount: orders.length, periodError,
+      counts: countsFor(scopedRows.filter(line => line.orderId === order.id)) })), orderCount: orders.length, periodError,
     undatedOrders: report.orders.filter(order => !orderCreatedDate(order.createdAt) && matchesOrder(order)).length,
     counts: countsFor(scopedRows) };
 }
@@ -121,6 +134,8 @@ export function ordersExportRows(report: PhifOrdersReport, filters: OrdersFilter
     orderNumber: row.orderNumber, createdAt: row.createdAt, medicine: row.medicine,
     supplier: row.supplier, batch: row.batch, quantity: row.approvedQuantity,
     status: ORDER_STATES[row.status], ageDays: row.duration.days, durationLabel: row.duration.label,
-    receivedAt: row.status === "received" ? row.receivedAt : null,
+    receivedAt: row.status === "received" ? confirmedReceiptDate(row) : null,
+    receiptSource: row.status === "received" ? receiptDateSource(row) : "غير مستلم",
+    firstObservedAt: row.receipt?.first_received_observed_at || null,
   }));
 }

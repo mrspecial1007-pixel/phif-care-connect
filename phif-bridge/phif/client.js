@@ -19,10 +19,11 @@ const ALLOWED_POST_FORM_PATHS = [
 ];
 
 export class PhifClient {
-  constructor({ fetchImpl = phifHttp2Fetch, baseUrl = PHIF_BASE_URL, timeoutMs = 15000 } = {}) {
+  constructor({ fetchImpl = phifHttp2Fetch, baseUrl = PHIF_BASE_URL, timeoutMs = 15000, signal } = {}) {
     this.fetchImpl = fetchImpl;
     this.baseUrl = baseUrl;
     this.timeoutMs = timeoutMs;
+    this.signal = signal;
   }
 
   async getJson(path) {
@@ -58,6 +59,7 @@ export class PhifClient {
 
     const response = await fetchWithTimeout(this.fetchImpl, new URL(path, this.baseUrl), {
       method: "POST",
+      signal: this.signal,
       redirect: "manual",
       headers: {
         Accept: "text/html,application/xhtml+xml,application/json,text/javascript,*/*;q=0.9",
@@ -78,6 +80,7 @@ export class PhifClient {
         fetchImpl: this.fetchImpl,
         refererPath: path,
         timeoutMs: this.timeoutMs,
+        signal: this.signal,
       });
       if (redirected) return redirected;
       return { ok: false, status: response.status, authRequired: isLoginLocation(location), text, location, contentType };
@@ -102,6 +105,7 @@ export class PhifClient {
 
     const response = await fetchWithTimeout(this.fetchImpl, new URL(path, this.baseUrl), {
       method: "GET",
+      signal: this.signal,
       redirect: "manual",
       headers: { Accept: accept },
     }, this.timeoutMs);
@@ -144,10 +148,10 @@ export async function fetchWithTimeout(fetchImpl, input, init, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await transport(input, { ...init, signal: controller.signal });
+    return await transport(input, { ...init, signal: init?.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal });
   } catch (error) {
     const transportCode = String(error?.cause?.code ?? error?.code ?? "");
-    const timeoutFailure = controller.signal.aborted;
+    const timeoutFailure = controller.signal.aborted || init?.signal?.aborted;
     const protocolFailure = /^ERR_HTTP2_/.test(transportCode) || /protocol error/i.test(error?.message ?? "");
     const connectionFailure = /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ERR_TLS_|ERR_SSL_|CERT_|UNABLE_TO_|DEPTH_ZERO_|SELF_SIGNED_)/.test(transportCode);
     if (!timeoutFailure && !protocolFailure && !connectionFailure) throw error;
@@ -178,7 +182,7 @@ function isLoginLocation(location) {
   }
 }
 
-async function followAllowedResultRedirects(location, { fetchImpl, refererPath, timeoutMs }) {
+async function followAllowedResultRedirects(location, { fetchImpl, refererPath, timeoutMs, signal }) {
   let nextUrl = allowedRedirectUrl(location);
   if (!nextUrl) return null;
   const firstLocation = location;
@@ -186,6 +190,7 @@ async function followAllowedResultRedirects(location, { fetchImpl, refererPath, 
   for (let redirectCount = 0; redirectCount < 3; redirectCount++) {
     const response = await fetchWithTimeout(fetchImpl, nextUrl, {
       method: "GET",
+      signal,
       redirect: "manual",
       headers: {
         Accept: "text/html,application/xhtml+xml,application/json,text/javascript,*/*;q=0.9",

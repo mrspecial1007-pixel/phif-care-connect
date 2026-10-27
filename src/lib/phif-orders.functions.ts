@@ -1,8 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { receiptDateInput } from "./phif-order-receipts.helpers";
 
-export const getPhifOrders = createServerFn({ method: "GET" })
-  .inputValidator((data: unknown) => z.object({ export: z.boolean().default(false) }).parse(data))
+// Refresh now records observations in Tracker; POST prevents incidental GETs from doing so.
+export const getPhifOrders = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ export: z.boolean().default(false), previous: z.unknown().optional() }).parse(data))
   .handler(async ({ data }) => {
     const { readAuthorizedPhifOrders } = await import("./phif-orders-service.server");
     return readAuthorizedPhifOrders(data);
@@ -20,4 +22,11 @@ export const authorizePhifOrdersSnapshot = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { exportAuthorizedOrdersSnapshot } = await import("./phif-orders-service.server");
     return exportAuthorizedOrdersSnapshot(data.snapshot);
+  });
+
+export const setPhifOrderReceiptDate = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => receiptDateInput.parse(data))
+  .handler(async ({ data }) => {
+    const { saveAuthorizedOrderReceiptDate } = await import("./phif-orders-service.server");
+    return saveAuthorizedOrderReceiptDate(data);
   });

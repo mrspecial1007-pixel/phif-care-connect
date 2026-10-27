@@ -154,6 +154,7 @@ async function bridgeJson(path: string, pharmacyId: string) {
   const secret = bridgeSecret();
   if (!secret) throw new Error("PHIF bridge secret is not configured");
   const res = await fetch(`${bridgeBaseUrl()}${path}`, {
+    signal: AbortSignal.timeout(120000), redirect: "error", cache: "no-store",
     headers: {
       "X-PHIF-Bridge-Secret": secret,
       "X-Pharmacy-Id": pharmacyId,
@@ -169,19 +170,6 @@ async function bridgeJson(path: string, pharmacyId: string) {
   }
   if (!res.ok) throw new Error(payload?.error ?? `PHIF bridge request failed: ${res.status}`);
   return payload;
-}
-
-async function currentBridgeSession(db: any, pharmacyId: string) {
-  const { data } = await db
-    .from("phif_bridge_sessions")
-    .select("bridge_session_id, expires_at")
-    .eq("pharmacy_id", pharmacyId)
-    .eq("status", "active")
-    .gt("expires_at", new Date().toISOString())
-    .order("expires_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data ?? null;
 }
 
 function canSeeCost(session: any) {
@@ -287,57 +275,7 @@ export const syncPhifStock = createServerFn({ method: "POST" }).handler(async ()
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const session = await requireInventory();
   const { pharmacy_id } = session;
-  const bridge = await currentBridgeSession(supabaseAdmin, pharmacy_id);
-  if (!bridge?.bridge_session_id) throw new Error("PHIF bridge session is not available");
-
-  const { data: run, error: runError } = await supabaseAdmin
-    .from("phif_stock_sync_runs")
-    .insert({ pharmacy_id, status: "pending" })
-    .select("id")
-    .single();
-  if (runError) throw new Error(runError.message);
-
-  try {
-    const payload = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(bridge.bridge_session_id)}/stock`, pharmacy_id);
-    const rows = normalizePhifStockRows({ data: payload.rows ?? [] });
-
-    const imported = await upsertStockSnapshots(supabaseAdmin, pharmacy_id, run.id, rows);
-    await supabaseAdmin
-      .from("phif_stock_sync_runs")
-      .update({
-        status: "completed",
-        finished_at: new Date().toISOString(),
-        total_records: payload.raw_count ?? rows.length,
-        imported_records: imported,
-        error_count: 0,
-      })
-      .eq("id", run.id);
-    return {
-      ok: true,
-      total_records: payload.raw_count ?? rows.length,
-      imported_records: imported,
-      parsed_records: rows.length,
-    };
-  } catch (error: any) {
-    await supabaseAdmin
-      .from("phif_stock_sync_runs")
-      .update({
-        status: "failed",
-        finished_at: new Date().toISOString(),
-        error_count: 1,
-        error_message: error?.message ?? "PHIF stock sync failed",
-      })
-      .eq("id", run.id);
-    throw error;
-  }
+  const { runManualStockSync } = await import("./phif-stock-sync.server");
+  return runManualStockSync(supabaseAdmin, pharmacy_id, session.session.data.user_id,
+    id => bridgeJson(`/api/bridge-sessions/${encodeURIComponent(id)}/stock`, pharmacy_id), normalizePhifStockRows);
 });
-
-async function upsertStockSnapshots(db: any, pharmacyId: string, runId: string, rows: NormalizedPhifStockRow[]) {
-  const { data, error } = await db.rpc("replace_phif_stock_snapshots", {
-    p_pharmacy_id: pharmacyId,
-    p_sync_run_id: runId,
-    p_items: rows,
-  });
-  if (error) throw new Error(error.message);
-  return Number(data ?? 0);
-}

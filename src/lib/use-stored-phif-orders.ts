@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getPhifOrders, getPhifOrdersStorageAccess } from "./phif-orders.functions";
 import { ordersCacheOptions } from "./phif-orders.helpers";
+import { attachOrderReceipts, type OrderReceiptRecord } from "./phif-order-receipts.helpers";
 import { ordersStore } from "./phif-orders.storage";
 import { assertOrdersSnapshotReplacement, ordersSnapshotSchema, type OrdersSnapshot, type OrdersStorageAccess } from "./phif-orders-snapshot.helpers";
 
@@ -16,14 +17,15 @@ export async function refreshStoredOrders(
   const snapshot = parsed.data;
   if (snapshot.pharmacyId !== access.pharmacyId || snapshot.subject !== access.subject) throw new Error("استجابة الطلبيات لا تخص الصيدلية والمستخدم الحاليين");
   assertOrdersSnapshotReplacement(previous, snapshot);
-  await write(snapshot, access);
-  return { ok: true as const, snapshot };
+  try { await write(snapshot, access); }
+  catch { return { ok: true as const, snapshot, cacheWarning: "حُفظت البيانات في Cloud، لكن تعذر تحديث النسخة المؤقتة على هذا الجهاز" }; }
+  return { ok: true as const, snapshot, cacheWarning: null };
 }
 
 export function useStoredPhifOrders(scope: string) {
   const client = useQueryClient(), queryKey = ["phif_orders", scope] as const;
   const access = useQuery({ queryKey: ["phif_orders_access", scope], queryFn: () => getPhifOrdersStorageAccess(),
-    staleTime: 30000, refetchInterval: 60000, refetchIntervalInBackground: false, refetchOnWindowFocus: false, retry: false });
+    staleTime: Infinity, refetchInterval: false, refetchOnMount: false, refetchOnReconnect: false, refetchOnWindowFocus: false, retry: false });
   const stored = useQuery<OrdersSnapshot | null>({ ...ordersCacheOptions, queryKey, enabled: false, queryFn: async () => null });
   const [loading, setLoading] = useState(true), [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null), [expired, setExpired] = useState(false);
@@ -32,7 +34,14 @@ export function useStoredPhifOrders(scope: string) {
   const hydrated = useRef(false), accessRef = useRef(access.data); accessRef.current = access.data;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
-    if (!access.data || hydrated.current) return;
+    if (!access.data) return;
+    if (access.data.cloudSnapshot) {
+      client.setQueryData(queryKey, access.data.cloudSnapshot);
+      setLoading(false); hydrated.current = true;
+      void ordersStore.save(access.data.cloudSnapshot, access.data).catch(() => {});
+      return;
+    }
+    if (hydrated.current) return;
     hydrated.current = true;
     const currentAccess = access.data;
     void ordersStore.load(currentAccess).then(snapshot => {
@@ -55,18 +64,31 @@ export function useStoredPhifOrders(scope: string) {
     if (loading) return;
     lock.current = true; setUpdating(true); setError(null);
     try {
-      const result = await refreshStoredOrders(currentAccess, client.getQueryData<OrdersSnapshot>(queryKey) || null,
-        () => getPhifOrders({ data: { export: false } }), (next, rights) => ordersStore.save(next, rights));
+      const previous = client.getQueryData<OrdersSnapshot>(queryKey) || null;
+      const result = await refreshStoredOrders(currentAccess, previous,
+        () => getPhifOrders({ data: { export: false, previous } }), (next, rights) => ordersStore.save(next, rights));
       if (!mounted.current) return;
       if (!result.ok) { setError(result.error); setExpired(result.reason === "session_expired"); setSource("saved"); return; }
-      client.setQueryData(queryKey, result.snapshot); setSource("live"); setExpired(false);
+      client.setQueryData(queryKey, result.snapshot); setSource("live"); setExpired(false); setError(result.cacheWarning);
       void access.refetch();
-      if (typeof navigator !== "undefined" && navigator.storage?.persist) void navigator.storage.persist().catch(() => {});
     } catch (error) { if (mounted.current) { setSource("saved"); setError(error instanceof Error ? error.message : "تعذر حفظ التحديث؛ احتُفظ بالنسخة السابقة"); } }
-    finally { lock.current = false; if (mounted.current) setUpdating(false); }
+    finally {
+      lock.current = false;
+      if (mounted.current) setUpdating(false);
+      void client.invalidateQueries({ queryKey: ["phif_connection_indicator", scope] });
+      void client.invalidateQueries({ queryKey: ["phif_session_status"] });
+    }
   }
-  return { snapshot, data: snapshot ? { ...snapshot.report, canExport: Boolean(access.data?.canExport) } : null,
+  return { snapshot, data: snapshot ? attachOrderReceipts({ ...snapshot.report, canExport: Boolean(access.data?.canExport) }, access.data?.receipts?.rows || []) : null,
+    receipts: access.data?.receipts, canManageReceipts: Boolean(access.data?.canManageReceipts),
+    refreshReceipts: () => access.refetch(),
+    receiptSaved: (row: OrderReceiptRecord) => {
+      client.setQueryData(["phif_orders_access", scope], (previous: typeof access.data) => previous ? { ...previous,
+        receipts: { ready: true, error: null, rows: [...(previous.receipts?.rows || []).filter(item => item.id !== row.id), row] } } : previous);
+      void access.refetch();
+    },
     isLoading: !snapshot && !access.error && (loading || access.isLoading), isFetching: updating,
-    canRefresh: Boolean(access.error || (access.data && !loading)), refresh, source,
-    sessionExpired, error: access.error ? (access.error as Error).message : error };
+    canRefresh: Boolean(access.error || (access.data?.cloudReady && !loading)), refresh, source,
+    central: Boolean(access.data?.cloudSnapshot) || source === "live",
+    sessionExpired, error: access.error ? (access.error as Error).message : error || access.data?.cloudError };
 }

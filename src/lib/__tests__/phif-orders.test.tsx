@@ -137,7 +137,17 @@ describe("PHIF order monitoring reads and exports", () => {
     expect(html).not.toContain("جارٍ قراءة الطلبات وتفاصيلها");
     expect(html).toContain("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
     expect(html).toContain("آخر مزامنة ناجحة");
-    expect(html).toContain("نسخة محفوظة على هذا الجهاز");
+    expect(html).toContain("نسخة مؤقتة على هذا الجهاز فقط");
+    expect(html).not.toContain('type="button" disabled="" data-slot="dropdown-menu-trigger"');
+  });
+  it("shows the shared Cloud report and exports after PHIF expiry without implying a device-only copy", () => {
+    const c = cacheClient(), scope = itemsAnalyticsScope(session);
+    c.setQueryData(["phif_orders", scope], saved());
+    c.setQueryData(["phif_orders_access", scope], (previous: any) => ({ ...previous, cloudReady: true, cloudSnapshot: saved() }));
+    const html = renderToStaticMarkup(<QueryClientProvider client={c}><OrdersPage /></QueryClientProvider>);
+    expect(html).toContain("نسخة مشتركة محفوظة في Cloud");
+    expect(html).toContain("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
+    expect(html).toContain("00123");
     expect(html).not.toContain('type="button" disabled="" data-slot="dropdown-menu-trigger"');
   });
   it("roundtrips a genuine Arabic RTL Excel workbook with text batches and numeric quantities and dates", async () => {

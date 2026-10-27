@@ -19,10 +19,12 @@ const sourceReport = z.object({
 export class OrdersSessionExpiredError extends Error {}
 
 /** Reads an existing session only: no creation, expiry writes, sync or receipt actions. */
-export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fetch): Promise<Omit<PhifOrdersReport, "pharmacy" | "canExport">> {
-  const { data, error } = await db.from("phif_bridge_sessions")
+export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fetch, sessionRecordId?: string): Promise<Omit<PhifOrdersReport, "pharmacy" | "canExport">> {
+  let query = db.from("phif_bridge_sessions")
     .select("bridge_session_id,expires_at").eq("pharmacy_id", pharmacyId)
-    .eq("status", "active").gt("expires_at", new Date().toISOString())
+    .eq("status", "active").gt("expires_at", new Date().toISOString());
+  if (sessionRecordId) query = query.eq("id", sessionRecordId);
+  const { data, error } = await query
     .order("expires_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error("تعذر قراءة جلسة PHIF للصيدلية الحالية");
   if (!data?.bridge_session_id || !Number.isFinite(Date.parse(data.expires_at)) || Date.parse(data.expires_at) <= Date.now())
@@ -34,7 +36,7 @@ export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fe
   try {
     response = await fetchImpl(`${base}/api/bridge-sessions/${encodeURIComponent(data.bridge_session_id)}/orders`, {
       method: "GET", headers: { "X-PHIF-Bridge-Secret": secret, "X-Pharmacy-Id": pharmacyId },
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(120000), redirect: "error", cache: "no-store",
     });
   } catch { throw new Error("تعذر الاتصال بـPHIF Bridge أو انتهت مهلة قراءة الطلبيات. أعد المحاولة"); }
   let payload: any;
@@ -59,6 +61,7 @@ export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fe
         status: line.status, approvedAt: null, receivedAt: line.receivedAt })),
     })),
     totalOrders: payload.totalOrders, pages: payload.pages, excludedZero: payload.excludedZero,
-    complete: payload.complete, fetchedAt: payload.fetchedAt,
+    // This is the Tracker read timestamp, not an approval/receipt date from PHIF.
+    complete: payload.complete, fetchedAt: new Date().toISOString(),
   };
 }

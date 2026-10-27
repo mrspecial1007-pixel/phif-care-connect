@@ -46,6 +46,7 @@ type BridgeSessionRecord = {
 type PhifSessionStatusResult = {
   configured: boolean;
   authenticated: boolean;
+  session_available: boolean;
   login_url: string | null;
   expires_at: string | null;
   message: string;
@@ -668,53 +669,13 @@ export const getPhifSessionStatus = createServerFn({ method: "GET" }).handler(as
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
   const { pharmacy_id } = await requireTiryaqPermission("phif_sync_run");
-  const db = supabaseAdmin as any;
-  if (!bridgeSecret()) {
-    return {
-      configured: false,
-      authenticated: false,
-      login_url: null,
-      expires_at: null,
-      message: "PHIF bridge is not configured",
-    } satisfies PhifSessionStatusResult;
-  }
-
-  const session = await currentBridgeSession(db, pharmacy_id);
-  if (!session) {
-    return {
-      configured: true,
-      authenticated: false,
-      login_url: null,
-      expires_at: null,
-      message: "PHIF bridge session is not created yet",
-    } satisfies PhifSessionStatusResult;
-  }
-
-  try {
-    const status = await bridgeJson(`/api/bridge-sessions/${encodeURIComponent(session.bridge_session_id)}/status`, {
-      pharmacyId: pharmacy_id,
-    });
-    await markBridgeSession(db, pharmacy_id, session.bridge_session_id, "active");
-    return {
-      configured: true,
-      authenticated: Boolean(status.authenticated),
-      login_url: session.login_url,
-      expires_at: session.expires_at,
-      message: status.authenticated ? "PHIF session is available" : "PHIF login is required",
-    } satisfies PhifSessionStatusResult;
-  } catch (error: any) {
-    const message = error?.message ?? "PHIF session check failed";
-    if (message.includes("not found") || message.includes("expired")) {
-      await markBridgeSession(db, pharmacy_id, session.bridge_session_id, "expired");
-    }
-    return {
-      configured: true,
-      authenticated: false,
-      login_url: session.login_url,
-      expires_at: session.expires_at,
-      message,
-    } satisfies PhifSessionStatusResult;
-  }
+  const { readPhifConnectionStatus } = await import("./phif-connection.server");
+  const status = await readPhifConnectionStatus(supabaseAdmin, pharmacy_id);
+  return { configured: Boolean(bridgeSecret()), authenticated: status.authenticated,
+    session_available: Boolean(status.sessionAvailable), login_url: null, expires_at: status.expiresAt,
+    message: status.authenticated ? "نجحت آخر مزامنة يدوية مؤخرًا" : status.sessionAvailable
+      ? "توجد جلسة محفوظة؛ يتحقق الاتصال عند الفحص أو المزامنة اليدوية فقط" : "سجّل الدخول إلى PHIF قبل المزامنة اليدوية",
+  } satisfies PhifSessionStatusResult;
 });
 
 export const createPhifLoginSession = createServerFn({ method: "POST" }).handler(async () => {

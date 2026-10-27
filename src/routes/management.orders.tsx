@@ -7,10 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { OrdersExportButton } from "@/components/management/OrdersExportButton";
+import { OrderReceiptDateEditor } from "@/components/management/OrderReceiptDateEditor";
+import { confirmedReceiptDate, receiptDateSource } from "@/lib/phif-order-receipts.helpers";
 import { useSession } from "@/lib/queries";
 import { itemsAnalyticsScope } from "@/lib/items-analytics-cache.helpers";
 import { useStoredPhifOrders } from "@/lib/use-stored-phif-orders";
-import { ORDER_PERIODS, ORDER_STATES, ORDER_TABS, defaultOrdersFilters, ordersPeriodFilters, ordersStatisticFilters, ordersView, type OrdersFilters } from "@/lib/phif-orders.helpers";
+import { ORDER_DATE_BASES, ORDER_PERIODS, ORDER_STATES, ORDER_TABS, defaultOrdersFilters, ordersPeriodFilters, ordersStatisticFilters, ordersView, type OrdersFilters } from "@/lib/phif-orders.helpers";
 
 export const Route = createFileRoute("/management/orders")({
   component: OrdersPage,
@@ -44,17 +46,23 @@ function OrdersBody({ scope }: { scope: string }) {
         <Button variant="outline" disabled={report.isFetching || !report.canRefresh} onClick={() => void report.refresh()}>
           <RefreshCw className={`size-4 ${report.isFetching ? "animate-spin" : ""}`} />تحديث
         </Button>
-        <OrdersExportButton filters={filters} snapshot={report.snapshot} enabled={Boolean(report.data?.canExport && report.data.complete && !view?.periodError)} />
+        <OrdersExportButton filters={filters} snapshot={report.snapshot} enabled={Boolean(report.data?.canExport && report.data.complete && !view?.periodError
+          && (!report.receipts || report.receipts.ready || report.receipts.missing))} />
       </div>
     </header>
     {report.data && <p className="text-xs text-muted-foreground">
       {report.data.totalOrders} طلبًا متاحًا · آخر مزامنة ناجحة: <strong>{new Date(report.data.fetchedAt).toLocaleString("ar-LY", { timeZone: "Africa/Tripoli" })}</strong>
-      {" · "}{report.source === "live" ? "جُلبت مباشرة من PHIF وحُفظت على هذا الجهاز" : "نسخة محفوظة على هذا الجهاز"}
+      {" · "}{report.source === "live" ? "جُلبت يدويًا من PHIF وحُفظت في Cloud" : report.central ? "نسخة مشتركة محفوظة في Cloud" : "نسخة مؤقتة على هذا الجهاز فقط"}
     </p>}
     {report.sessionExpired && <p role="status" className="border-y border-amber-200 py-2 text-xs text-amber-900">
       {report.data ? "انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة" : "لا توجد جلسة PHIF سارية. سجّل الدخول إلى PHIF ثم اضغط تحديث لحفظ أول نسخة."}
     </p>}
+    {report.receipts?.error && <p role="status" className="border-y border-amber-200 py-2 text-xs text-amber-900">{report.receipts.error}</p>}
     <div className="space-y-2 border-y py-3">
+      <Select value={filters.dateBasis || "creation"} onValueChange={value => change({ dateBasis: value as OrdersFilters["dateBasis"] })}>
+        <SelectTrigger aria-label="مرجع الفترة"><SelectValue /></SelectTrigger>
+        <SelectContent>{Object.entries(ORDER_DATE_BASES).map(([value,label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+      </Select>
       <Select value={filters.period} onValueChange={period => change(ordersPeriodFilters(period as OrdersFilters["period"]))}>
         <SelectTrigger aria-label="الفترة حسب تاريخ إنشاء الطلب"><SelectValue /></SelectTrigger>
         <SelectContent>{Object.entries(ORDER_PERIODS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
@@ -64,7 +72,9 @@ function OrdersBody({ scope }: { scope: string }) {
         <label className="min-w-0 text-xs">إلى تاريخ<Input className="mt-1 min-w-0 w-full" type="date" value={filters.dateTo} onChange={e => change({ dateTo: e.target.value })} /></label>
       </div>}
       {filters.period !== "all" && filters.period !== "custom" && <p dir="ltr" className="text-right text-xs text-muted-foreground">{filters.dateFrom} - {filters.dateTo}</p>}
-      <p className="text-xs leading-5 text-muted-foreground">الفترة والإحصائيات حسب تاريخ إنشاء الطلب، وليس تاريخ الموافقة أو الاستلام.</p>
+      <p className="text-xs leading-5 text-muted-foreground">{!filters.dateBasis || filters.dateBasis === "creation"
+        ? "الفترة والإحصائيات حسب تاريخ إنشاء الطلب، وليس تاريخ الموافقة أو الاستلام."
+        : `الفترة والإحصائيات حسب ${ORDER_DATE_BASES[filters.dateBasis]}؛ الرصد لا يثبت تاريخ الاستلام الفعلي.`}</p>
       {view?.periodError && <p role="alert" className="text-xs text-red-800">{view.periodError}</p>}
     </div>
     <div className="relative"><Search className="absolute right-3 top-3 size-4 text-muted-foreground" />
@@ -114,7 +124,7 @@ function OrdersBody({ scope }: { scope: string }) {
           </TabsTrigger>)}
         </TabsList>
       <TabsContent value={filters.tab} className="space-y-3">
-      {filters.period !== "all" && view.undatedOrders > 0 && !view.periodError && <p role="status" className="text-xs text-amber-900">
+      {(!filters.dateBasis || filters.dateBasis === "creation") && filters.period !== "all" && view.undatedOrders > 0 && !view.periodError && <p role="status" className="text-xs text-amber-900">
         {view.undatedOrders} طلبًا بلا تاريخ إنشاء موثق؛ لا تدخل ضمن الفترة المحددة.
       </p>}
       {filters.tab === "orders" ? <div className="grid min-w-0 gap-3 md:grid-cols-2">
@@ -141,9 +151,12 @@ function OrdersBody({ scope }: { scope: string }) {
             </div>
             <div className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1"><CalendarDays className="size-3" />إنشاء: {dateLabel(row.createdAt)}</span>
-              {row.status === "received" && row.receivedAt && <span>استلام: {dateLabel(row.receivedAt)}</span>}
+              {row.status === "received" && confirmedReceiptDate(row) && <span className="text-emerald-800">استلام: {dateLabel(confirmedReceiptDate(row))} · {receiptDateSource(row)}</span>}
               <span>{row.duration.label}</span>
             </div>
+            {row.receipt?.first_received_observed_at && <p className="text-xs text-amber-900">أول رصد للاستلام: {dateLabel(row.receipt.first_received_observed_at)} · رصد آلي وليس تاريخ استلام فعليًا</p>}
+            {row.status === "received" && report.canManageReceipts && <OrderReceiptDateEditor record={row.receipt} medicine={row.medicine}
+              enabled={Boolean(report.receipts?.ready)} onSaved={report.receiptSaved} />}
           </article>;
         })}
       </div>}

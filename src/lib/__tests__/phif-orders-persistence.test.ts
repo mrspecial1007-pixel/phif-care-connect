@@ -10,15 +10,31 @@ import { exportAuthorizedOrdersSnapshot as authorizePhifOrdersSnapshot, readAuth
 import { ordersExportRows, defaultOrdersFilters } from "../phif-orders.helpers";
 import { buildOrdersWorkbook } from "../phif-orders-export";
 
-const mocks = vi.hoisted(() => ({ context: null as any, read: vi.fn(), calls: [] as any[], expiry: null as string | null }));
+const mocks = vi.hoisted(() => ({ context: null as any, read: vi.fn(), calls: [] as any[], expiry: null as string | null, cloud: null as any }));
 vi.mock("@tanstack/react-start/server", () => ({ setResponseHeader: vi.fn() }));
 vi.mock("@/lib/pharmacy-session.server", () => ({ requirePharmacySession: async () => mocks.context }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from: (table: string) => {
   mocks.calls.push(["from", table]);
+  if (table === "phif_order_snapshots") {
+    const q: any = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: mocks.cloud ? {
+      pharmacy_id: "tiryaq", report: mocks.cloud, version: 1, fetched_at: mocks.cloud.fetchedAt,
+    } : null, error: null }) }; return q;
+  }
+  if (table === "phif_order_receipts") {
+    const empty: any = { select: () => empty, eq: () => empty, limit: () => empty, order: () => empty,
+      range: async () => ({ data: [], count: 0, error: null }), then: (resolve: any) => resolve({ data: [], error: null }) };
+    return empty;
+  }
   const query: any = { select: () => query, eq: (key: string, value: unknown) => { mocks.calls.push([key, value]); return query; },
     gt: () => query, order: () => query, limit: () => query,
-    maybeSingle: async () => ({ data: mocks.expiry ? { expires_at: mocks.expiry } : null, error: null }) };
+    maybeSingle: async () => ({ data: mocks.expiry ? { id: "session-row", bridge_session_id: "private", expires_at: mocks.expiry } : null, error: null }) };
   return query;
+}, rpc: async (name: string, args: any) => {
+  mocks.calls.push([name,args]);
+  if (name === "begin_phif_manual_sync") return { data: { id: "00000000-0000-4000-8000-000000000001", snapshot_version: 0, expires_at: "2099-01-01" }, error: null };
+  if (name === "complete_phif_orders_sync") { mocks.cloud = args.p_report; return { data: 1, error: null }; }
+  if (name === "fail_phif_manual_sync") return { data: "failed", error: null };
+  return { error: { message: "Unexpected RPC" } };
 } } }));
 vi.mock("../phif-orders.server", async original => ({ ...await original<any>(), readPhifOrders: mocks.read }));
 
@@ -31,7 +47,7 @@ function storage(factory = new IDBFactory()) {
   instances.push(store); return store;
 }
 beforeEach(() => {
-  vi.stubEnv("SESSION_SECRET", SECRET); mocks.calls.length = 0; mocks.read.mockReset(); mocks.expiry = null;
+  vi.stubEnv("SESSION_SECRET", SECRET); mocks.calls.length = 0; mocks.read.mockReset(); mocks.expiry = null; mocks.cloud = null;
   mocks.context = { pharmacy_id: "tiryaq", pharmacy_name: "صيدلية الترياق الشافي",
     session: { data: { pharmacy_name: "صيدلية الترياق الشافي", user_id: "admin", user_role: "admin", user_permissions: {} } } };
 });
@@ -172,8 +188,9 @@ describe("snapshot integrity, current permissions and PHIF-independent export", 
     expect(mocks.read).not.toHaveBeenCalled();
   });
   it("signs only a complete manual refresh and never permits partial responses to replace a previous snapshot", async () => {
+    mocks.expiry = "2099-01-01T00:00:00Z";
     mocks.read.mockResolvedValue({ ...ordersFixture(), complete: false });
-    expect(await getPhifOrders({ export: false })).toMatchObject({ ok: false, reason: "incomplete" });
+    expect(await getPhifOrders({ export: false })).toMatchObject({ ok: false, reason: "upstream" });
     mocks.read.mockResolvedValue(ordersFixture());
     const refreshed = await getPhifOrders({ export: false });
     expect(refreshed.ok).toBe(true);
@@ -187,8 +204,17 @@ describe("snapshot integrity, current permissions and PHIF-independent export", 
     }
     expect(write).not.toHaveBeenCalled();
     await expect(refreshStoredOrders(access(), previous, async () => ({ ok: true, snapshot: snapshot({}, "andalus") }), write)).rejects.toThrow("لا تخص");
-    await expect(refreshStoredOrders(access(), previous, async () => ({ ok: true, snapshot: snapshot() }), async () => { throw new Error("quota"); })).rejects.toThrow("quota");
+    await expect(refreshStoredOrders(access(), previous, async () => ({ ok: true, snapshot: snapshot() }), async () => { throw new Error("quota"); })).resolves.toMatchObject({ ok: true, cacheWarning: expect.stringContaining("Cloud") });
     expect(previous).toEqual(snapshot());
+  });
+  it("checks the signed local baseline before saving Cloud, so an initial partial central read cannot discard a known order", async () => {
+    mocks.expiry = "2099-01-01T00:00:00Z";
+    const original = ordersFixture(); original.orders.push({ ...original.orders[0], id: "99999", lines: [] }); original.totalOrders++;
+    const previous = signOrdersSnapshot(original, "tiryaq", "admin", SECRET);
+    mocks.read.mockResolvedValue(ordersFixture());
+    expect(await getPhifOrders({ export: false, previous })).toMatchObject({ ok:false, error:expect.stringContaining("جميع الطلبات") });
+    expect(mocks.calls.some(c => c[0] === "complete_phif_orders_sync")).toBe(false);
+    expect(mocks.cloud).toBeNull();
   });
   it("never auto-syncs on mount or exports using a live PHIF read, and keeps keys out of durable storage", () => {
     const hook = readFileSync("src/lib/use-stored-phif-orders.ts", "utf8");

@@ -1,9 +1,9 @@
 import React from "react";
-import { ORDER_PERIODS, ORDER_STATES, ORDER_TABS, orderCreatedDate, ordersExportRows, ordersView, type OrdersFilters, type PhifOrdersReport } from "./phif-orders.helpers";
+import { ORDER_DATE_BASES, ORDER_PERIODS, ORDER_STATES, ORDER_TABS, orderCreatedDate, ordersExportRows, ordersView, type OrdersFilters, type PhifOrdersReport } from "./phif-orders.helpers";
 
 export const orderDateLabel = (value: string | null) => orderCreatedDate(value) || "غير متاح";
 export function ordersPeriodLabel(filters: OrdersFilters) {
-  return `${ORDER_PERIODS[filters.period]}${filters.period === "all" ? "" : ` (${filters.dateFrom} - ${filters.dateTo})`}؛ حسب تاريخ إنشاء الطلب`;
+  return `${ORDER_PERIODS[filters.period]}${filters.period === "all" ? "" : ` (${filters.dateFrom} - ${filters.dateTo})`}؛ حسب ${ORDER_DATE_BASES[filters.dateBasis || "creation"]}`;
 }
 export function ordersFilterLabel(filters: OrdersFilters) {
   return `${ORDER_TABS[filters.tab]}${filters.tab === "approved" && filters.status !== "all" ? `: ${ORDER_STATES[filters.status]}` : ""} | ${filters.supplier === "all" ? "جميع الموردين" : filters.supplier}${filters.query ? ` | بحث: ${filters.query}` : ""}`;
@@ -37,6 +37,8 @@ export async function buildOrdersWorkbook(report: PhifOrdersReport, filters: Ord
     { header: "المدة بالأيام", key: "ageDays", width: 18 },
     { header: "بيان المدة", key: "durationLabel", width: 54 },
     { header: "تاريخ الاستلام الفعلي", key: "receivedAt", width: 22 },
+    { header: "مصدر تاريخ الاستلام", key: "receiptSource", width: 24 },
+    { header: "أول رصد للاستلام (ليس تاريخًا فعليًا)", key: "firstObservedAt", width: 30 },
   ];
   for (const row of ordersExportRows(report, filters, false, now)) sheet.addRow({ ...row,
     createdAt: row.createdAt ? new Date(`${orderDateLabel(row.createdAt)}T00:00:00Z`) : "غير متاح",
@@ -44,8 +46,9 @@ export async function buildOrdersWorkbook(report: PhifOrdersReport, filters: Ord
     ageDays: row.ageDays,
     receivedAt: row.receivedAt && Number.isFinite(Date.parse(row.receivedAt))
       ? new Date(`${orderDateLabel(row.receivedAt)}T00:00:00Z`) : "غير متاح",
+    firstObservedAt: row.firstObservedAt ? new Date(row.firstObservedAt) : "غير مرصود",
   });
-  sheet.autoFilter = { from: "A1", to: "J1" };
+  sheet.autoFilter = { from: "A1", to: "L1" };
   for (const page of [summary, sheet]) {
     page.eachRow((row, index) => {
       row.alignment = { vertical: "middle", horizontal: "right", wrapText: true, readingOrder: "rtl" };
@@ -57,12 +60,13 @@ export async function buildOrdersWorkbook(report: PhifOrdersReport, filters: Ord
   }
   sheet.getColumn("createdAt").numFmt = "yyyy-mm-dd";
   sheet.getColumn("receivedAt").numFmt = "yyyy-mm-dd";
+  sheet.getColumn("firstObservedAt").numFmt = "yyyy-mm-dd hh:mm";
   sheet.getColumn("quantity").numFmt = "0.####";
   sheet.getColumn("batch").numFmt = "@";
   return workbook;
 }
 
-export async function buildOrdersPdf(report: PhifOrdersReport, filters: OrdersFilters, fonts: { regular: string; bold: string }, now = Date.now()) {
+export async function buildOrdersPdf(report: PhifOrdersReport, filters: OrdersFilters, fonts: { regular: string; bold: string }, now = Date.now(), pendingOnly = true) {
   const view = ordersView(report, filters, now);
   if (view.periodError) throw new Error(view.periodError);
   const { Document, Page, Text, View, Font, pdf, StyleSheet } = await import("@react-pdf/renderer");
@@ -76,15 +80,16 @@ export async function buildOrdersPdf(report: PhifOrdersReport, filters: OrdersFi
     footer: { position: "absolute", bottom: 16, left: 26, right: 26, textAlign: "right", fontSize: 8, color: "#52645f" },
   });
   const columns = [
-    ["رقم الطلب", 13], ["تاريخ الإنشاء", 10], ["الدواء", 23], ["المورد", 21],
-    ["التشغيلة", 9], ["الكمية المعتمدة", 7], ["الحالة", 10], ["أيام منذ الإنشاء", 7],
+    ["رقم الطلب", 12], ["تاريخ الإنشاء", 9], ["الدواء", 20], ["المورد", 15],
+    ["التشغيلة", 7], ["الكمية المعتمدة", 5], ["الحالة", 9], ["الاستلام المؤكد ومصدره", 10], ["أول رصد غير مؤكد", 8], ["المدة بالأيام", 5],
   ] as const;
-  const rows = ordersExportRows(report, filters, true, now);
-  const document = <Document title="كشف أصناف طلبيات PHIF غير المستلمة" author={report.pharmacy} language="ar">
+  const rows = ordersExportRows(report, filters, pendingOnly, now);
+  const title = pendingOnly ? "كشف أصناف الطلبيات غير المستلمة" : "كشف متابعة طلبيات PHIF";
+  const document = <Document title={title} author={report.pharmacy} language="ar">
     <Page size="A4" orientation="landscape" style={style.page} wrap>
       <View style={style.header} fixed>
         <Text style={{ fontSize: 18, fontWeight: 700, color: "#17685d" }}>{report.pharmacy}</Text>
-        <Text style={{ fontSize: 14, fontWeight: 700 }}>كشف أصناف الطلبيات غير المستلمة</Text>
+        <Text style={{ fontSize: 14, fontWeight: 700 }}>{title}</Text>
         <Text style={{ fontSize: 9 }}>{ordersPeriodLabel(filters)}</Text>
         <Text style={{ fontSize: 9 }}>{ordersFilterLabel(filters)}</Text>
         <Text style={{ fontSize: 9 }}>{`نسخة آخر مزامنة ناجحة: ${new Date(report.fetchedAt).toLocaleString("en-GB", { timeZone: "Africa/Tripoli", hour12: false })} | عدد البنود: ${rows.length}`}</Text>
@@ -95,11 +100,12 @@ export async function buildOrdersPdf(report: PhifOrdersReport, filters: OrdersFi
       </View>
       {rows.map((row, i) => <View key={i} wrap={false} style={[style.row, { backgroundColor: i % 2 ? "#f5f8f6" : "#ffffff" }]}>
         {[row.orderNumber, orderDateLabel(row.createdAt), row.medicine, row.supplier || "غير متاح", row.batch || "غير متاحة",
-          row.quantity ?? "غير موثقة", row.status, row.ageDays ?? "غير محدد"].map((cell, c) =>
-          <Text key={c} style={[style.cell, { width: `${columns[c][1]}%`, direction: [0, 1, 4, 5, 7].includes(c) ? "ltr" : "rtl" }]}>{String(cell)}</Text>)}
+          row.quantity ?? "غير موثقة", row.status, `${orderDateLabel(row.receivedAt)}\n${row.receiptSource}`,
+          row.firstObservedAt ? orderDateLabel(row.firstObservedAt) : "غير مرصود", row.ageDays ?? "غير متوفر"].map((cell, c) =>
+          <Text key={c} style={[style.cell, { width: `${columns[c][1]}%`, fontSize: 8.5, direction: [0, 1, 4, 5, 8, 9].includes(c) ? "ltr" : "rtl" }]}>{String(cell)}</Text>)}
       </View>)}
-      {!rows.length && <Text style={{ textAlign: "right", marginTop: 15 }}>لا توجد أصناف غير مستلمة ضمن الفلاتر المحددة</Text>}
-      <Text fixed style={style.footer}>كشف غير المستلم حسب آخر مزامنة؛ المدة من إنشاء الطلب حتى إصدار التقرير، وليست منذ موافقة المورد. لا يشمل الأصناف المستلمة.</Text>
+      {!rows.length && <Text style={{ textAlign: "right", marginTop: 15 }}>لا توجد أصناف مطابقة ضمن الفلاتر المحددة</Text>}
+      <Text fixed style={style.footer}>المدة حتى الاستلام المؤكد فقط للمستلم، وحتى إصدار التقرير لغير المستلم. أول رصد آلي ليس تاريخ استلام فعليًا ولا يدخل في حساب مدة الاستلام.</Text>
       <Text fixed style={{ position: "absolute", bottom: 34, left: 26, fontSize: 9 }} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
     </Page>
   </Document>;

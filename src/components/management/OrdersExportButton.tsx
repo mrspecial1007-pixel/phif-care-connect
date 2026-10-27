@@ -16,7 +16,7 @@ export function OrdersExportButton({ enabled, filters, snapshot }: { enabled: bo
     if (timer.current) clearTimeout(timer.current);
     if (url.current) URL.revokeObjectURL(url.current);
   }; }, []);
-  async function run(format: "xlsx" | "pdf") {
+  async function run(format: "xlsx" | "pdf", pendingOnly = true) {
     if (lock.current || !enabled || !snapshot) return;
     lock.current = true; setBusy(true);
     try {
@@ -30,7 +30,7 @@ export function OrdersExportButton({ enabled, filters, snapshot }: { enabled: bo
         timer.current = setTimeout(() => reject(new Error("انتهت مهلة إنشاء الملف")), 180000);
         w.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data);
         w.onerror = () => reject(new Error("تعذر تشغيل مولّد التصدير"));
-        w.postMessage({ report, filters, format, fonts: {
+        w.postMessage({ report, filters, format, pendingOnly, fonts: {
           regular: new URL("/fonts/Amiri-Regular.ttf", location.origin).href,
           bold: new URL("/fonts/Amiri-Bold.ttf", location.origin).href,
         } });
@@ -54,5 +54,6 @@ export function OrdersExportButton({ enabled, filters, snapshot }: { enabled: bo
   </DropdownMenuTrigger><DropdownMenuContent align="end">
     <DropdownMenuItem onSelect={() => void run("xlsx")}><FileSpreadsheet className="size-4" />Excel حسب الفلاتر</DropdownMenuItem>
     <DropdownMenuItem onSelect={() => void run("pdf")}><FileText className="size-4" />PDF للأصناف غير المستلمة</DropdownMenuItem>
+    <DropdownMenuItem onSelect={() => void run("pdf", false)}><FileText className="size-4" />PDF حسب الفلاتر مع تواريخ الاستلام</DropdownMenuItem>
   </DropdownMenuContent></DropdownMenu>;
 }
