@@ -24,9 +24,31 @@ describe("manual Bridge transport and safe diagnostics", () => {
   it("sends only one scoped read, keeps redirects disabled, and handles invalid JSON", async () => {
     const fetcher = vi.fn(async () => Response.json({ok:true,rows:[]}));
     expect(await requestPhifBridgeRead("stock","tiryaq","s",fetcher)).toMatchObject({ok:true});
-    expect(fetcher).toHaveBeenCalledWith("http://127.0.0.1:5174/api/bridge-sessions/s/stock", expect.objectContaining({method:"GET",redirect:"error",cache:"no-store",headers:expect.objectContaining({"X-Pharmacy-Id":"tiryaq"})}));
+    expect(fetcher).toHaveBeenCalledWith("http://127.0.0.1:5174/api/bridge-sessions/s/stock", expect.objectContaining({method:"GET",redirect:"manual",cache:"no-store",headers:expect.objectContaining({"X-Pharmacy-Id":"tiryaq"})}));
     await expect(requestPhifBridgeRead("orders","tiryaq","s",vi.fn(async () => new Response("not-json")))).rejects.toMatchObject({code:"BRIDGE_RESPONSE"});
     vi.stubEnv("PHIF_BRIDGE_BASE_URL", "https://user:password@example.test"); expect(() => phifBridgeOrigin()).toThrow();
+  });
+  it.each(["orders", "stock"] as const)("uses a Workers-compatible redirect mode for %s without following redirects", async kind => {
+    vi.stubEnv("NODE_ENV", "production");
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, options?: RequestInit) => {
+      if (options?.redirect === "error") throw new TypeError("Workers does not implement redirect mode error");
+      return Response.json({ ok: true });
+    });
+    expect(await requestPhifBridgeRead(kind, "tiryaq", "private-session", fetcher)).toEqual({ ok: true });
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith(`https://phif-bridge.altiryaq-pharma.com/api/bridge-sessions/private-session/${kind}`,
+      expect.objectContaining({ redirect: "manual", cache: "no-store", headers: { "X-PHIF-Bridge-Secret": "secret-not-for-logs", "X-Pharmacy-Id": "tiryaq" } }));
+    for (const status of [301, 302, 303, 307, 308]) {
+      const redirect = vi.fn(async () => new Response("", { status, headers: { Location: "https://different-origin.test/private-target" } }));
+      await expect(requestPhifBridgeRead(kind, "tiryaq", "private-session", redirect)).rejects.toMatchObject({ code: "BRIDGE_REDIRECT" });
+      expect(redirect).toHaveBeenCalledTimes(1);
+    }
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toMatch(/private-session|secret-not-for-logs|different-origin|private-target/);
+  });
+  it("records only safe request-stage diagnostics when the runtime rejects a request", async () => {
+    const fetcher = vi.fn(async () => { throw new TypeError("private-session secret-not-for-logs"); });
+    await expect(requestPhifBridgeRead("stock", "tiryaq", "private-session", fetcher)).rejects.toMatchObject({ code: "BRIDGE_NETWORK" });
+    expect(console.warn).toHaveBeenCalledWith("[phif-bridge-read]", expect.objectContaining({ stage: "request", httpStatus: null, exceptionName: "TypeError" }));
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toMatch(/private-session|secret-not-for-logs/);
   });
   it("applies one whole-request deadline without retries or leaving a pending promise", async () => {
     vi.useFakeTimers();

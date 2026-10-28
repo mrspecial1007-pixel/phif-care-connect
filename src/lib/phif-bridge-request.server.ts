@@ -24,9 +24,12 @@ export async function requestPhifBridgeRead(kind: "orders" | "stock", pharmacyId
   try {
     const response = await fetchImpl(`${base}/api/bridge-sessions/${encodeURIComponent(sessionId)}/${kind}`, {
       method: "GET", headers: { "X-PHIF-Bridge-Secret": secret, "X-Pharmacy-Id": pharmacyId },
-      signal: controller.signal, redirect: "error", cache: "no-store",
+      signal: controller.signal, redirect: "manual", cache: "no-store",
     });
     status = response.status;
+    // Workers rejects redirect: "error" before sending. Manual mode keeps credentials on this origin.
+    if (response.status >= 300 && response.status < 400)
+      throw new PhifBridgeRequestError("BRIDGE_REDIRECT", "أعاد عنوان PHIF Bridge توجيه الطلب؛ لم يُتبع التحويل حفاظًا على بيانات الاتصال. راجع عنوان الخدمة");
     const payload = await response.json().catch(() => { throw new PhifBridgeRequestError("BRIDGE_RESPONSE", "استجابة PHIF Bridge ليست بيانات صالحة؛ احتُفظ بالنسخة السابقة"); });
     if (response.status === 401 || response.status === 403)
       throw new PhifBridgeRequestError("BRIDGE_AUTHORIZATION", "رفض Bridge صلاحية الاتصال؛ راجع توافق السر وإعداد الصيدلية بين النطاقين");
@@ -43,6 +46,7 @@ export async function requestPhifBridgeRead(kind: "orders" | "stock", pharmacyId
     const failure = controller.signal.aborted ? new PhifBridgeRequestError("BRIDGE_TIMEOUT", "انتهت مهلة اتصال Tracker بـBridge؛ لا تكرر الطلب قبل انتهاء العملية الحالية")
       : error instanceof PhifBridgeRequestError ? error : new PhifBridgeRequestError("BRIDGE_NETWORK", "تعذر وصول خادم Tracker إلى Bridge؛ راجع عنوان الخدمة والاتصال، وليس جلسة PHIF فقط");
     console.warn("[phif-bridge-read]", { kind, code: failure.code, httpStatus: status ?? null, elapsedMs: Date.now() - started,
+      stage: status === undefined ? "request" : "response", exceptionName: ["TypeError", "AbortError", "TimeoutError"].includes(error?.name) ? error.name : null,
       origin: new URL(base).origin, transportCode: ["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN", "ERR_HTTP2_ERROR", "UND_ERR_CONNECT_TIMEOUT"].includes(error?.cause?.code) ? error.cause.code : null });
     throw failure;
   } finally { clearTimeout(timer); }
