@@ -25,7 +25,8 @@ export async function refreshStoredOrders(
 export function useStoredPhifOrders(scope: string) {
   const client = useQueryClient(), queryKey = ["phif_orders", scope] as const;
   const access = useQuery({ queryKey: ["phif_orders_access", scope], queryFn: () => getPhifOrdersStorageAccess(),
-    staleTime: Infinity, refetchInterval: false, refetchOnMount: false, refetchOnReconnect: false, refetchOnWindowFocus: false, retry: false });
+    // This request reads Cloud only; it never probes Bridge or PHIF.
+    staleTime: 30000, refetchInterval: false, refetchOnMount: true, refetchOnReconnect: false, refetchOnWindowFocus: false, retry: false });
   const stored = useQuery<OrdersSnapshot | null>({ ...ordersCacheOptions, queryKey, enabled: false, queryFn: async () => null });
   const [loading, setLoading] = useState(true), [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null), [expired, setExpired] = useState(false);
@@ -53,8 +54,10 @@ export function useStoredPhifOrders(scope: string) {
     }).catch(() => { if (mounted.current) setError("تعذر فتح النسخة المحلية الآمنة. لم تُحذف البيانات المحفوظة."); })
       .finally(() => { if (mounted.current) setLoading(false); });
   }, [access.data, client, scope]);
-  const snapshot = access.data && !access.error && stored.data?.pharmacyId === access.data.pharmacyId
-    && stored.data.subject === access.data.subject ? stored.data : null;
+  const accessDenied = access.error && /Unauthorized|Forbidden|غير مصرح|لا تملك صلاحية/i.test((access.error as Error).message);
+  const candidate = access.data?.cloudSnapshot || stored.data;
+  const snapshot = access.data && !accessDenied && candidate?.pharmacyId === access.data.pharmacyId
+    && candidate.subject === access.data.subject ? candidate : null;
   const sessionExpired = expired || Boolean(access.data && !access.data.sessionCheckFailed
     && (!access.data.sessionExpiresAt || Date.parse(access.data.sessionExpiresAt) <= Date.now()));
   async function refresh() {
@@ -62,6 +65,7 @@ export function useStoredPhifOrders(scope: string) {
     if (lock.current) return;
     if (!currentAccess || access.error) { void access.refetch(); return; }
     if (loading) return;
+    if (currentAccess.manualSyncAccess?.ready === false) { setError(currentAccess.manualSyncAccess.message); return; }
     lock.current = true; setUpdating(true); setError(null);
     try {
       const previous = client.getQueryData<OrdersSnapshot>(queryKey) || null;
@@ -70,12 +74,13 @@ export function useStoredPhifOrders(scope: string) {
       if (!mounted.current) return;
       if (!result.ok) { setError(result.error); setExpired(result.reason === "session_expired"); setSource("saved"); return; }
       client.setQueryData(queryKey, result.snapshot); setSource("live"); setExpired(false); setError(result.cacheWarning);
+      client.setQueryData(["phif_orders_access", scope], (previous: typeof access.data) => previous
+        ? { ...previous, cloudSnapshot: result.snapshot, cloudReady: true } : previous);
       void access.refetch();
     } catch (error) { if (mounted.current) { setSource("saved"); setError(error instanceof Error ? error.message : "تعذر حفظ التحديث؛ احتُفظ بالنسخة السابقة"); } }
     finally {
       lock.current = false;
       if (mounted.current) setUpdating(false);
-      void client.invalidateQueries({ queryKey: ["phif_connection_indicator", scope] });
       void client.invalidateQueries({ queryKey: ["phif_session_status"] });
     }
   }
@@ -88,7 +93,8 @@ export function useStoredPhifOrders(scope: string) {
       void access.refetch();
     },
     isLoading: !snapshot && !access.error && (loading || access.isLoading), isFetching: updating,
-    canRefresh: Boolean(access.error || (access.data?.cloudReady && !loading)), refresh, source,
+    manualSyncAccess: access.data?.manualSyncAccess,
+    canRefresh: Boolean(access.error || (access.data?.cloudReady && !loading && access.data.manualSyncAccess?.ready !== false)), refresh, source,
     central: Boolean(access.data?.cloudSnapshot) || source === "live",
     sessionExpired, error: access.error ? (access.error as Error).message : error || access.data?.cloudError };
 }

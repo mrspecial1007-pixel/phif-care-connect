@@ -21,7 +21,8 @@ export const ordersSnapshotSchema = z.object({
   report: ordersReportSchema, signature: z.string().regex(/^[a-f0-9]{64}$/),
 }).refine(snapshot => snapshot.report.complete && snapshot.report.orders.every(order => order.lines.every(line => line.approvedQuantity !== 0)));
 export type OrdersSnapshot = z.infer<typeof ordersSnapshotSchema>;
-export type OrdersStorageAccess = { pharmacyId: string; subject: string; storageKey: string; canExport: boolean; sessionExpiresAt: string | null; sessionCheckFailed?: boolean };
+export type OrdersStorageAccess = { pharmacyId: string; subject: string; storageKey: string; canExport: boolean; sessionExpiresAt: string | null; sessionCheckFailed?: boolean;
+  manualSyncAccess?: import("./phif-tracker-user.server").PhifTrackerAccess };
 
 export function assertOrdersSnapshotReplacement(previous: OrdersSnapshot | null, next: OrdersSnapshot) {
   if (!previous) return;

@@ -20,6 +20,12 @@ export function createPhifBridgeServer({
     try {
       setNoStore(res);
       const url = new URL(req.url || "/", requestOrigin(req));
+      const readKind = url.pathname.match(/^\/api\/bridge-sessions\/[^/]+\/(orders|stock|historical-transactions|today-transactions)$/)?.[1];
+      if (readKind) {
+        const started = performance.now();
+        res.once("close", () => console.info("[phif-manual-read]", JSON.stringify({ kind: readKind,
+          httpStatus: res.headersSent ? res.statusCode : null, completed: res.writableFinished, elapsedMs: Math.round(performance.now() - started) })));
+      }
       if (url.pathname.startsWith("/phif-login/")) {
         const sessionId = decodeURIComponent(url.pathname.split("/")[2] || "");
         const session = store.get(sessionId);
@@ -45,7 +51,8 @@ export function createPhifBridgeServer({
 
 async function handleApi(req, res, url, context) {
   if (req.method === "GET" && url.pathname === "/api/health") {
-    return json(res, 200, { ok: true, service: "phif-local-bridge" });
+    return json(res, 200, { ok: true, service: "phif-local-bridge", protocolVersion: 1,
+      capabilities: { manualReadFence: true, readOnlyOrders: true, manualReadTimeoutMs: 115000 } });
   }
 
   if (req.method === "POST" && url.pathname === "/api/bridge-sessions") {

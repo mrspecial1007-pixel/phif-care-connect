@@ -93,13 +93,13 @@ describe("shared Cloud orders, user-scoped delivery and temporary local cache", 
     expect(await completeCloudOrders(db({ apply: { error: { message: "network" } } }), "tiryaq", "admin", op, report)).toEqual(reportWithoutExport());
   });
   it("has no automatic PHIF probes or timers/focus refetch and keeps data reads separate from the refresh POST", () => {
-    for (const file of ["src/components/PhifConnectionIndicator.tsx", "src/lib/use-stored-phif-orders.ts", "src/routes/phif-sync.tsx"]) {
+    for (const file of ["src/lib/use-stored-phif-orders.ts", "src/routes/phif-sync.tsx"]) {
       const source = readFileSync(file, "utf8");
       expect(source).toContain("refetchInterval: false"); expect(source).toContain("refetchOnWindowFocus: false");
       expect(source).toContain("refetchOnReconnect: false");
     }
-    const connection = readFileSync("src/lib/phif-connection.server.ts", "utf8");
-    expect(connection).not.toMatch(/\bfetch\(|bridgeJson\(|\/(home|status)/);
+    const savedSession = readFileSync("src/lib/phif-saved-session.server.ts", "utf8");
+    expect(savedSession).not.toMatch(/\bfetch\(|bridgeJson\(|\.(insert|update|delete|rpc)\(/);
     const sync = readFileSync("src/lib/phif-sync.functions.ts", "utf8").split("export const getPhifSessionStatus")[1].split("export const createPhifLoginSession")[0];
     expect(sync).not.toContain("bridgeJson("); expect(sync).not.toContain("markBridgeSession(");
   });

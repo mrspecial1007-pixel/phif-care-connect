@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { OrdersExportButton } from "@/components/management/OrdersExportButton";
 import { OrderReceiptDateEditor } from "@/components/management/OrderReceiptDateEditor";
+import { PhifTrackerIdentityNotice } from "@/components/management/PhifTrackerIdentityNotice";
 import { confirmedReceiptDate, receiptDateSource } from "@/lib/phif-order-receipts.helpers";
 import { useSession } from "@/lib/queries";
 import { itemsAnalyticsScope } from "@/lib/items-analytics-cache.helpers";
@@ -50,6 +51,10 @@ function OrdersBody({ scope }: { scope: string }) {
           && (!report.receipts || report.receipts.ready || report.receipts.missing))} />
       </div>
     </header>
+    <PhifTrackerIdentityNotice access={report.manualSyncAccess} />
+    {report.data && !report.central && <p role="status" className="border-y border-amber-200 py-2 text-xs text-amber-950">
+      هذه نسخة احتياطية تخص هذا الحساب والنطاق فقط؛ لم تُحفظ نسخة مشتركة في Cloud بعد. لا تُنقل البيانات المحلية تلقائيًا.
+    </p>}
     {report.data && <p className="text-xs text-muted-foreground">
       {report.data.totalOrders} طلبًا متاحًا · آخر مزامنة ناجحة: <strong>{new Date(report.data.fetchedAt).toLocaleString("ar-LY", { timeZone: "Africa/Tripoli" })}</strong>
       {" · "}{report.source === "live" ? "جُلبت يدويًا من PHIF وحُفظت في Cloud" : report.central ? "نسخة مشتركة محفوظة في Cloud" : "نسخة مؤقتة على هذا الجهاز فقط"}

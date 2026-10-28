@@ -45,7 +45,6 @@ type BridgeSessionRecord = {
 
 type PhifSessionStatusResult = {
   configured: boolean;
-  authenticated: boolean;
   session_available: boolean;
   login_url: string | null;
   expires_at: string | null;
@@ -69,7 +68,6 @@ const completionRangeSchema = z.object({
   limit: z.number().int().min(1).max(500).optional().default(100),
 });
 
-const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:5174";
 const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com";
 const COMMON_FINANCIAL_KEYS = [
   "price",
@@ -400,11 +398,6 @@ export function parsePhifTransactionDetail(invoiceKey: string, payload: unknown)
   };
 }
 
-function bridgeBaseUrl() {
-  const base = process.env.PHIF_BRIDGE_BASE_URL?.trim() || DEFAULT_BRIDGE_BASE_URL;
-  return base.replace(/\/+$/, "");
-}
-
 function bridgePublicBaseUrl() {
   const base = process.env.PHIF_BRIDGE_PUBLIC_BASE_URL?.trim() || DEFAULT_BRIDGE_PUBLIC_BASE_URL;
   return base.replace(/\/+$/, "");
@@ -425,7 +418,7 @@ function publicForwardHeaders() {
 function assertBridgeConfigured() {
   const secret = bridgeSecret();
   if (!secret) throw new Error("PHIF bridge secret is not configured");
-  return { base: bridgeBaseUrl(), secret };
+  return { secret };
 }
 
 function isSessionFresh(session: BridgeSessionRecord | null | undefined) {
@@ -454,7 +447,9 @@ async function bridgeJson(
     body?: unknown;
   } = {},
 ) {
-  const { base, secret } = assertBridgeConfigured();
+  const { secret } = assertBridgeConfigured();
+  const { phifBridgeOrigin } = await import("./phif-bridge-request.server");
+  const base = phifBridgeOrigin();
   const headers = new Headers({
     "X-PHIF-Bridge-Secret": secret,
     ...publicForwardHeaders(),
@@ -669,12 +664,11 @@ export const getPhifSessionStatus = createServerFn({ method: "GET" }).handler(as
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { requireTiryaqPermission } = await import("@/lib/user-management.functions");
   const { pharmacy_id } = await requireTiryaqPermission("phif_sync_run");
-  const { readPhifConnectionStatus } = await import("./phif-connection.server");
-  const status = await readPhifConnectionStatus(supabaseAdmin, pharmacy_id);
-  return { configured: Boolean(bridgeSecret()), authenticated: status.authenticated,
-    session_available: Boolean(status.sessionAvailable), login_url: null, expires_at: status.expiresAt,
-    message: status.authenticated ? "نجحت آخر مزامنة يدوية مؤخرًا" : status.sessionAvailable
-      ? "توجد جلسة محفوظة؛ يتحقق الاتصال عند الفحص أو المزامنة اليدوية فقط" : "سجّل الدخول إلى PHIF قبل المزامنة اليدوية",
+  const { readSavedPhifSession } = await import("./phif-saved-session.server");
+  const saved = await readSavedPhifSession(supabaseAdmin, pharmacy_id);
+  return { configured: Boolean(bridgeSecret()), session_available: Boolean(saved),
+    login_url: null, expires_at: saved?.expires_at ?? null,
+    message: saved ? "توجد جلسة محفوظة؛ تُتحقق صلاحيتها عند المزامنة اليدوية" : "سجّل الدخول إلى PHIF قبل المزامنة اليدوية",
   } satisfies PhifSessionStatusResult;
 });
 

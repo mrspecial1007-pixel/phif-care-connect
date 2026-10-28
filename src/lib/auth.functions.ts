@@ -87,6 +87,8 @@ export const unlockPharmacy = createServerFn({ method: "POST" })
       pharmacy_name: pharm.name,
       pharmacy_address: pharm.address ?? undefined,
       pharmacy_phone: pharm.phone ?? undefined,
+      user_id: undefined,
+      user_name: undefined,
       user_role: "legacy",
       user_permissions: adminPermissions(),
       unlocked_at: Date.now(),

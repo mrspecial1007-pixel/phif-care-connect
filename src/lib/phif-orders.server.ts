@@ -1,5 +1,6 @@
 import type { PhifOrdersReport } from "./phif-orders.helpers";
 import { z } from "zod";
+import { requestPhifBridgeRead, PhifBridgeRequestError } from "./phif-bridge-request.server";
 
 const sourceReport = z.object({
   orders: z.array(z.object({
@@ -16,7 +17,9 @@ const sourceReport = z.object({
   && new Set(value.orders.map(o => o.id)).size === value.orders.length
   && value.complete === value.orders.every(o => !o.detailError));
 
-export class OrdersSessionExpiredError extends Error {}
+export class OrdersSessionExpiredError extends Error {
+  constructor(message: string, public reason: "session_expired" | "bridge_session_missing" = "session_expired") { super(message); }
+}
 
 /** Reads an existing session only: no creation, expiry writes, sync or receipt actions. */
 export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fetch, sessionRecordId?: string): Promise<Omit<PhifOrdersReport, "pharmacy" | "canExport">> {
@@ -29,24 +32,14 @@ export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fe
   if (error) throw new Error("تعذر قراءة جلسة PHIF للصيدلية الحالية");
   if (!data?.bridge_session_id || !Number.isFinite(Date.parse(data.expires_at)) || Date.parse(data.expires_at) <= Date.now())
     throw new OrdersSessionExpiredError("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
-  const secret = process.env.PHIF_BRIDGE_SECRET?.trim();
-  if (!secret) throw new Error("إعداد اتصال PHIF Bridge غير متاح على الخادم");
-  const base = (process.env.PHIF_BRIDGE_BASE_URL?.trim() || "http://127.0.0.1:5174").replace(/\/+$/, "");
-  let response: Response;
-  try {
-    response = await fetchImpl(`${base}/api/bridge-sessions/${encodeURIComponent(data.bridge_session_id)}/orders`, {
-      method: "GET", headers: { "X-PHIF-Bridge-Secret": secret, "X-Pharmacy-Id": pharmacyId },
-      signal: AbortSignal.timeout(120000), redirect: "error", cache: "no-store",
-    });
-  } catch { throw new Error("تعذر الاتصال بـPHIF Bridge أو انتهت مهلة قراءة الطلبيات. أعد المحاولة"); }
   let payload: any;
-  try { payload = await response.json(); }
-  catch { throw new Error("تعذر قراءة استجابة خدمة طلبيات PHIF"); }
-  if (response.status === 404 && /session not found|session.*expired/i.test(payload?.error || ""))
-    throw new OrdersSessionExpiredError("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
-  if (!response.ok || payload?.ok !== true) throw new Error(response.status === 404
-    ? "خدمة الطلبيات غير متاحة؛ يلزم تحديث Bridge المحلي أو إعادة تسجيل جلسة PHIF"
-    : "تعذر جلب جميع طلبيات PHIF بأمان. تحقق من جلسة PHIF وإعداد هوية الصيدلية ثم حدّث النتائج");
+  try {
+    payload = await requestPhifBridgeRead("orders", pharmacyId, data.bridge_session_id, fetchImpl);
+  } catch (error) {
+    if (error instanceof PhifBridgeRequestError && ["BRIDGE_SESSION_MISSING", "PHIF_AUTH_REQUIRED"].includes(error.code))
+      throw new OrdersSessionExpiredError(error.message, error.code === "BRIDGE_SESSION_MISSING" ? "bridge_session_missing" : "session_expired");
+    throw error;
+  }
   const parsed = sourceReport.safeParse(payload);
   if (!parsed.success) throw new Error("استجابة طلبيات PHIF غير مكتملة");
   payload = parsed.data;

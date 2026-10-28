@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { ReportBackLink } from "@/components/management/ReportBackLink";
+import { PhifTrackerIdentityNotice } from "@/components/management/PhifTrackerIdentityNotice";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,8 @@ import { filterInventoryItems, inventoryAvailability, inventoryExpiry, inventory
 import { formatStockExpiry as formatExpiry, stockExpiryValue, stockScientificSubtitle } from "@/lib/phif-stock-details.helpers";
 import { CalendarDays, Download, PackageSearch, RefreshCw, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
+import { useSession } from "@/lib/queries";
+import { itemsAnalyticsScope } from "@/lib/items-analytics-cache.helpers";
 
 export const Route = createFileRoute("/management/inventory")({
   component: InventoryPage,
@@ -37,6 +40,7 @@ function money(value: unknown) {
 
 function InventoryPage() {
   const qc = useQueryClient();
+  const session = useSession(), scope = itemsAnalyticsScope(session.data);
   const [query, setQuery] = useState("");
   const [stockFilter, setStockFilter] = useState<InventoryMode>("available");
   const [lowThreshold, setLowThreshold] = useState("1");
@@ -51,11 +55,11 @@ function InventoryPage() {
   const syncFn = useServerFn(syncPhifStock);
 
   const summary = useQuery({
-    queryKey: ["phif_stock_summary"],
+    queryKey: ["phif_stock_summary", scope], enabled: Boolean(scope),
     queryFn: () => summaryFn(),
   });
   const items = useQuery({
-    queryKey: ["phif_stock_items"],
+    queryKey: ["phif_stock_items", scope], enabled: Boolean(scope),
     queryFn: () => listFn({ data: { query: "", limit: 5000 } }),
   });
   const sync = useMutation({
@@ -65,17 +69,16 @@ function InventoryPage() {
       qc.invalidateQueries({ queryKey: ["phif_stock_summary"] });
       qc.invalidateQueries({ queryKey: ["phif_stock_items"] });
       qc.invalidateQueries({ queryKey: ["items_analytics"] });
-      qc.invalidateQueries({ queryKey: ["phif_connection_indicator"] });
       qc.invalidateQueries({ queryKey: ["phif_session_status"] });
     },
     onError: (error: any) => {
       toast.error(error?.message ?? "تعذرت مزامنة المخزون");
       qc.invalidateQueries({ queryKey: ["phif_stock_summary"] });
-      qc.invalidateQueries({ queryKey: ["phif_connection_indicator"] });
     },
   });
 
   const lastRun = summary.data?.last_run;
+  const successfulRun = summary.data?.last_successful_run;
   const canViewCost = summary.data?.can_view_cost === true;
   const allItems = items.data ?? [];
   const threshold = lowThreshold.trim() === "" || Number(lowThreshold) < 0 ? NaN : Number(lowThreshold);
@@ -105,21 +108,24 @@ function InventoryPage() {
             قراءة مخزون التأمين كما هو محفوظ في آخر Snapshot. لا يتم تعديل فواتير PHIF أو الصرف أو بيانات المستفيدين.
           </p>
         </div>
-        <Button onClick={() => sync.mutate()} disabled={sync.isPending} className="h-10">
+        <Button onClick={() => { if (!sync.isPending) sync.mutate(); }} disabled={sync.isPending || !summary.data?.manual_sync_access?.ready} className="h-10">
           <RefreshCw className="h-4 w-4 ml-2" />
           {sync.isPending ? "جاري المزامنة..." : "مزامنة المخزون"}
         </Button>
       </div>
+      <PhifTrackerIdentityNotice access={summary.data?.manual_sync_access} />
 
       <div className="grid grid-cols-3 gap-2">
         <CompactStat label="الأصناف" value={summary.data?.current_count ?? 0} />
-        <CompactStat label="آخر تشغيل" value={lastRun?.status === "completed" ? "مكتمل" : (lastRun?.status ?? "—")} />
-        <CompactStat label="مستورد" value={lastRun ? `${lastRun.imported_records}/${lastRun.total_records}` : "—"} />
+        <CompactStat label="آخر محاولة" value={lastRun?.status === "completed" ? "مكتملة" : lastRun?.status === "failed" ? "فشلت" : lastRun?.status === "pending" ? "قيد التشغيل" : "—"} />
+        <CompactStat label="آخر استيراد ناجح" value={successfulRun ? `${successfulRun.imported_records}/${successfulRun.total_records}` : "—"} />
       </div>
 
       <div className="rounded-lg border bg-card p-2 text-xs text-muted-foreground">
-        آخر مزامنة: {formatDateTime(lastRun?.finished_at ?? lastRun?.started_at)}
-        {lastRun?.error_message && <span className="block pt-1 text-destructive">{lastRun.error_message}</span>}
+        آخر مزامنة ناجحة: {formatDateTime(successfulRun?.finished_at)}
+        {lastRun && lastRun.id !== successfulRun?.id && <span className="block pt-1">آخر محاولة: {formatDateTime(lastRun.finished_at ?? lastRun.started_at)}؛ المخزون المعروض من آخر مزامنة ناجحة.</span>}
+        {lastRun?.error_message && <span className="block pt-1 text-destructive">{lastRun.error_message.startsWith("Closed by approved maintenance")
+          ? "أُغلق تشغيل قديم معلّق بإجراء صيانة موثّق، دون تغيير المخزون" : "لم تكتمل آخر محاولة؛ لم يُستبدل المخزون المحفوظ"}</span>}
       </div>
 
       {!canViewCost && (

@@ -15,6 +15,12 @@ vi.mock("@tanstack/react-start/server", () => ({ setResponseHeader: vi.fn() }));
 vi.mock("@/lib/pharmacy-session.server", () => ({ requirePharmacySession: async () => mocks.context }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from: (table: string) => {
   mocks.calls.push(["from", table]);
+  if (table === "pharmacy_users") {
+    const q: any = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: mocks.context.session.data.user_id ? {
+      id: mocks.context.session.data.user_id, pharmacy_id: mocks.context.pharmacy_id, is_active: true,
+      role: mocks.context.session.data.user_role, permissions: mocks.context.session.data.user_permissions,
+    } : null, error: null }) }; return q;
+  }
   if (table === "phif_order_snapshots") {
     const q: any = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: mocks.cloud ? {
       pharmacy_id: "tiryaq", report: mocks.cloud, version: 1, fetched_at: mocks.cloud.fetchedAt,

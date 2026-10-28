@@ -35,11 +35,9 @@ the stock-RPC rename. BYPASSRLS alone does not bypass object ACL checks.
 ## Update policy
 
 - Opening a page, focus, reconnect, export and timers never contact PHIF/Bridge.
-- The header reads DB metadata once; it never probes `/home` or refreshes cookies.
-  Green means a successful manual stock/orders operation in the last minute for
-  the current saved session. Old/uncertain evidence is explicitly unverified,
-  not an assertion of current authentication. A local timer can expire the
-  displayed evidence without making a network request.
+- The connection indicator and its evidence reads/writes have been removed.
+  Manual transaction controls read only saved login availability from the DB;
+  this does not probe PHIF or assert that its session is authenticated.
 - Only the existing explicit manual stock/orders actions fetch upstream data.
   Their Tracker reads have a 120-second timeout; Bridge has a 115-second deadline,
   cancels reads on client disconnect and rejects overlapping stock/orders reads

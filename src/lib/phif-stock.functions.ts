@@ -4,8 +4,6 @@ import { createHash } from "node:crypto";
 import { hasPermission } from "@/lib/user-permissions";
 import { enrichStockIngredients, parseStockExpiry, extractStockBatchExpiry, stockBatchSource } from "@/lib/phif-stock-details.helpers";
 
-const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:5174";
-const DEFAULT_BRIDGE_PUBLIC_BASE_URL = "https://phif-bridge.altiryaq-pharma.com";
 
 const listInput = z.object({
   query: z.string().trim().max(120).optional().default(""),
@@ -128,50 +126,6 @@ export function normalizePhifStockRows(payload: unknown): NormalizedPhifStockRow
   }).filter(Boolean) as NormalizedPhifStockRow[];
 }
 
-function bridgeBaseUrl() {
-  const base = process.env.PHIF_BRIDGE_BASE_URL?.trim() || DEFAULT_BRIDGE_BASE_URL;
-  return base.replace(/\/+$/, "");
-}
-
-function bridgePublicBaseUrl() {
-  const base = process.env.PHIF_BRIDGE_PUBLIC_BASE_URL?.trim() || DEFAULT_BRIDGE_PUBLIC_BASE_URL;
-  return base.replace(/\/+$/, "");
-}
-
-function bridgeSecret() {
-  return process.env.PHIF_BRIDGE_SECRET?.trim() || null;
-}
-
-function publicForwardHeaders() {
-  const publicBase = new URL(bridgePublicBaseUrl());
-  return {
-    "X-Forwarded-Proto": publicBase.protocol.replace(":", ""),
-    "X-Forwarded-Host": publicBase.host,
-  };
-}
-
-async function bridgeJson(path: string, pharmacyId: string) {
-  const secret = bridgeSecret();
-  if (!secret) throw new Error("PHIF bridge secret is not configured");
-  const res = await fetch(`${bridgeBaseUrl()}${path}`, {
-    signal: AbortSignal.timeout(120000), redirect: "error", cache: "no-store",
-    headers: {
-      "X-PHIF-Bridge-Secret": secret,
-      "X-Pharmacy-Id": pharmacyId,
-      ...publicForwardHeaders(),
-    },
-  });
-  const text = await res.text();
-  let payload: any = {};
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    payload = { ok: false, error: "PHIF bridge returned a non-JSON response" };
-  }
-  if (!res.ok) throw new Error(payload?.error ?? `PHIF bridge request failed: ${res.status}`);
-  return payload;
-}
-
 function canSeeCost(session: any) {
   return !session.session?.data?.user_id && !session.session?.data?.user_role
     ? true
@@ -189,24 +143,11 @@ export const getPhifStockSummary = createServerFn({ method: "GET" }).handler(asy
   const session = await requireInventory();
   const { pharmacy_id } = session;
 
-  const { data: run } = await supabaseAdmin
-    .from("phif_stock_sync_runs")
-    .select("id, started_at, finished_at, status, total_records, imported_records, error_count, error_message")
-    .eq("pharmacy_id", pharmacy_id)
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const { count, error } = await supabaseAdmin
-    .from("phif_stock_items")
-    .select("id", { count: "exact", head: true })
-    .eq("pharmacy_id", pharmacy_id)
-    .eq("is_current", true);
-  if (error) throw new Error(error.message);
-
+  const { readPhifStockOverview } = await import("./phif-stock-overview.server");
+  const { phifTrackerAccess } = await import("./phif-tracker-user.server");
   return {
-    last_run: run ?? null,
-    current_count: count ?? 0,
+    ...await readPhifStockOverview(supabaseAdmin, pharmacy_id),
+    manual_sync_access: await phifTrackerAccess(supabaseAdmin, session),
     can_view_cost: canSeeCost(session),
   };
 });
@@ -276,6 +217,9 @@ export const syncPhifStock = createServerFn({ method: "POST" }).handler(async ()
   const session = await requireInventory();
   const { pharmacy_id } = session;
   const { runManualStockSync } = await import("./phif-stock-sync.server");
-  return runManualStockSync(supabaseAdmin, pharmacy_id, session.session.data.user_id,
-    id => bridgeJson(`/api/bridge-sessions/${encodeURIComponent(id)}/stock`, pharmacy_id), normalizePhifStockRows);
+  const { requirePhifTrackerUser } = await import("./phif-tracker-user.server");
+  const { requestPhifBridgeRead } = await import("./phif-bridge-request.server");
+  const actorId = await requirePhifTrackerUser(supabaseAdmin, session);
+  return runManualStockSync(supabaseAdmin, pharmacy_id, actorId,
+    id => requestPhifBridgeRead("stock", pharmacy_id, id), normalizePhifStockRows);
 });

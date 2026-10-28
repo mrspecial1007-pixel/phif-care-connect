@@ -106,11 +106,11 @@ function PhifSyncPage() {
       } else {
         toast.success("تم فحص حركات PHIF");
       }
-      await refetch();
     } catch (error: any) {
       toast.error(error?.message ?? "تعذر فحص حركات PHIF الآن. تحقق من جلسة PHIF أو حاول لاحقًا.");
     } finally {
       setChecking(false);
+      void qc.invalidateQueries({ queryKey: ["phif_session_status"] });
     }
   }
 
@@ -201,9 +201,6 @@ function PhifSyncPage() {
             فحص وحفظ فواتير PHIF الجديدة في جداول مستقلة بدون تعديل الصرف الحالي.
           </p>
         </div>
-        <Badge variant={status?.authenticated ? "default" : "outline"} className="shrink-0">
-          {status?.authenticated ? "مزامنة ناجحة مؤخرًا" : status?.session_available ? "جلسة غير مؤكدة" : "غير متصل"}
-        </Badge>
       </div>
 
       <Card className="p-4 space-y-4">
@@ -212,9 +209,9 @@ function PhifSyncPage() {
             <ShieldAlert className="h-5 w-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-semibold">حالة جلسة PHIF</div>
+            <div className="font-semibold">جلسة تسجيل الدخول المحفوظة</div>
             <div className="text-sm text-muted-foreground break-words">
-              {status?.message ?? "جاري التحقق..."}
+              {status?.message ?? "جارٍ قراءة بيانات الجلسة المحفوظة..."}
             </div>
           </div>
         </div>
@@ -248,7 +245,7 @@ function PhifSyncPage() {
           </Button>
           <Button variant="ghost" onClick={() => refetch()} className="gap-2">
             <RefreshCw className="h-4 w-4" />
-            تحديث حالة الجلسة
+            تحديث بيانات الجلسة المحفوظة
           </Button>
           <Button onClick={handleSave} disabled={!canSave} className="gap-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
