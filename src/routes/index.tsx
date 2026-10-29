@@ -12,6 +12,7 @@ import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard, statusMeta } from "@/components/PatientCard";
 import { todayISOLocal } from "@/lib/date";
 import { buildPhifPreparationIndex, validPreparationRange } from "@/lib/phif-preparation.helpers";
+import { PhifPreparationList } from "@/components/PhifPreparationList";
 
 export const Route = createFileRoute("/")({
   component: () => <Gate><Dashboard /></Gate>,
@@ -202,7 +203,10 @@ function Dashboard() {
             </div>}
           </div>
           {!preparationValid ? <p role="alert" className="text-sm text-destructive">اختر تاريخًا صحيحًا، على أن تكون نهاية الفترة مساوية لبدايتها أو بعدها.</p> :
-            !isLoading && !error && <p role="status" className="text-sm text-muted-foreground">{filtered.length} مستفيد · {filtered.reduce((sum, row) => sum + (preparation.get(row.patient_id)?.itemCount ?? 0), 0)} صنف للتجهيز</p>}
+            !isLoading && !error && <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span>{filtered.length} مستفيد ·</span>
+              <PhifPreparationList rows={filtered} preparation={preparation} from={preparationFrom} to={preparationEnd} />
+            </div>}
         </section>
       )}
 

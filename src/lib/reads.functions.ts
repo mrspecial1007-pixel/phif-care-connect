@@ -20,7 +20,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authorizePatientForSessionPharmacy, patientAccessSetsForSession, TIRYAQ_PHARMACY_NAME } from "@/lib/pharmacy-isolation";
-import { buildPhifMedicationProfileFromRows } from "@/lib/phif-invoices.functions";
+import { buildPhifMedicationProfileFromRows, phifMedicationIdentityKey } from "@/lib/phif-invoices.functions";
+import { buildPreparationItems, type PreparationItem } from "@/lib/phif-preparation-list.helpers";
 import { loadMedicationFollowUps } from "@/lib/phif-medication-follow-up";
 
 const idSchema = z.object({ id: z.string().uuid() });
@@ -271,6 +272,10 @@ export async function loadPhifStatusItems(admin: any, invoiceIds: string[]) {
   return items;
 }
 
+type StatusPhifProfile = ReturnType<typeof buildPhifMedicationProfileFromRows> & {
+  preparation_items: PreparationItem[]; preparation_issue: string | null;
+};
+
 async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[]) {
   const patients = rows.map((row) => ({
     id: row.patient_id,
@@ -283,7 +288,7 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
     for (const card of cards) cardOwner.set(card, patientId);
   }
   const cards = new Set(cardOwner.keys());
-  if (patientIds.size === 0 && cards.size === 0) return new Map<string, ReturnType<typeof buildPhifMedicationProfileFromRows>>();
+  if (patientIds.size === 0 && cards.size === 0) return new Map<string, StatusPhifProfile>();
 
   const invoices: any[] = [];
   const PAGE = 1000;
@@ -324,9 +329,21 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
     if (ownerId) byPatient.get(ownerId)?.items.push(item);
   }
 
-  const profiles = new Map<string, ReturnType<typeof buildPhifMedicationProfileFromRows>>();
+  const settings: any[] = [];
+  let preparationIssue: string | null = null;
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin.from("phif_report_box_settings")
+      .select("pharmacy_id,item_identity,units_per_box,base_unit,supplier_quantity_unit,supplier_unit_exceptions")
+      .eq("pharmacy_id", pharmacyId).order("item_identity", { ascending: true }).range(from, from + 999);
+    if (error) { preparationIssue = "تعذر قراءة تعريفات العبوات؛ تُعرض فقط التحويلات المثبتة في بيانات الفواتير"; break; }
+    settings.push(...(data ?? []));
+    if ((data ?? []).length < 1000) break;
+  }
+  const profiles = new Map<string, StatusPhifProfile>();
   for (const [patientId, group] of byPatient) {
-    profiles.set(patientId, buildPhifMedicationProfileFromRows(group.invoices, group.items, [], followUps.rows.filter((row) => row.patient_id === patientId)));
+    const profile = buildPhifMedicationProfileFromRows(group.invoices, group.items, [], followUps.rows.filter((row) => row.patient_id === patientId));
+    profiles.set(patientId, { ...profile, preparation_items: buildPreparationItems(profile.items, group.items,
+      phifMedicationIdentityKey, pharmacyId, preparationIssue ? [] : settings), preparation_issue: preparationIssue });
   }
   return profiles;
 }
@@ -387,6 +404,8 @@ export const listPatientStatuses = createServerFn({ method: "GET" }).handler(asy
       last_pharmacy_id: latestPhifDate ? pharmacy_id : null,
       last_pharmacy_name: latestPhifDate ? TIRYAQ_PHARMACY_NAME : null,
       phif_due_summaries: profile.due_summaries,
+      phif_preparation_items: profile.preparation_items,
+      phif_preparation_issue: profile.preparation_issue,
       phif_nearest_due_item_count: profile.nearest_due_item_count,
     };
   });

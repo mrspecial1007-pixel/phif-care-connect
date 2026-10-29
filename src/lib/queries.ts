@@ -75,6 +75,8 @@ export type PatientStatusRow = {
     | null;
   phif_due_summaries?: { next_due_date: string; item_count: number; days_until_due: number | null }[];
   phif_nearest_due_item_count?: number;
+  phif_preparation_items?: import("./phif-preparation-list.helpers").PreparationItem[];
+  phif_preparation_issue?: string | null;
   last_pharmacy_id: string | null;
   last_pharmacy_name: string | null;
   last_dispensing_date: string | null;
