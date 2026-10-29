@@ -343,7 +343,7 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
   for (const [patientId, group] of byPatient) {
     const profile = buildPhifMedicationProfileFromRows(group.invoices, group.items, [], followUps.rows.filter((row) => row.patient_id === patientId));
     profiles.set(patientId, { ...profile, preparation_items: buildPreparationItems(profile.items, group.items,
-      phifMedicationIdentityKey, pharmacyId, preparationIssue ? [] : settings), preparation_issue: preparationIssue });
+      phifMedicationIdentityKey, pharmacyId, preparationIssue ? [] : settings, group.invoices), preparation_issue: preparationIssue });
   }
   return profiles;
 }

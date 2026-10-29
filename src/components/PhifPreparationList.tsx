@@ -3,7 +3,7 @@ import { ArrowRight, ChevronLeft, ClipboardList, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { groupPreparationItems, preparationNumber, preparationUnitLabel, preparationRequirementBoxes, preparationTotalLabel, type PreparationPatient } from "@/lib/phif-preparation-list.helpers";
+import { groupPreparationItems, preparationNumber, preparationUnitLabel, preparationEstimatedBoxes, preparationTotalLabel, type PreparationPatient } from "@/lib/phif-preparation-list.helpers";
 import type { PhifPreparationSummary } from "@/lib/phif-preparation.helpers";
 import { normalizeText } from "@/lib/medication-normalize";
 
@@ -29,7 +29,7 @@ export function PhifPreparationList({ rows, preparation, from, to }: Props) {
     <DialogContent dir="rtl" className="flex max-h-[88dvh] w-[calc(100%-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-lg p-0">
       <DialogHeader className="shrink-0 border-b px-12 py-4 text-right sm:text-right">
         <DialogTitle className="text-base leading-6 tracking-normal">قائمة أدوية التجهيز</DialogTitle>
-        <DialogDescription className="text-xs leading-5">{from === to ? from : `${from} - ${to}`} · الاحتياج الموثق مستقل عن آخر صرف</DialogDescription>
+        <DialogDescription className="text-xs leading-5">{from === to ? from : `${from} - ${to}`} · تقديري بناءً على آخر صرف، وليس احتياجًا مؤكدًا</DialogDescription>
       </DialogHeader>
       <div className="shrink-0 space-y-3 border-b px-4 py-3">
         <p className="text-sm"><strong>{report.originalCount}</strong> صنف مستحق · <strong>{report.groups.length}</strong> صنف مختلف بعد التجميع</p>
@@ -47,8 +47,9 @@ export function PhifPreparationList({ rows, preparation, from, to }: Props) {
           <div className="border-b py-3">
             <h2 className="break-words text-base font-bold"><bdi>{selected.name}</bdi></h2>
             <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground"><bdi>{selected.strength}</bdi><span>{selected.form || "الشكل يحتاج تحديدًا"}</span></div>
-            <p className="mt-2 text-sm">{selected.beneficiaries.length} مستفيد · {preparationTotalLabel(selected)}</p>
-            {selected.unresolvedCount > 0 && <p className="mt-1 text-xs text-amber-800">احتياج {selected.unresolvedCount} حالة يحتاج تحديدًا؛ لا تدخل كميات آخر صرف في الإجمالي.</p>}
+            <p className="mt-2 text-sm">{selected.beneficiaries.length} مستفيد</p>
+            <p className="mt-1 text-lg font-bold text-teal-800">{preparationTotalLabel(selected)}</p>
+            {selected.unresolvedCount > 0 && <p className="mt-1 text-xs text-amber-800">كمية {selected.unresolvedCount} حالة تحتاج تحديدًا؛ الإجمالي يشمل الكميات المعروفة فقط.</p>}
           </div>
           <ul className="divide-y">
             {selected.beneficiaries.map(person => <li key={person.key} className="min-w-0 space-y-2 py-3">
@@ -56,18 +57,19 @@ export function PhifPreparationList({ rows, preparation, from, to }: Props) {
                 <div className="min-w-0"><h3 className="break-words text-sm font-semibold">{person.name}</h3>
                   <p className="mt-1 break-all text-xs text-muted-foreground">البطاقة: <bdi dir="ltr">{person.card || "غير مسجلة"}</bdi></p>
                 </div>
-                <span className="max-w-36 text-sm font-semibold text-teal-800">{preparationTotalLabel(person)}</span>
+                <span className="max-w-36 text-base font-bold text-teal-800">{preparationTotalLabel(person)}</span>
               </div>
               {person.items.map(item => {
-                const required = preparationRequirementBoxes(item);
+                const estimate = preparationEstimatedBoxes(item);
                 return <div key={`${item.id}:${item.dueDate}:${item.sourceItemIds.join(":")}`} className="space-y-1 text-xs text-muted-foreground">
-                <p>الاحتياج المطلوب: {required.boxes === null ? "يحتاج تحديد" : `${preparationNumber(item.requirement!.quantity!)} ${preparationUnitLabel(item.requirement!.unit)} · ${preparationNumber(required.boxes)} علبة`}</p>
-                {required.issue && <p className="text-amber-800">{required.issue}</p>}
-                <p>آخر صرف (مرجعي، وليس الكمية المطلوبة): {item.quantity === null ? "غير محدد" : `${preparationNumber(item.quantity)} ${preparationUnitLabel(item.quantityUnit)}`}
-                  {item.lastDispensingBoxes != null && <> · {preparationNumber(item.lastDispensingBoxes)} علبة مرجعية</>}</p>
+                <p>التجهيز التقديري: {estimate.boxes === null ? "يحتاج تحديد" : `${preparationNumber(estimate.boxes)} علبة`}</p>
+                {estimate.issue && <p className="text-amber-800">{estimate.issue}</p>}
+                <p>آخر كمية صرف مسجلة: {item.quantity === null ? "غير محدد" : `${preparationNumber(item.quantity)} ${preparationUnitLabel(item.quantityUnit)}`}</p>
                 {item.packageSize !== null && <p>عبوة آخر صرف: {item.packageSize} {preparationUnitLabel(item.packageUnit)}</p>}
                 <p>الاستحقاق: <bdi>{item.dueDate}</bdi>{item.latestDate && <> · آخر صرف: <bdi>{item.latestDate}</bdi></>}</p>
-                {item.issue && <p className="text-amber-800">بيانات آخر صرف: {item.issue}</p>}
+                <p className="text-amber-800">{item.lastDispensingPartial
+                  ? "فاتورة آخر صرف مسجلة كصرف جزئي؛ التقدير لا يمثل كامل الاحتياج."
+                  : "اكتمال آخر صرف غير مؤكد؛ قد تكون الكمية جزئية ولا تمثل كامل الاحتياج."}</p>
               </div>; })}
             </li>)}
           </ul>
@@ -81,8 +83,9 @@ export function PhifPreparationList({ rows, preparation, from, to }: Props) {
                   <p className="mt-1 text-xs">{group.beneficiaries.length} مستفيد · {group.itemCount} صنف مستحق</p>
                 </div>
                 <div className="flex max-w-32 items-center gap-1 text-teal-800">
-                  <div className="text-left text-sm font-bold">{preparationTotalLabel(group)}
-                    {group.unresolvedCount > 0 && <p className="mt-1 text-xs font-normal text-muted-foreground">{group.unresolvedCount} احتياج غير محدد</p>}
+                  <div className="text-left text-lg font-bold leading-6">{preparationTotalLabel(group)}
+                    {group.unresolvedCount > 0 && <p className="mt-1 text-xs font-normal text-muted-foreground">{group.unresolvedCount} كمية تحتاج تحديدًا</p>}
+                    {group.partialCount > 0 && <p className="mt-1 text-xs font-normal text-amber-800">{group.partialCount} حالة بفواتير صرف جزئي</p>}
                   </div><ChevronLeft className="size-4 shrink-0" />
                 </div>
               </button>

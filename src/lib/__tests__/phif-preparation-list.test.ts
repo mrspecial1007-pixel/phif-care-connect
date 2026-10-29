@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { buildPhifMedicationProfileFromRows, phifMedicationIdentityKey } from "../phif-invoices.functions";
-import { buildPreparationItems, groupPreparationItems, preparationNumber, preparationRequirementBoxes, preparationTotalLabel, type PreparationItem } from "../phif-preparation-list.helpers";
+import { buildPreparationItems, groupPreparationItems, preparationNumber, preparationEstimatedBoxes, preparationTotalLabel, type PreparationItem } from "../phif-preparation-list.helpers";
 import { buildPhifPreparationIndex } from "../phif-preparation.helpers";
 
 const invoice = { id: "invoice", invoice_key: "invoice", dispensing_date: "2026-10-01" };
@@ -11,18 +11,14 @@ const source = (overrides: any = {}) => ({ id: "line", phif_invoice_id: "invoice
 function project(rows = [source()], invoices: any[] = [invoice], settings: any[] = [], stopped = false) {
   const profile = buildPhifMedicationProfileFromRows(invoices, rows);
   if (stopped) profile.items[0].follow_up_status = "stopped";
-  return { profile, details: buildPreparationItems(profile.items, rows, phifMedicationIdentityKey, "tiryaq", settings) };
+  return { profile, details: buildPreparationItems(profile.items, rows, phifMedicationIdentityKey, "tiryaq", settings, invoices) };
 }
 const setting = { pharmacy_id: "tiryaq", item_identity: JSON.stringify(["amlodipine", "5mg", "tablet"]),
   base_unit: "tablet", units_per_box: 30, supplier_quantity_unit: "tablet" };
-const dto = (overrides: Partial<PreparationItem> = {}): PreparationItem => {
-  const item: PreparationItem = { id: "medication", name: "Amlodipine",
+const dto = (overrides: Partial<PreparationItem> = {}): PreparationItem => ({ id: "medication", name: "Amlodipine",
   strength: "5MG", form: "tablet", dueDate: "2026-10-29", latestDate: "2026-10-01", sourceItemIds: ["a"],
-  quantity: 45, quantityUnit: "tablet", packageSize: 30, packageUnit: "tablet", lastDispensingBoxes: 1.5, issue: null, identityComplete: true, ...overrides };
-  if (!("requirement" in overrides)) item.requirement = { itemId: item.id, dueDate: item.dueDate, sourceRef: "test-documented-need",
-    quantity: 45, unit: "tablet", unitsPerBox: 30, baseUnit: "tablet" };
-  return item;
-};
+  quantity: 45, quantityUnit: "tablet", packageSize: 30, packageUnit: "tablet", lastDispensingBoxes: 1.5, issue: null,
+  identityComplete: true, lastDispensingPartial: null, ...overrides });
 const person = (id: string, items = [dto()], card: string | null = `00${id}`) => ({ patient_id: id, patient_name: `Patient ${id}`,
   insurance_card_number: card, phif_preparation_items: items,
   phif_due_summaries: [{ next_due_date: "2026-10-29", item_count: items.length }] });
@@ -32,7 +28,7 @@ describe("read-only preparation quantities from saved invoice data", () => {
     const old = { ...invoice, id: "old", dispensing_date: "2026-09-03" };
     const { details, profile } = project([source({ id: "old-line", phif_invoice_id: "old", quantity: 300 }), source()], [old, invoice]);
     expect(profile.items[0].total_quantity).toBe(345);
-    expect(details[0]).toMatchObject({ quantity: 45, lastDispensingBoxes: 1.5, requirement: null, sourceItemIds: ["line"], dueDate: "2026-10-29" });
+    expect(details[0]).toMatchObject({ quantity: 45, lastDispensingBoxes: 1.5, sourceItemIds: ["line"], dueDate: "2026-10-29" });
   });
   it("sums split lines of one latest invoice without counting old invoices again", () => {
     expect(project([source({ quantity: 15 }), source({ id: "line-2", quantity: 30 })]).details[0]).toMatchObject({ quantity: 45, lastDispensingBoxes: 1.5 });
@@ -44,9 +40,9 @@ describe("read-only preparation quantities from saved invoice data", () => {
   it.each([null, undefined, "", " ", -1, true, Number.NaN, Number.POSITIVE_INFINITY])("does not turn missing or invalid quantity %s into zero", quantity => {
     expect(project([source({ quantity })]).details[0]).toMatchObject({ quantity: null, lastDispensingBoxes: null });
   });
-  it("preserves an explicitly recorded reference zero without implying zero need", () => {
+  it("preserves an explicitly recorded zero as an estimate, not confirmed need", () => {
     const item = project([source({ quantity: 0 })]).details[0];
-    expect(item.lastDispensingBoxes).toBe(0); expect(preparationRequirementBoxes(item).boxes).toBeNull();
+    expect(item.lastDispensingBoxes).toBe(0); expect(preparationEstimatedBoxes(item).boxes).toBe(0);
   });
   it("does not infer a dispensing unit from tablet form, quantity 30, or a purchase-price unit", () => {
     const { details } = project([source({ quantity: 30, metadata: { dosage_form: "tablet", package_quantity: 30 },
@@ -95,66 +91,91 @@ describe("read-only preparation quantities from saved invoice data", () => {
   });
 });
 
-describe("documented preparation need is independent of dispensing history", () => {
-  it("never promotes a partial or apparently complete last dispensing into required boxes", () => {
+describe("preparation estimates use only verified last-dispensing conversions", () => {
+  it("uses last dispensing without requiring independent need and always labels the result as estimated", () => {
     for (const quantity of [15, 30, 45, 0]) {
       const item = project([source({ quantity })]).details[0];
       const row = person("1", [item]);
       const result = groupPreparationItems([row], buildPhifPreparationIndex([row], "2026-10-29", "2026-10-29"));
-      expect(result.groups[0]).toMatchObject({ boxes: null, knownBoxes: 0, knownItemCount: 0, unresolvedCount: 1 });
+      expect(result.groups[0]).toMatchObject({ boxes: quantity / 30, knownBoxes: quantity / 30, knownItemCount: 1, unresolvedCount: 0 });
       expect(result.groups[0].beneficiaries).toHaveLength(1);
-      expect(preparationTotalLabel(result.groups[0])).toBe("يحتاج تحديد");
-      expect(item.quantity).toBe(quantity); expect(item.requirement).toBeNull();
+      expect(preparationTotalLabel(result.groups[0])).toBe(`${preparationNumber(quantity / 30)} علبة تقديرية`);
+      expect(item.quantity).toBe(quantity);
     }
   });
-  it("uses documented need rather than reference quantity, keeping fractional boxes", () => {
-    const item = dto({ quantity: 15, lastDispensingBoxes: 0.5 });
-    expect(preparationRequirementBoxes(item).boxes).toBe(1.5);
-    const row = person("1", [item]);
-    expect(groupPreparationItems([row], buildPhifPreparationIndex([row], "2026-10-29", "2026-10-29")).groups[0].boxes).toBe(1.5);
-    expect(item.quantity).toBe(15);
+  it("keeps a partial invoice estimate and flags it without topping up to a full box or inferring full need", () => {
+    const item = project([source({ quantity: 15 })], [{ ...invoice, status: "صرف جزئي" }]).details[0];
+    const row = person("1", [item]), before = JSON.stringify(row);
+    const group = groupPreparationItems([row], buildPhifPreparationIndex([row], "2026-10-29", "2026-10-29")).groups[0];
+    expect(item).toMatchObject({ quantity: 15, lastDispensingBoxes: 0.5, lastDispensingPartial: true });
+    expect(group).toMatchObject({ boxes: 0.5, partialCount: 1 });
+    expect(JSON.stringify(row)).toBe(before);
   });
-  it("does not inherit missing need units or pack size from last dispensing or dosage form", () => {
-    const item = dto();
-    for (const patch of [{ quantity: null }, { quantity: -1 }, { unit: null }, { unitsPerBox: null },
-      { unitsPerBox: 0 }, { baseUnit: null }, { baseUnit: "pen" }, { sourceRef: "" },
-      { itemId: "another-medicine" }, { dueDate: "2026-11-26" }]) {
-      expect(preparationRequirementBoxes({ ...item, requirement: { ...item.requirement!, ...patch } as any }).boxes).toBeNull();
+  it("does not infer partial or complete status from box fractions, whole boxes or a generic completed invoice", () => {
+    for (const quantity of [15, 30, 45]) {
+      expect(project([source({ quantity })]).details[0].lastDispensingPartial).toBeNull();
+      expect(project([source({ quantity })], [{ ...invoice, status: "Completed" }]).details[0].lastDispensingPartial).toBeNull();
+    }
+    const old = { ...invoice, id: "old", dispensing_date: "2026-09-03", status: "Partial" };
+    expect(project([source({ id: "old-line", phif_invoice_id: "old" }), source()], [old, invoice]).details[0].lastDispensingPartial).toBeNull();
+    expect(project([source()], [{ ...invoice, status: " Partial " }]).details[0].lastDispensingPartial).toBe(true);
+  });
+  it("does not use known totals when original quantities, units or documented package sizes are missing", () => {
+    for (const patch of [{ quantity: null }, { quantity: -1 }, { quantityUnit: null }, { packageSize: null },
+      { packageSize: 0 }, { packageUnit: null }, { lastDispensingBoxes: null },
+      { lastDispensingBoxes: Number.POSITIVE_INFINITY }, { lastDispensingBoxes: -1 }, { issue: "conflict" }]) {
+      expect(preparationEstimatedBoxes(dto(patch)).boxes).toBeNull();
     }
   });
-  it("ignores legacy cached invoice-box totals without independent need evidence", () => {
-    const item = { ...dto({ requirement: undefined }), boxes: 100 };
+  it("ignores legacy required-quantity values and never mixes them into a dispensing estimate", () => {
+    const item = { ...dto({ quantity: 15, lastDispensingBoxes: 0.5 }), boxes: 100,
+      requirement: { quantity: 3000, unitsPerBox: 30 } };
     const row = person("1", [item]);
-    expect(groupPreparationItems([row], buildPhifPreparationIndex([row], "2026-10-29", "2026-10-29")).groups[0].boxes).toBeNull();
+    expect(groupPreparationItems([row], buildPhifPreparationIndex([row], "2026-10-29", "2026-10-29")).groups[0].boxes).toBe(0.5);
+    expect(preparationEstimatedBoxes({ ...item, lastDispensingBoxes: undefined } as any).boxes).toBeNull();
   });
   it("shows only the known subtotal with an explicit incomplete label in either row order", () => {
-    const rows = [person("1", [dto({ quantity: 1, lastDispensingBoxes: 1 / 30 })]), person("2", [dto({ requirement: null, sourceItemIds: ["b"] })])];
+    const rows = [person("1"), person("2", [dto({ quantityUnit: null, lastDispensingBoxes: null, sourceItemIds: ["b"] })])];
     for (const ordered of [rows, [...rows].reverse()]) {
       const group = groupPreparationItems(ordered, buildPhifPreparationIndex(ordered, "2026-10-29", "2026-10-29")).groups[0];
       expect(group).toMatchObject({ boxes: null, knownBoxes: 1.5, knownItemCount: 1, unresolvedCount: 1 });
       expect(group.beneficiaries).toHaveLength(2);
-      expect(preparationTotalLabel(group)).toBe(`${preparationNumber(1.5)} علبة موثقة — الإجمالي غير مكتمل`);
+      expect(preparationTotalLabel(group)).toBe(`${preparationNumber(1.5)} علبة تقديرية؛ الإجمالي غير مكتمل`);
+      expect(group.beneficiaries.find(p => p.card === "002")?.boxes).toBeNull();
+      expect(group.beneficiaries.find(p => p.card === "001")?.boxes).toBe(1.5);
     }
   });
-  it("distinguishes documented zero need from absent need in partial totals", () => {
-    const item = dto(); item.requirement!.quantity = 0;
-    const row = person("1", [item, dto({ id: "unknown", requirement: null, sourceItemIds: ["b"] })]);
+  it("distinguishes recorded zero from missing quantity in incomplete totals", () => {
+    const item = dto({ quantity: 0, lastDispensingBoxes: 0 });
+    const row = person("1", [item, dto({ id: "unknown", quantity: null, lastDispensingBoxes: null, sourceItemIds: ["b"] })]);
     const group = groupPreparationItems([row], buildPhifPreparationIndex([row], "2026-10-29", "2026-10-29")).groups[0];
     expect(group).toMatchObject({ knownBoxes: 0, knownItemCount: 1, unresolvedCount: 1, boxes: null });
-    expect(preparationTotalLabel(group)).toBe("0 علبة موثقة — الإجمالي غير مكتمل");
+    expect(preparationTotalLabel(group)).toBe("0 علبة تقديرية؛ الإجمالي غير مكتمل");
   });
-  it("requires an explicit strip conversion and preserves pen and vial units", () => {
-    const item = dto();
-    item.requirement = { ...item.requirement!, quantity: 2, unit: "strip" };
-    expect(preparationRequirementBoxes(item).boxes).toBeNull();
-    expect(preparationRequirementBoxes({ ...item, requirement: { ...item.requirement, stripsPerBox: 3 } }).boxes).toBeCloseTo(2 / 3);
+  it("uses verified strip, pen and vial conversions without substituting tablet units", () => {
+    const strip = { dosage_form: "tablet", quantity_unit: "STRIP", package_quantity: 30, strips_quantity: 3 };
+    expect(preparationEstimatedBoxes(project([source({ quantity: 2, metadata: strip })]).details[0]).boxes).toBeCloseTo(2 / 3);
+    expect(preparationEstimatedBoxes(project([source({ quantity: 2, metadata: { ...strip, strips_quantity: null } })]).details[0]).boxes).toBeNull();
     for (const form of ["pen", "vial"] as const) {
-      expect(preparationRequirementBoxes({ ...item, form, requirement: { ...item.requirement, unit: form, baseUnit: form, unitsPerBox: 5 } }).boxes).toBe(0.4);
+      expect(preparationEstimatedBoxes(project([source({ quantity: 2, metadata: { dosage_form: form, quantity_unit: form, package_quantity: 5 } })]).details[0]).boxes).toBe(0.4);
     }
   });
 });
 
 describe("preparation grouping follows visible beneficiaries and dates", () => {
+  it("keeps each beneficiary's own latest quantity and documented pack when estimating the same medicine", () => {
+    const aInvoice = { ...invoice, id: "a-invoice" }, bInvoice = { ...invoice, id: "b-invoice" };
+    const a = project([source({ id: "a-line", phif_invoice_id: aInvoice.id, quantity: 15 })], [aInvoice]).details[0];
+    const b = project([source({ id: "b-line", phif_invoice_id: bInvoice.id, quantity: 56,
+      metadata: { dosage_form: "tablet", quantity_unit: "TAB", package_quantity: 28 } })], [bInvoice]).details[0];
+    const rows = [person("1", [a]), person("2", [b])];
+    const group = groupPreparationItems(rows, buildPhifPreparationIndex(rows, "2026-10-29", "2026-10-29")).groups[0];
+    expect(group).toMatchObject({ boxes: 2.5, itemCount: 2 });
+    expect(group.beneficiaries[0]).toMatchObject({ card: "001", boxes: 0.5 });
+    expect(group.beneficiaries[0].items[0].quantity).toBe(15);
+    expect(group.beneficiaries[1]).toMatchObject({ card: "002", boxes: 2 });
+    expect(group.beneficiaries[1].items[0].quantity).toBe(56);
+  });
   it("keeps the original item count, distinct medicine count, unique beneficiaries and fractional boxes", () => {
     const rows = [person("1"), person("2", [dto({ name: " AMLODIPINE ", form: "TAB", sourceItemIds: ["b"] })]),
       person("3", [dto({ strength: "10MG", sourceItemIds: ["c"] })])];
@@ -186,7 +207,7 @@ describe("preparation grouping follows visible beneficiaries and dates", () => {
     expect(groupPreparationItems(rows, buildPhifPreparationIndex(rows, "2026-10-29", "2026-10-29")).groups[0].beneficiaries).toHaveLength(2);
   });
   it("does not invent totals for unknown quantities or merge incomplete identities", () => {
-    const rows = [person("1", [dto({ requirement: null })]), person("2", [dto({ sourceItemIds: ["b"] })])];
+    const rows = [person("1", [dto({ lastDispensingBoxes: null })]), person("2", [dto({ sourceItemIds: ["b"] })])];
     const result = groupPreparationItems(rows, buildPhifPreparationIndex(rows, "2026-10-29", "2026-10-29"));
     expect(result.groups[0]).toMatchObject({ boxes: null, knownBoxes: 1.5, unresolvedCount: 1 });
     const unknown = rows.map(r => ({ ...r, phif_preparation_items: r.phif_preparation_items.map(i => ({ ...i, form: "", identityComplete: false })) }));

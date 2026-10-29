@@ -6,18 +6,13 @@ import { reportForm, reportSettingKey, reportStrength, resolveReportIdentities }
 import { reportSupplierUnit } from "./report-supplier-units.helpers";
 import { normalizeSupplierUnit } from "./phif-supplier-quick-cost.helpers";
 
-export type PreparationRequirement = {
-  itemId: string; dueDate: string; sourceRef: string;
-  quantity: number | null; unit: ActualUnit | null;
-  unitsPerBox: number | null; baseUnit: ActualUnit | null; stripsPerBox?: number | null;
-};
 export type PreparationItem = {
   id: string; name: string; strength: string; form: string; dueDate: string; identityComplete: boolean;
   latestDate: string | null; sourceItemIds: string[];
   quantity: number | null; quantityUnit: ActualUnit | null;
   packageSize: number | null; packageUnit: ActualUnit | null;
   lastDispensingBoxes: number | null; issue: string | null;
-  requirement?: PreparationRequirement | null;
+  lastDispensingPartial?: true | null;
 };
 export type PreparationPatient = {
   patient_id: string; patient_name: string; insurance_card_number: string | null;
@@ -30,7 +25,7 @@ export type PreparationMember = {
 export type PreparationGroup = {
   key: string; name: string; strength: string; form: string;
   itemCount: number; beneficiaries: PreparationMember[];
-  boxes: number | null; knownBoxes: number; knownItemCount: number; unresolvedCount: number;
+  boxes: number | null; knownBoxes: number; knownItemCount: number; unresolvedCount: number; partialCount: number;
 };
 
 function recordedNumber(value: unknown) {
@@ -46,10 +41,11 @@ function packageCount(values: unknown[]) {
     conflict: !valid || new Set(numbers).size > 1 };
 }
 
-/** Invoice quantities are reference history, not evidence of the next required quantity. */
+/** Saved invoice quantities support estimates only, never confirmed future requirements. */
 export function buildPreparationItems(
   medications: PhifMedicationProfileItem[], sources: any[], identityOf: (item: any) => string,
   pharmacyId: string, settings: any[] = [],
+  invoices: { id: string; status?: string | null }[] = [],
 ): PreparationItem[] {
   const scoped = settings.filter(s => s.pharmacy_id === pharmacyId);
   const identities = resolveReportIdentities(sources, [], [], [], { pharmacyId, settings: scoped });
@@ -69,8 +65,11 @@ export function buildPreparationItems(
       dueDate: m.next_due_date!, latestDate: m.latest_dispensing_date,
       sourceItemIds: [...new Set<string>(latest.map(row => row.id).filter(Boolean))],
       quantity: null, quantityUnit: null, packageSize: null, packageUnit: null,
-      lastDispensingBoxes: null, requirement: null, issue: null };
+      lastDispensingBoxes: null, lastDispensingPartial: null, issue: null };
     if (!latest.length || invoiceIds.size !== 1) return { ...base, issue: "كمية آخر صرف غير محسومة؛ توجد حركات متعددة أو تفاصيل ناقصة" };
+    // The invoice status is preserved by Bridge; do not infer partial dispensing from a fraction of a box.
+    const status = invoices.find(invoice => invoiceIds.has(invoice.id))?.status?.trim().toLowerCase().replace(/\s+/g, " ");
+    base.lastDispensingPartial = status && ["partial", "partially dispensed", "صرف جزئي", "تم الصرف جزئيا", "تم الصرف جزئيًا"].includes(status) ? true : null;
     const conversions = latest.map(row => {
       const key = identities.get(row.id)?.key;
       const candidates = row.source_classification === "phif-supplier"
@@ -118,28 +117,21 @@ export function buildPreparationItems(
   });
 }
 
-export function preparationRequirementBoxes(item: PreparationItem) {
-  const r = item.requirement;
-  if (!r || !r.sourceRef?.trim() || r.itemId !== item.id || r.dueDate !== item.dueDate)
-    return { boxes: null, issue: "لا توجد كمية احتياج موثقة لهذا الاستحقاق" };
-  const quantity = recordedNumber(r.quantity), pack = packageCount([r.unitsPerBox]);
-  const unit = actualUnit(r.unit), base = actualUnit(r.baseUnit), formUnit = actualUnit(item.form);
-  if (!item.identityComplete || quantity === null || !unit || !base || base === "box" || base === "strip"
-    || !pack.value || pack.conflict || (formUnit && formUnit !== base))
-    return { boxes: null, issue: "كمية الاحتياج أو وحدتها أو حجم عبوتها غير مكتمل أو متعارض" };
-  let boxes: number | null = null;
-  if (unit === "box") boxes = quantity;
-  else if (unit === base) boxes = quantity / pack.value;
-  else if (unit === "strip" && (base === "tablet" || base === "capsule")) {
-    const strips = packageCount([r.stripsPerBox]);
-    if (strips.value && !strips.conflict && pack.value % strips.value === 0) boxes = quantity / strips.value;
-  }
-  return { boxes, issue: boxes === null ? "تحويل كمية الاحتياج إلى العلب غير موثق" : null };
+export function preparationEstimatedBoxes(item: PreparationItem) {
+  const quantity = recordedNumber(item.quantity), pack = packageCount([item.packageSize]);
+  const unit = actualUnit(item.quantityUnit), base = actualUnit(item.packageUnit);
+  if (item.issue) return { boxes: null, issue: item.issue };
+  if (quantity === null || !unit || !base || !pack.value || pack.conflict)
+    return { boxes: null, issue: "كمية آخر صرف أو وحدتها أو حجم العبوة يحتاج تحديدًا" };
+  const boxes = item.lastDispensingBoxes;
+  if (typeof boxes !== "number" || !Number.isFinite(boxes) || boxes < 0)
+    return { boxes: null, issue: "تحويل آخر كمية صرف إلى العلب غير موثق" };
+  return { boxes, issue: null };
 }
 
 export function preparationTotalLabel(summary: { boxes: number | null; knownBoxes: number; knownItemCount: number }) {
-  if (summary.boxes !== null) return `${preparationNumber(summary.boxes)} علبة مطلوبة`;
-  return summary.knownItemCount > 0 ? `${preparationNumber(summary.knownBoxes)} علبة موثقة — الإجمالي غير مكتمل` : "يحتاج تحديد";
+  if (summary.boxes !== null) return `${preparationNumber(summary.boxes)} علبة تقديرية`;
+  return summary.knownItemCount > 0 ? `${preparationNumber(summary.knownBoxes)} علبة تقديرية؛ الإجمالي غير مكتمل` : "يحتاج تحديد";
 }
 
 export function groupPreparationItems(rows: PreparationPatient[], preparation: Map<string, PhifPreparationSummary>) {
@@ -159,7 +151,7 @@ export function groupPreparationItems(rows: PreparationPatient[], preparation: M
       const name = normalizeActiveIngredient(item.name), strength = reportStrength(item.strength), form = reportForm(item.form);
       const key = JSON.stringify([name, strength, form, ...(!item.identityComplete || !name || !strength || !form ? [row.patient_id, item.id] : [])]);
       const group = groups.get(key) || { key, name: item.name, strength: item.strength, form,
-        itemCount: 0, beneficiaries: [], boxes: 0, knownBoxes: 0, knownItemCount: 0, unresolvedCount: 0 };
+        itemCount: 0, beneficiaries: [], boxes: 0, knownBoxes: 0, knownItemCount: 0, unresolvedCount: 0, partialCount: 0 };
       const card = row.insurance_card_number?.trim() || null, personKey = card ? `card:${card}` : `patient:${row.patient_id}`;
       let person = group.beneficiaries.find(p => p.key === personKey);
       if (!person) { person = { key: personKey, name: row.patient_name, card, items: [], boxes: 0, knownBoxes: 0, knownItemCount: 0, unresolvedCount: 0 }; group.beneficiaries.push(person); }
@@ -169,8 +161,9 @@ export function groupPreparationItems(rows: PreparationPatient[], preparation: M
         groups.set(key, group); continue;
       }
       person.items.push(item);
-      // Never reuse legacy cached `boxes` values, which represented the last dispensing.
-      const { boxes } = preparationRequirementBoxes(item);
+      if (item.lastDispensingPartial) group.partialCount++;
+      // Use only the server-verified invoice conversion, not legacy required-quantity totals.
+      const { boxes } = preparationEstimatedBoxes(item);
       if (boxes === null) { group.boxes = null; person.boxes = null; group.unresolvedCount++; person.unresolvedCount++; }
       else { group.knownBoxes += boxes; person.knownBoxes += boxes; group.knownItemCount++; person.knownItemCount++;
         if (group.boxes !== null) group.boxes += boxes;
