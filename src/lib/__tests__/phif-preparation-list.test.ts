@@ -18,7 +18,7 @@ const setting = { pharmacy_id: "tiryaq", item_identity: JSON.stringify(["amlodip
 const dto = (overrides: Partial<PreparationItem> = {}): PreparationItem => ({ id: "medication", name: "Amlodipine",
   strength: "5MG", form: "tablet", dueDate: "2026-10-29", latestDate: "2026-10-01", sourceItemIds: ["a"],
   quantity: 45, quantityUnit: "tablet", packageSize: 30, packageUnit: "tablet", lastDispensingBoxes: 1.5, issue: null,
-  identityComplete: true, lastDispensingPartial: null, ...overrides });
+  identityComplete: true, lastDispensingPartial: null, scientificName: overrides.name || "Amlodipine", ...overrides });
 const person = (id: string, items = [dto()], card: string | null = `00${id}`) => ({ patient_id: id, patient_name: `Patient ${id}`,
   insurance_card_number: card, phif_preparation_items: items,
   phif_due_summaries: [{ next_due_date: "2026-10-29", item_count: items.length }] });
@@ -210,7 +210,7 @@ describe("preparation grouping follows visible beneficiaries and dates", () => {
     const rows = [person("1", [dto({ lastDispensingBoxes: null })]), person("2", [dto({ sourceItemIds: ["b"] })])];
     const result = groupPreparationItems(rows, buildPhifPreparationIndex(rows, "2026-10-29", "2026-10-29"));
     expect(result.groups[0]).toMatchObject({ boxes: null, knownBoxes: 1.5, unresolvedCount: 1 });
-    const unknown = rows.map(r => ({ ...r, phif_preparation_items: r.phif_preparation_items.map(i => ({ ...i, form: "", identityComplete: false })) }));
+    const unknown = rows.map(r => ({ ...r, phif_preparation_items: r.phif_preparation_items.map(i => ({ ...i, form: "", quantityUnit: null, identityComplete: false })) }));
     expect(groupPreparationItems(unknown, buildPhifPreparationIndex(rows, "2026-10-29", "2026-10-29")).groups).toHaveLength(2);
   });
   it("uses only visible rows and matching due dates and exposes incomplete cached details", () => {
@@ -233,5 +233,69 @@ describe("preparation grouping follows visible beneficiaries and dates", () => {
     const helper = readFileSync("src/lib/phif-preparation-list.helpers.ts", "utf8");
     expect(helper).not.toMatch(/\.insert\(|\.update\(|\.delete\(|\.rpc\(/);
     expect(server).toContain("phif_due_summaries: profile.due_summaries");
+  });
+});
+
+describe("scientific spelling and evidence-based preparation grouping", () => {
+  const group = (items: PreparationItem[]) => {
+    const rows = items.map((item, index) => person(String(index + 1), [item]));
+    return groupPreparationItems(rows, buildPhifPreparationIndex(rows, "2026-10-29", "2026-10-29"));
+  };
+  it("combines ACETYL SALICYLIC ACID 75MG and ACETYLSALICYLIC ACID 75MG without losing quantities or beneficiaries", () => {
+    const result = group([dto({ name: " ACETYL  SALICYLIC ACID ", strength: "75 MG" }),
+      dto({ name: "acetylsalicylic acid", strength: "0.075G", form: "TAB", sourceItemIds: ["b"] })]);
+    expect(result).toMatchObject({ originalCount: 2, missingCount: 0 });
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]).toMatchObject({ itemCount: 2, boxes: 3 });
+    expect(result.groups[0].beneficiaries).toHaveLength(2);
+  });
+  it("fills a missing form only from a documented quantity unit", () => {
+    expect(group([dto({ name: "ACETYL SALICYLIC ACID", strength: "75MG" }),
+      dto({ name: "ACETYLSALICYLIC ACID", strength: "75MG", form: "", identityComplete: false, sourceItemIds: ["b"] })]).groups).toHaveLength(1);
+  });
+  it("uses a shared product ID with one consistent form, not the scientific name alone", () => {
+    const known = dto({ sourceProductIds: ["product"] });
+    const missing = dto({ form: "", quantityUnit: null, identityComplete: false, sourceProductIds: ["product"], sourceItemIds: ["b"] });
+    expect(group([known, missing]).groups).toHaveLength(1);
+    expect(group([known, { ...missing, sourceProductIds: ["different"] }]).groups).toHaveLength(2);
+    expect(group([known, { ...missing, sourceProductIds: [] }]).groups).toHaveLength(2);
+    expect(group([known, { ...missing, formIssue: "conflicting_saved_forms" }]).groups).toHaveLength(2);
+  });
+  it("does not infer a missing form when the same product ID has contradictory explicit forms", () => {
+    const a = dto({ sourceProductIds: ["product"] });
+    const b = dto({ form: "capsule", sourceProductIds: ["product"], sourceItemIds: ["b"] });
+    const c = dto({ form: "", quantityUnit: null, identityComplete: false, sourceProductIds: ["product"], sourceItemIds: ["c"] });
+    expect(group([a, b, c]).groups).toHaveLength(3);
+  });
+  it("does not discard contradictory form evidence when another beneficiary is hidden by filters", () => {
+    const a = person("1", [dto({ sourceProductIds: ["product"] })]);
+    const b = person("2", [dto({ form: "capsule", sourceProductIds: ["product"], sourceItemIds: ["b"] })]);
+    const c = person("3", [dto({ form: "", quantityUnit: null, identityComplete: false, sourceProductIds: ["product"], sourceItemIds: ["c"] })]);
+    const all = [a, b, c], result = groupPreparationItems([a, c], buildPhifPreparationIndex(all, "2026-10-29", "2026-10-29"), all);
+    expect(result.groups).toHaveLength(2); expect(result.originalCount).toBe(2);
+    expect(result.groups.flatMap(g => g.beneficiaries).some(p => p.patientId === "2")).toBe(false);
+  });
+  it("does not fill a missing form when its quantity unit contradicts the same product's explicit form", () => {
+    const a = dto({ form: "capsule", sourceProductIds: ["product"] });
+    const b = dto({ form: "tablet", sourceProductIds: ["another"], sourceItemIds: ["b"] });
+    const c = dto({ form: "", quantityUnit: "tablet", identityComplete: false, sourceProductIds: ["product"], sourceItemIds: ["c"] });
+    expect(group([a, b, c]).groups).toHaveLength(3);
+  });
+  it("keeps the scientific grouping key stable across a cached DTO refresh", () => {
+    const cached = dto({ name: "ACETYL SALICYLIC ACID", scientificName: undefined, strength: "75MG", id: "medication|acetylsalicylicacid|75mg|tablet" });
+    expect(group([cached]).groups[0].key).toBe(group([{ ...cached, scientificName: cached.name }]).groups[0].key);
+  });
+  it("retains distinct strengths, forms, chemical combination separators, and unproven brand spellings", () => {
+    expect(group([dto({ name: "ACETYL SALICYLIC ACID", strength: "75MG" }),
+      dto({ name: "ACETYLSALICYLIC ACID", strength: "100MG", sourceItemIds: ["b"] }),
+      dto({ name: "ACETYLSALICYLIC ACID", strength: "75MG", form: "capsule", sourceItemIds: ["c"] })]).groups).toHaveLength(3);
+    expect(group([dto({ name: "A + B" }), dto({ name: "AB", sourceItemIds: ["b"] })]).groups).toHaveLength(2);
+    expect(group([dto({ name: "BRAND NAME", scientificName: null }), dto({ name: "BRANDNAME", scientificName: null, sourceItemIds: ["b"] })]).groups).toHaveLength(2);
+  });
+  it("does not count the same source lines twice when spelling variants join the same beneficiary", () => {
+    const items = [dto({ name: "ACETYL SALICYLIC ACID", strength: "75MG" }), dto({ name: "ACETYLSALICYLIC ACID", strength: "75MG", id: "variant" })];
+    const row = person("1", items), result = groupPreparationItems([row], buildPhifPreparationIndex([row], "2026-10-29", "2026-10-29"));
+    expect(result.originalCount).toBe(2); expect(result.groups[0]).toMatchObject({ itemCount: 2, boxes: 1.5 });
+    expect(result.groups[0].beneficiaries).toHaveLength(1);
   });
 });

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { usePatientStatuses, useSession } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
@@ -6,28 +6,34 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Search, AlertTriangle, Clock, CheckCircle2, Users, Share2, Phone, PhoneOff, Star, CalendarDays, CalendarRange } from "lucide-react";
 import { nameMatchesQuery } from "@/lib/name-normalize";
 import { PatientCard, statusMeta } from "@/components/PatientCard";
-import { todayISOLocal } from "@/lib/date";
 import { buildPhifPreparationIndex, validPreparationRange } from "@/lib/phif-preparation.helpers";
 import { PhifPreparationList } from "@/components/PhifPreparationList";
+import { DashboardVisitProvider, useDashboardVisit } from "@/components/DashboardNavigation";
+import { dashboardScope } from "@/lib/dashboard-navigation.helpers";
 
 export const Route = createFileRoute("/")({
-  component: () => <Gate><Dashboard /></Gate>,
+  component: () => <Gate><DashboardPage /></Gate>,
   head: () => ({ meta: [{ title: "المستفيدون — PHIF Tracker" }, { name: "description", content: "متابعة المستفيدين ومواعيد صرف الأدوية" }, { property: "og:title", content: "المستفيدون — PHIF Tracker" }, { property: "og:description", content: "متابعة المستفيدين ومواعيد صرف الأدوية" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });
+
+export function DashboardPage() {
+  const { data: session } = useSession();
+  const state = useLocation({ select: location => location.state }) as any;
+  const entry = state.__TSR_key || state.key || "initial", scope = dashboardScope(session);
+  return <DashboardVisitProvider key={`${scope}:${entry}`} scope={scope} entry={entry} index={state.__TSR_index ?? 0}><Dashboard /></DashboardVisitProvider>;
+}
 
 function Dashboard() {
   const { data: rows, isLoading, error, refetch } = usePatientStatuses();
   const { data: session } = useSession();
   const isTiryaq = session?.pharmacy?.name === "صيدلية الترياق الشافي";
-  const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "preparation" | "suspended" | "shared" | "review" | "overdue" | "partial" | "has_phone" | "no_phone" | "favorite" | "old_follow_up">("active");
-  const [preparationMode, setPreparationMode] = useState<"single" | "range">("single");
-  const [preparationFrom, setPreparationFrom] = useState(todayISOLocal);
-  const [preparationTo, setPreparationTo] = useState(todayISOLocal);
+  const { view, update, recordListPosition, restoreWindow } = useDashboardVisit();
+  const { q, filter, preparationMode, preparationFrom, preparationTo } = view;
+  useEffect(() => { if (!isLoading) restoreWindow(); }, [isLoading, restoreWindow]);
   const preparationEnd = preparationMode === "single" ? preparationFrom : preparationTo;
   const preparationValid = validPreparationRange(preparationFrom, preparationEnd);
   const preparation = useMemo(() => buildPhifPreparationIndex(rows ?? [], preparationFrom, preparationEnd), [rows, preparationFrom, preparationEnd]);
@@ -159,7 +165,7 @@ function Dashboard() {
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
         <Input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => update(v => ({ ...v, q: e.target.value }))}
           placeholder="ابحث بالاسم أو رقم البطاقة أو رقم الهاتف..."
           className="pr-10 h-12 text-base"
         />
@@ -171,7 +177,7 @@ function Dashboard() {
             key={c.k}
             type="button"
             aria-pressed={filter === c.k}
-            onClick={() => setFilter(c.k as any)}
+            onClick={() => update(v => ({ ...v, filter: c.k }))}
             className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border flex items-center gap-1 ${
               filter === c.k ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground"
             }`}
@@ -186,8 +192,8 @@ function Dashboard() {
         <section aria-label="فترة التجهيز" className="min-w-0 space-y-3 border-y py-3">
           <ToggleGroup type="single" value={preparationMode} onValueChange={(value) => {
             if (value !== "single" && value !== "range") return;
-            setPreparationMode(value);
-            if (value === "range" && preparationTo < preparationFrom) setPreparationTo(preparationFrom);
+            update(v => ({ ...v, preparationMode: value,
+              preparationTo: value === "range" && v.preparationTo < v.preparationFrom ? v.preparationFrom : v.preparationTo }));
           }} variant="outline" size="sm" className="grid max-w-sm grid-cols-2" aria-label="اختيار يوم أو نطاق تواريخ">
             <ToggleGroupItem value="single"><CalendarDays className="ml-1 h-4 w-4" />يوم واحد</ToggleGroupItem>
             <ToggleGroupItem value="range"><CalendarRange className="ml-1 h-4 w-4" />من - إلى</ToggleGroupItem>
@@ -195,17 +201,19 @@ function Dashboard() {
           <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="min-w-0 space-y-1">
               <Label htmlFor="preparation-from">{preparationMode === "single" ? "تاريخ الاستحقاق" : "من تاريخ"}</Label>
-              <Input id="preparation-from" type="date" value={preparationFrom} onChange={(event) => setPreparationFrom(event.target.value)} className="min-w-0 max-w-full" aria-invalid={!preparationValid} />
+              <Input id="preparation-from" type="date" value={preparationFrom} onChange={(event) => update(v => ({ ...v, preparationFrom: event.target.value }))} className="min-w-0 max-w-full" aria-invalid={!preparationValid} />
             </div>
             {preparationMode === "range" && <div className="min-w-0 space-y-1">
               <Label htmlFor="preparation-to">إلى تاريخ</Label>
-              <Input id="preparation-to" type="date" value={preparationTo} min={preparationFrom || undefined} onChange={(event) => setPreparationTo(event.target.value)} className="min-w-0 max-w-full" aria-invalid={!preparationValid} />
+              <Input id="preparation-to" type="date" value={preparationTo} min={preparationFrom || undefined} onChange={(event) => update(v => ({ ...v, preparationTo: event.target.value }))} className="min-w-0 max-w-full" aria-invalid={!preparationValid} />
             </div>}
           </div>
           {!preparationValid ? <p role="alert" className="text-sm text-destructive">اختر تاريخًا صحيحًا، على أن تكون نهاية الفترة مساوية لبدايتها أو بعدها.</p> :
             !isLoading && !error && <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <span>{filtered.length} مستفيد ·</span>
-              <PhifPreparationList rows={filtered} preparation={preparation} from={preparationFrom} to={preparationEnd} />
+              <PhifPreparationList rows={filtered} identityEvidence={rows} preparation={preparation} from={preparationFrom} to={preparationEnd}
+                state={view.preparationList} onStateChange={change => update(v => ({ ...v, preparationList: change(v.preparationList) }))}
+                onPositionChange={recordListPosition} />
             </div>}
         </section>
       )}

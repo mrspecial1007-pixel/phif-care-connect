@@ -87,7 +87,8 @@ describe("read-only PHIF preparation dates", () => {
 
   it("keeps active as default and preparation before overdue, only for Tiryaq", () => {
     const route = readFileSync("src/routes/index.tsx", "utf8");
-    expect(route).toContain('>("active")');
+    const defaults = readFileSync("src/lib/dashboard-navigation.helpers.ts", "utf8");
+    expect(defaults).toContain('filter: "active"');
     expect(route.indexOf('{ k: "preparation", label: "تجهيز" }')).toBeLessThan(route.indexOf('{ k: "overdue", label: "متأخر" }'));
     expect(route).toContain('c.k !== "preparation" || isTiryaq');
     expect(route).toContain('preparationMode === "single" ? preparationFrom : preparationTo');

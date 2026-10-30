@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ChevronLeft, ClipboardList, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -6,27 +6,51 @@ import { Input } from "@/components/ui/input";
 import { groupPreparationItems, preparationNumber, preparationUnitLabel, preparationEstimatedBoxes, preparationTotalLabel, type PreparationPatient } from "@/lib/phif-preparation-list.helpers";
 import type { PhifPreparationSummary } from "@/lib/phif-preparation.helpers";
 import { normalizeText } from "@/lib/medication-normalize";
+import { emptyPreparationList, type PreparationListState } from "@/lib/dashboard-navigation.helpers";
+import { PatientProfileLink } from "./DashboardNavigation";
 
 type Props = {
   rows: (PreparationPatient & { phif_preparation_issue?: string | null })[];
   preparation: Map<string, PhifPreparationSummary>; from: string; to: string;
+  state?: PreparationListState;
+  onStateChange?: (change: (previous: PreparationListState) => PreparationListState) => void;
+  onPositionChange?: (mode: "listScrollTop" | "detailScrollTop", top: number) => void;
+  identityEvidence?: PreparationPatient[];
 };
 
-export function PhifPreparationList({ rows, preparation, from, to }: Props) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const report = useMemo(() => groupPreparationItems(rows, preparation), [rows, preparation]);
+export function PreparationTotal({ summary }: { summary: { boxes: number | null; knownBoxes: number; knownItemCount: number } }) {
+  const value = summary.boxes ?? (summary.knownItemCount > 0 ? summary.knownBoxes : null);
+  return <div aria-label={preparationTotalLabel(summary)} className="space-y-1 text-left text-teal-800">
+    <div className="text-lg font-bold leading-6">{value === null ? "يحتاج تحديد" : <><bdi>{preparationNumber(value)}</bdi> علبة</>}</div>
+    {value !== null && <p className="text-xs font-normal leading-5">تقديري من آخر صرف</p>}
+    {summary.boxes === null && summary.knownItemCount > 0 && <p className="text-xs font-normal text-amber-800">الإجمالي غير مكتمل</p>}
+  </div>;
+}
+
+export function PhifPreparationList({ rows, preparation, from, to, state, onStateChange, onPositionChange, identityEvidence }: Props) {
+  const [local, setLocal] = useState(emptyPreparationList);
+  const view = state || local, change = onStateChange || setLocal;
+  const { open, query, selectedKey } = view;
+  const scroll = useRef<HTMLDivElement>(null), dialog = useRef<HTMLDivElement>(null);
+  const positions = useRef({ listScrollTop: view.listScrollTop, detailScrollTop: view.detailScrollTop });
+  const previous = useRef({ open: false, selectedKey });
+  const report = useMemo(() => groupPreparationItems(rows, preparation, identityEvidence), [rows, preparation, identityEvidence]);
+  useLayoutEffect(() => {
+    if (open && !previous.current.open) positions.current = { listScrollTop: view.listScrollTop, detailScrollTop: view.detailScrollTop };
+    else if (selectedKey && selectedKey !== previous.current.selectedKey) positions.current.detailScrollTop = view.detailScrollTop;
+    if (open && scroll.current) scroll.current.scrollTop = positions.current[selectedKey ? "detailScrollTop" : "listScrollTop"];
+    previous.current = { open, selectedKey };
+  }, [open, selectedKey, report]);
   const selected = report.groups.find(g => g.key === selectedKey);
   const matches = report.groups.filter(g => normalizeText([g.name, g.strength, g.form].join(" ")).includes(normalizeText(query)));
   const issue = rows.find(row => row.phif_preparation_issue)?.phif_preparation_issue;
-  return <Dialog open={open} onOpenChange={value => { setOpen(value); if (!value) { setSelectedKey(null); setQuery(""); } }}>
+  return <Dialog open={open} onOpenChange={value => change(v => value ? { ...v, open: true } : emptyPreparationList())}>
     <DialogTrigger asChild>
       <Button variant="link" className="h-auto gap-1.5 whitespace-normal p-0 text-sm" aria-label={`عدد الأصناف للتجهيز: ${report.originalCount}`}>
         <ClipboardList className="size-4 shrink-0" />{report.originalCount} صنف للتجهيز
       </Button>
     </DialogTrigger>
-    <DialogContent dir="rtl" className="flex max-h-[88dvh] w-[calc(100%-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-lg p-0">
+    <DialogContent ref={dialog} tabIndex={-1} onOpenAutoFocus={event => { event.preventDefault(); dialog.current?.focus({ preventScroll: true }); }} dir="rtl" className="flex max-h-[88dvh] w-[calc(100%-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-lg p-0">
       <DialogHeader className="shrink-0 border-b px-12 py-4 text-right sm:text-right">
         <DialogTitle className="text-base leading-6 tracking-normal">قائمة أدوية التجهيز</DialogTitle>
         <DialogDescription className="text-xs leading-5">{from === to ? from : `${from} - ${to}`} · تقديري بناءً على آخر صرف، وليس احتياجًا مؤكدًا</DialogDescription>
@@ -35,29 +59,34 @@ export function PhifPreparationList({ rows, preparation, from, to }: Props) {
         <p className="text-sm"><strong>{report.originalCount}</strong> صنف مستحق · <strong>{report.groups.length}</strong> صنف مختلف بعد التجميع</p>
         {report.missingCount > 0 && <p role="status" className="text-xs text-amber-800">تفاصيل {report.missingCount} صنف غير متاحة في النتائج المحمّلة؛ يلزم تحديث بيانات المستفيدين.</p>}
         {issue && <p role="status" className="text-xs text-amber-800">{issue}</p>}
-        {selected ? <Button variant="ghost" size="sm" className="gap-1 px-0" onClick={() => setSelectedKey(null)}>
+        {selected ? <Button variant="ghost" size="sm" className="gap-1 px-0" onClick={() => change(v => ({ ...v, selectedKey: null }))}>
           <ArrowRight className="size-4" />العودة إلى الأصناف
         </Button> : <div className="relative">
           <Search className="pointer-events-none absolute right-3 top-3 size-4 text-muted-foreground" />
-          <Input aria-label="بحث في أدوية التجهيز" placeholder="بحث باسم الدواء أو التركيز..." value={query} onChange={e => setQuery(e.target.value)} className="pr-9" />
+          <Input aria-label="بحث في أدوية التجهيز" placeholder="بحث باسم الدواء أو التركيز..." value={query} onChange={e => change(v => ({ ...v, query: e.target.value }))} className="pr-9" />
         </div>}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+      <div ref={scroll} data-scroll-restoration-id="phif-preparation-scroll" aria-label="نتائج أدوية التجهيز" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4" onScroll={event => {
+        const mode = selected ? "detailScrollTop" : "listScrollTop", top = event.currentTarget.scrollTop;
+        positions.current[mode] = top;
+        if (onPositionChange) onPositionChange(mode, top);
+        else setLocal(v => ({ ...v, [mode]: top }));
+      }}>
         {selected ? <section aria-label="المستفيدون المطلوب تجهيز الصنف لهم" className="min-w-0">
           <div className="border-b py-3">
             <h2 className="break-words text-base font-bold"><bdi>{selected.name}</bdi></h2>
             <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground"><bdi>{selected.strength}</bdi><span>{selected.form || "الشكل يحتاج تحديدًا"}</span></div>
             <p className="mt-2 text-sm">{selected.beneficiaries.length} مستفيد</p>
-            <p className="mt-1 text-lg font-bold text-teal-800">{preparationTotalLabel(selected)}</p>
+            <div className="mt-1"><PreparationTotal summary={selected} /></div>
             {selected.unresolvedCount > 0 && <p className="mt-1 text-xs text-amber-800">كمية {selected.unresolvedCount} حالة تحتاج تحديدًا؛ الإجمالي يشمل الكميات المعروفة فقط.</p>}
           </div>
           <ul className="divide-y">
             {selected.beneficiaries.map(person => <li key={person.key} className="min-w-0 space-y-2 py-3">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0"><h3 className="break-words text-sm font-semibold">{person.name}</h3>
+                <div className="min-w-0"><h3 className="break-words text-sm font-semibold"><PatientProfileLink patientId={person.patientId} className="text-primary underline-offset-4 hover:underline">{person.name}</PatientProfileLink></h3>
                   <p className="mt-1 break-all text-xs text-muted-foreground">البطاقة: <bdi dir="ltr">{person.card || "غير مسجلة"}</bdi></p>
                 </div>
-                <span className="max-w-36 text-base font-bold text-teal-800">{preparationTotalLabel(person)}</span>
+                <div className="max-w-36"><PreparationTotal summary={person} /></div>
               </div>
               {person.items.map(item => {
                 const estimate = preparationEstimatedBoxes(item);
@@ -76,14 +105,15 @@ export function PhifPreparationList({ rows, preparation, from, to }: Props) {
         </section> : <>
           <ul className="divide-y" aria-label="الأدوية المجمعة للتجهيز">
             {matches.map(group => <li key={group.key}>
-              <button type="button" onClick={() => setSelectedKey(group.key)} className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 text-right focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+              <button type="button" onClick={() => change(v => ({ ...v, selectedKey: group.key, detailScrollTop: 0 }))} className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 text-right focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                 <div className="min-w-0">
                   <h2 className="break-words text-sm font-semibold leading-6"><bdi>{group.name}</bdi></h2>
                   <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground"><bdi>{group.strength || "التركيز يحتاج تحديدًا"}</bdi><span>{group.form || "الشكل يحتاج تحديدًا"}</span></div>
                   <p className="mt-1 text-xs">{group.beneficiaries.length} مستفيد · {group.itemCount} صنف مستحق</p>
                 </div>
                 <div className="flex max-w-32 items-center gap-1 text-teal-800">
-                  <div className="text-left text-lg font-bold leading-6">{preparationTotalLabel(group)}
+                  <div className="text-left">
+                    <PreparationTotal summary={group} />
                     {group.unresolvedCount > 0 && <p className="mt-1 text-xs font-normal text-muted-foreground">{group.unresolvedCount} كمية تحتاج تحديدًا</p>}
                     {group.partialCount > 0 && <p className="mt-1 text-xs font-normal text-amber-800">{group.partialCount} حالة بفواتير صرف جزئي</p>}
                   </div><ChevronLeft className="size-4 shrink-0" />

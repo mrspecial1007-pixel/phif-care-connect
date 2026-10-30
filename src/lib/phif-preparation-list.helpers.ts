@@ -13,13 +13,14 @@ export type PreparationItem = {
   packageSize: number | null; packageUnit: ActualUnit | null;
   lastDispensingBoxes: number | null; issue: string | null;
   lastDispensingPartial?: true | null;
+  scientificName?: string | null; sourceProductIds?: string[]; formIssue?: string | null;
 };
 export type PreparationPatient = {
   patient_id: string; patient_name: string; insurance_card_number: string | null;
   phif_preparation_items?: PreparationItem[];
 };
 export type PreparationMember = {
-  key: string; name: string; card: string | null; items: PreparationItem[];
+  key: string; patientId: string; name: string; card: string | null; items: PreparationItem[];
   boxes: number | null; knownBoxes: number; knownItemCount: number; unresolvedCount: number;
 };
 export type PreparationGroup = {
@@ -64,6 +65,9 @@ export function buildPreparationItems(
       identityComplete: Boolean((m.active_ingredient || m.brand)?.trim() && m.strength?.trim() && form),
       dueDate: m.next_due_date!, latestDate: m.latest_dispensing_date,
       sourceItemIds: [...new Set<string>(latest.map(row => row.id).filter(Boolean))],
+      scientificName: m.active_ingredient || null,
+      sourceProductIds: [...new Set<string>(latest.map(row => row.phif_item_id).filter(Boolean).map(String))],
+      formIssue: latest.map(row => identities.get(row.id)?.issue).find(Boolean) || null,
       quantity: null, quantityUnit: null, packageSize: null, packageUnit: null,
       lastDispensingBoxes: null, lastDispensingPartial: null, issue: null };
     if (!latest.length || invoiceIds.size !== 1) return { ...base, issue: "كمية آخر صرف غير محسومة؛ توجد حركات متعددة أو تفاصيل ناقصة" };
@@ -134,8 +138,51 @@ export function preparationTotalLabel(summary: { boxes: number | null; knownBoxe
   return summary.knownItemCount > 0 ? `${preparationNumber(summary.knownBoxes)} علبة تقديرية؛ الإجمالي غير مكتمل` : "يحتاج تحديد";
 }
 
-export function groupPreparationItems(rows: PreparationPatient[], preparation: Map<string, PhifPreparationSummary>) {
+// Ignore Latin word spacing only for an explicitly scientific name; keep chemical separators.
+export function preparationScientificName(name: string) {
+  return normalizeActiveIngredient(name.normalize("NFKC")).replace(/([a-z])\s+(?=[a-z])/g, "$1");
+}
+
+function preparationIdentities(rows: PreparationPatient[], evidence: PreparationPatient[]) {
+  const items = [...new Set([...evidence, ...rows].flatMap(row => row.phif_preparation_items || []))];
+  // Older cached DTOs can still prove a scientific name through their existing profile key.
+  const scientific = (item: PreparationItem) => item.scientificName ||
+    (item.scientificName === undefined && item.id.startsWith("medication|") ? item.name : "");
+  const name = (item: PreparationItem) => scientific(item)
+    ? preparationScientificName(scientific(item)) : normalizeActiveIngredient(item.name);
+  const base = (item: PreparationItem) => JSON.stringify([name(item), reportStrength(item.strength)]);
+  const quantityForms = new Set(["tablet", "capsule", "pen", "vial", "ampoule", "inhaler", "suppository", "patch", "sachet"]);
+  const direct = (item: PreparationItem) => reportForm(item.form) ||
+    ((!item.formIssue || item.formIssue === "missing_form") && quantityForms.has(item.quantityUnit || "") ? reportForm(item.quantityUnit) : "");
+  const products = new Map<string, Set<string>>();
+  for (const item of items) {
+    const form = direct(item);
+    if (!form || !scientific(item) || !reportStrength(item.strength)) continue;
+    for (const id of item.sourceProductIds || []) {
+      const key = JSON.stringify([base(item), id]), forms = products.get(key) || new Set<string>();
+      forms.add(form); products.set(key, forms);
+    }
+  }
+  return new Map(items.map(item => {
+    let form = direct(item);
+    if (!item.form && form && item.sourceProductIds?.some(id => {
+      const evidence = products.get(JSON.stringify([base(item), id]));
+      return evidence && [...evidence].some(known => known !== form);
+    })) form = "";
+    if (!form && scientific(item) && (!item.formIssue || item.formIssue === "missing_form") && item.sourceProductIds?.length) {
+      const evidence = item.sourceProductIds.map(id => products.get(JSON.stringify([base(item), id])));
+      const forms = new Set(evidence.flatMap(set => set ? [...set] : []));
+      if (evidence.every(set => set?.size === 1) && forms.size === 1) form = [...forms][0];
+    }
+    const complete = Boolean(name(item) && reportStrength(item.strength) && form &&
+      (item.identityComplete || (!item.form && scientific(item) && (!item.formIssue || item.formIssue === "missing_form"))));
+    return [item, { name: name(item), strength: reportStrength(item.strength), form, complete }] as const;
+  }));
+}
+
+export function groupPreparationItems(rows: PreparationPatient[], preparation: Map<string, PhifPreparationSummary>, identityEvidence: PreparationPatient[] = rows) {
   const groups = new Map<string, PreparationGroup>();
+  const identities = preparationIdentities(rows, identityEvidence);
   const seenPatients = new Set<string>(), seenItems = new Set<string>();
   let originalCount = 0, includedCount = 0;
   for (const row of rows) {
@@ -148,13 +195,13 @@ export function groupPreparationItems(rows: PreparationPatient[], preparation: M
     for (const item of row.phif_preparation_items || []) {
       if (!dates.has(item.dueDate) || seenItems.has(`${row.patient_id}:${item.id}`)) continue;
       seenItems.add(`${row.patient_id}:${item.id}`); includedCount++;
-      const name = normalizeActiveIngredient(item.name), strength = reportStrength(item.strength), form = reportForm(item.form);
-      const key = JSON.stringify([name, strength, form, ...(!item.identityComplete || !name || !strength || !form ? [row.patient_id, item.id] : [])]);
+      const { name, strength, form, complete } = identities.get(item)!;
+      const key = JSON.stringify([name, strength, form, ...(!complete ? [row.patient_id, item.id] : [])]);
       const group = groups.get(key) || { key, name: item.name, strength: item.strength, form,
         itemCount: 0, beneficiaries: [], boxes: 0, knownBoxes: 0, knownItemCount: 0, unresolvedCount: 0, partialCount: 0 };
       const card = row.insurance_card_number?.trim() || null, personKey = card ? `card:${card}` : `patient:${row.patient_id}`;
       let person = group.beneficiaries.find(p => p.key === personKey);
-      if (!person) { person = { key: personKey, name: row.patient_name, card, items: [], boxes: 0, knownBoxes: 0, knownItemCount: 0, unresolvedCount: 0 }; group.beneficiaries.push(person); }
+      if (!person) { person = { key: personKey, patientId: row.patient_id, name: row.patient_name, card, items: [], boxes: 0, knownBoxes: 0, knownItemCount: 0, unresolvedCount: 0 }; group.beneficiaries.push(person); }
       group.itemCount++;
       if (item.sourceItemIds.length && person.items.some(previous => previous.dueDate === item.dueDate
         && JSON.stringify([...previous.sourceItemIds].sort()) === JSON.stringify([...item.sourceItemIds].sort()))) {

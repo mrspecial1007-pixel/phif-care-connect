@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { PatientProfileLink } from "./DashboardNavigation";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -156,7 +156,7 @@ export function PatientCard({ row, preparation }: { row: PatientStatusRow; prepa
   return (
     <>
       <Card className={`p-3 border-r-4 hover:shadow-md transition ${borderTone(meta.key)} w-full min-w-0 box-border ${row.is_archived ? "opacity-70 bg-muted/40" : ""}`}>
-        <Link to="/patients/$id" params={{ id: row.patient_id }} className="block w-full min-w-0">
+        <PatientProfileLink patientId={row.patient_id} className="block w-full min-w-0">
           <div className="flex items-start gap-3 w-full min-w-0">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
@@ -207,16 +207,12 @@ export function PatientCard({ row, preparation }: { row: PatientStatusRow; prepa
               )}
             </div>
           </div>
-        </Link>
+        </PatientProfileLink>
 
         <div className="mt-3">
           {isTiryaq ? (
-            <Button
-              className="w-full h-11"
-              variant="outline"
-              onClick={(e: MouseEvent) => { stop(e); window.location.href = `/patients/${row.patient_id}`; }}
-            >
-              <Clock className="h-4 w-4 ml-2" /> عرض سجل الصرف
+            <Button className="w-full h-11" variant="outline" asChild>
+              <PatientProfileLink patientId={row.patient_id}><Clock className="h-4 w-4 ml-2" /> عرض سجل الصرف</PatientProfileLink>
             </Button>
           ) : isPartial ? (
             <Button

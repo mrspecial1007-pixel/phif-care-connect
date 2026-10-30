@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
+import { PatientDashboardBackLink } from "@/components/DashboardNavigation";
 import {
   usePatient,
   usePatientHistory,
@@ -39,7 +40,6 @@ import { MedicationFollowUpControl } from "@/components/MedicationFollowUpContro
 import { FOLLOW_UP_MIGRATION_MESSAGE } from "@/lib/phif-medication-follow-up";
 import { daysUntilDate, todayISOLocal } from "@/lib/date";
 import {
-  ArrowRight,
   Pill,
   Building2,
   Share2,
@@ -226,9 +226,7 @@ function Detail() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <Link to="/" className="text-sm text-muted-foreground inline-flex items-center gap-1">
-          <ArrowRight className="h-4 w-4 rotate-180" /> عودة
-        </Link>
+        <PatientDashboardBackLink patientId={id} />
         <div className="flex gap-2">
           {patient.is_follow_up_suspended ? (
             <Button variant="outline" size="sm" className="text-success hover:text-success hover:bg-success/10" onClick={() => handleSuspension(false)} disabled={suspendLoading}>
