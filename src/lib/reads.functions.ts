@@ -21,7 +21,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authorizePatientForSessionPharmacy, patientAccessSetsForSession, TIRYAQ_PHARMACY_NAME } from "@/lib/pharmacy-isolation";
 import { buildPhifMedicationProfileFromRows, phifMedicationIdentityKey } from "@/lib/phif-invoices.functions";
-import { buildPreparationItems, type PreparationItem } from "@/lib/phif-preparation-list.helpers";
+import { buildPreparationItems, preparationIdentityContext, type PreparationItem } from "@/lib/phif-preparation-list.helpers";
 import { loadMedicationFollowUps } from "@/lib/phif-medication-follow-up";
 
 const idSchema = z.object({ id: z.string().uuid() });
@@ -340,10 +340,12 @@ async function loadPhifStatusProfiles(admin: any, pharmacyId: string, rows: any[
     if ((data ?? []).length < 1000) break;
   }
   const profiles = new Map<string, StatusPhifProfile>();
+  const preparationSettings = preparationIssue ? [] : settings;
+  const preparationContext = preparationIdentityContext(items, pharmacyId, preparationSettings);
   for (const [patientId, group] of byPatient) {
     const profile = buildPhifMedicationProfileFromRows(group.invoices, group.items, [], followUps.rows.filter((row) => row.patient_id === patientId));
     profiles.set(patientId, { ...profile, preparation_items: buildPreparationItems(profile.items, group.items,
-      phifMedicationIdentityKey, pharmacyId, preparationIssue ? [] : settings, group.invoices), preparation_issue: preparationIssue });
+      phifMedicationIdentityKey, pharmacyId, preparationSettings, group.invoices, preparationContext), preparation_issue: preparationIssue });
   }
   return profiles;
 }

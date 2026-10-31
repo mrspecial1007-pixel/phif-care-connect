@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { buildPhifMedicationProfileFromRows, phifMedicationIdentityKey } from "../phif-invoices.functions";
-import { buildPreparationItems, groupPreparationItems, preparationNumber, preparationEstimatedBoxes, preparationTotalLabel, type PreparationItem } from "../phif-preparation-list.helpers";
+import { buildPreparationItems, preparationIdentityContext, groupPreparationItems, preparationNumber, preparationEstimatedBoxes, preparationTotalLabel, type PreparationItem } from "../phif-preparation-list.helpers";
 import { buildPhifPreparationIndex } from "../phif-preparation.helpers";
 
 const invoice = { id: "invoice", invoice_key: "invoice", dispensing_date: "2026-10-01" };
@@ -253,12 +253,12 @@ describe("scientific spelling and evidence-based preparation grouping", () => {
     expect(group([dto({ name: "ACETYL SALICYLIC ACID", strength: "75MG" }),
       dto({ name: "ACETYLSALICYLIC ACID", strength: "75MG", form: "", identityComplete: false, sourceItemIds: ["b"] })]).groups).toHaveLength(1);
   });
-  it("uses a shared product ID with one consistent form, not the scientific name alone", () => {
+  it("uses evidenced scientific form even without a shared product ID, but never overrides a conflict", () => {
     const known = dto({ sourceProductIds: ["product"] });
     const missing = dto({ form: "", quantityUnit: null, identityComplete: false, sourceProductIds: ["product"], sourceItemIds: ["b"] });
     expect(group([known, missing]).groups).toHaveLength(1);
-    expect(group([known, { ...missing, sourceProductIds: ["different"] }]).groups).toHaveLength(2);
-    expect(group([known, { ...missing, sourceProductIds: [] }]).groups).toHaveLength(2);
+    expect(group([known, { ...missing, sourceProductIds: ["different"] }]).groups).toHaveLength(1);
+    expect(group([known, { ...missing, sourceProductIds: [] }]).groups).toHaveLength(1);
     expect(group([known, { ...missing, formIssue: "conflicting_saved_forms" }]).groups).toHaveLength(2);
   });
   it("does not infer a missing form when the same product ID has contradictory explicit forms", () => {
@@ -297,5 +297,127 @@ describe("scientific spelling and evidence-based preparation grouping", () => {
     const row = person("1", items), result = groupPreparationItems([row], buildPhifPreparationIndex([row], "2026-10-29", "2026-10-29"));
     expect(result.originalCount).toBe(2); expect(result.groups[0]).toMatchObject({ itemCount: 2, boxes: 1.5 });
     expect(result.groups[0].beneficiaries).toHaveLength(1);
+  });
+});
+
+describe("preparation identity is independent of quantity and beneficiary IDs", () => {
+  const saved = (name: string, strength: string, form = "tablet", pharmacy = "tiryaq") => ({
+    pharmacy_id: pharmacy, item_identity: JSON.stringify([name, strength, form]), base_unit: form, units_per_box: 28,
+  });
+  const aggregate = (rows: ReturnType<typeof person>[]) => groupPreparationItems(rows, buildPhifPreparationIndex(rows, "2026-10-29", "2026-10-29"));
+
+  it("joins the reported ACETYL variants with null, blank or absent form and quantity, retaining all beneficiaries", () => {
+    const rows = [person("1", [dto({ name: "ACETYL SALICYLIC ACID", strength: "75MG", sourceItemIds: ["a"] })]),
+      ...["", "  ", null, undefined].map((form, index) => person(String(index + 2), [dto({
+        id: `medication|acetylsalicylicacid|75mg|${index}`, name: " ACETYLSALICYLIC  ACID ", strength: "75 MG",
+        form: form as any, identityComplete: false, formIssue: "missing_form", quantity: null, quantityUnit: null,
+        lastDispensingBoxes: null, sourceProductIds: [], sourceItemIds: [`line-${index}`],
+      })]))];
+    const before = JSON.stringify(rows), result = aggregate(rows);
+    expect(result.groups).toHaveLength(1);
+    expect(result).toMatchObject({ originalCount: 5, missingCount: 0 });
+    expect(result.groups[0]).toMatchObject({ itemCount: 5, boxes: null, knownBoxes: 1.5, unresolvedCount: 4, form: "tablet" });
+    expect(result.groups[0].beneficiaries).toHaveLength(5);
+    expect(result.groups[0].key).toBe('["acetylsalicylicacid","75mg","tablet"]');
+    expect(JSON.stringify(rows)).toBe(before);
+  });
+
+  it("completes ACETYL 75MG identity from its saved definition even when every source has empty metadata", () => {
+    const settings = [saved("acetylsalicylic acid", "75mg")];
+    const rows = ["ACETYL SALICYLIC ACID", "ACETYLSALICYLIC ACID"].map((name, index) => {
+      const details = project([source({ id: `acid-${index}`, active_ingredient: name, strength: "75MG", phif_item_id: null,
+        metadata: {}, quantity: null })], [invoice], settings).details;
+      expect(details[0]).toMatchObject({ form: "tablet", identityComplete: true, quantityUnit: null, lastDispensingBoxes: null });
+      return person(String(index), details);
+    });
+    expect(aggregate(rows).groups).toHaveLength(1);
+    expect(aggregate(rows).groups[0]).toMatchObject({ itemCount: 2, knownItemCount: 0, unresolvedCount: 2, boxes: null });
+  });
+
+  it("uses whole-pharmacy historical form evidence once, without requiring a latest quantity or product ID", () => {
+    const sources = [source({ id: "known", metadata: { dosage_form: "tablet" } }),
+      source({ id: "missing", phif_item_id: null, phif_invoice_id: "other", metadata: {}, quantity: null })];
+    const context = preparationIdentityContext(sources, "tiryaq");
+    const profile = buildPhifMedicationProfileFromRows([{ ...invoice, id: "other" }], [sources[1]]);
+    const before = JSON.stringify({ sources, profile });
+    const details = buildPreparationItems(profile.items, [sources[1]], phifMedicationIdentityKey, "tiryaq", [], [], context);
+    expect(details[0]).toMatchObject({ form: "tablet", identityComplete: true, quantity: null, quantityUnit: null, lastDispensingBoxes: null });
+    expect(JSON.stringify({ sources, profile })).toBe(before);
+  });
+
+  it("keeps ATORVASTATIN 10MG and 20MG as two groups, not one group per source ID or beneficiary", () => {
+    const settings = [saved("atorvastatin", "10MG"), saved("atorvastatin", "20MG")];
+    const rows = [10, 20, 10, 20].map((dose, index) => person(String(index), project([source({
+      id: `ator-${index}`, active_ingredient: index % 2 ? " atorvastatin " : "ATORVASTATIN", strength: `${dose} MG`,
+      phif_item_id: index % 2 ? null : `product-${index}`, source_classification: index < 2 ? "phif-supplier" : "actual-supplier",
+      metadata: {}, quantity: 30,
+    })], [invoice], settings).details));
+    const result = aggregate(rows);
+    expect(result.groups).toHaveLength(2);
+    expect(result.groups.map(g => g.itemCount)).toEqual([2, 2]);
+    expect(result.groups.every(g => g.form === "tablet" && g.beneficiaries.length === 2)).toBe(true);
+    expect(new Set(result.groups.map(g => JSON.parse(g.key)[1]))).toEqual(new Set(["10mg", "20mg"]));
+  });
+
+  it("does not let incomplete flags split an otherwise evidenced identity or let forms mix", () => {
+    const rows = [person("1", [dto({ identityComplete: false })]), person("2", [dto({ sourceItemIds: ["b"] })]),
+      person("3", [dto({ form: "capsule", sourceItemIds: ["c"] })]),
+      person("4", [dto({ form: "", quantityUnit: null, identityComplete: false, sourceItemIds: ["d"] })])];
+    expect(aggregate(rows).groups).toHaveLength(3);
+    expect(aggregate(rows).groups.find(g => g.form === "tablet")?.beneficiaries).toHaveLength(2);
+  });
+
+  it("leaves an all-missing form unresolved without evidence, and rejects conflicting definitions", () => {
+    const missing = () => dto({ form: "", quantityUnit: null, identityComplete: false });
+    expect(aggregate([person("1", [missing()]), person("2", [missing()])]).groups).toHaveLength(2);
+    const result = project([source({ metadata: {}, phif_item_id: null })], [invoice],
+      [saved("amlodipine", "5MG"), saved("amlodipine", "5MG", "capsule")]).details[0];
+    expect(result).toMatchObject({ form: "", identityComplete: false, formIssue: "conflicting_saved_forms" });
+  });
+
+  it("does not use another pharmacy's definitions or context and never derives quantity units from identity", () => {
+    const sources = [source({ metadata: {}, phif_item_id: null })], settings = [saved("amlodipine", "5MG", "tablet", "andalus")];
+    const context = preparationIdentityContext(sources, "andalus", settings);
+    const profile = buildPhifMedicationProfileFromRows([invoice], sources);
+    const result = buildPreparationItems(profile.items, sources, phifMedicationIdentityKey, "tiryaq", settings, [invoice], context)[0];
+    expect(result).toMatchObject({ form: "", identityComplete: false, quantityUnit: null, lastDispensingBoxes: null });
+  });
+
+  it("keeps real cross-beneficiary form conflicts unresolved, retaining explicit tablet and capsule forms", () => {
+    const sources = [source({ id: "tablet", metadata: { dosage_form: "tablet" } }),
+      source({ id: "capsule", metadata: { dosage_form: "capsule" } }), source({ id: "unknown", metadata: {} }),
+      source({ id: "foreign", pharmacy_id: "andalus", metadata: { dosage_form: "vial" } })];
+    const context = preparationIdentityContext(sources, "tiryaq");
+    expect(context.identities.has("foreign")).toBe(false);
+    const items = sources.slice(0, 3).map(row => {
+      const profile = buildPhifMedicationProfileFromRows([invoice], [row]);
+      return buildPreparationItems(profile.items, [row], phifMedicationIdentityKey, "tiryaq", [], [invoice], context)[0];
+    });
+    expect(items.map(i => i.form)).toEqual(["tablet", "capsule", ""]);
+    expect(items[2].formIssue).toBe("conflicting_form_evidence");
+  });
+
+  it("retains identity even if multiple latest invoices make the quantity ambiguous", () => {
+    const sources = [source({ id: "a", metadata: {} }), source({ id: "b", metadata: {}, phif_invoice_id: "second" })];
+    const details = project(sources, [invoice, { ...invoice, id: "second" }], [saved("amlodipine", "5MG")]).details;
+    expect(details[0]).toMatchObject({ form: "tablet", identityComplete: true, lastDispensingBoxes: null,
+      issue: expect.stringContaining("حركات متعددة") });
+  });
+
+  it("does not turn a malformed saved base unit into valid identity evidence", () => {
+    const invalid = { ...saved("amlodipine", "5MG"), base_unit: "pen" };
+    const details = project([source({ metadata: {} })], [invoice], [invalid]).details;
+    expect(details[0]).toMatchObject({ form: "", identityComplete: false, formIssue: "invalid_saved_definition" });
+  });
+
+  it("retains shared-card deduplication, exact source-line deduplication and partial warnings after a merge", () => {
+    const a = dto({ name: "ACETYL SALICYLIC ACID", strength: "75MG", lastDispensingPartial: true });
+    const b = dto({ ...a, id: "variant", name: "ACETYLSALICYLIC ACID", form: "", quantityUnit: null, identityComplete: false });
+    const c = dto({ ...a, id: "new-line", sourceItemIds: ["new"], quantity: 15, lastDispensingBoxes: 0.5 });
+    const result = aggregate([person("1", [a], "00123"), person("2", [b, c], "00123"), person("3", [a], "123")]);
+    expect(result.groups).toHaveLength(1);
+    expect(result.originalCount).toBe(4);
+    expect(result.groups[0]).toMatchObject({ boxes: 3.5, itemCount: 4, knownItemCount: 3, partialCount: 3 });
+    expect(result.groups[0].beneficiaries.map(p => p.card)).toEqual(["00123", "123"]);
   });
 });
