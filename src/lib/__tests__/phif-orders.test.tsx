@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { OrdersPage } from "@/routes/management.orders";
+import { OrderLineTiming, OrdersPage } from "@/routes/management.orders";
 import { ordersFixture } from "./fixtures/phif-orders.fixture";
 import { defaultOrdersFilters, orderAgeDays, orderDuration, ordersCacheOptions, ordersExportAllowed, ordersExportRows, ordersPeriodFilters, ordersStatisticFilters, ordersView } from "../phif-orders.helpers";
 import { readPhifOrders } from "../phif-orders.server";
@@ -95,7 +95,7 @@ describe("PHIF order monitoring reads and exports", () => {
     const c = cacheClient(); c.setQueryData(["phif_orders", itemsAnalyticsScope(session)], saved());
     const html = renderToStaticMarkup(<QueryClientProvider client={c}><OrdersPage /></QueryClientProvider>);
     const receivedCard = html.match(/<article\b[^>]*>[\s\S]*?<\/article>/g)?.find(card => card.includes("تم الاستلام"))!;
-    expect(receivedCard).toContain("تم الاستلام — تاريخ الاستلام غير متوفر");
+    expect(receivedCard).toContain("تاريخ الاستلام غير محدد");
     expect(receivedCard).not.toContain("مدة منذ إنشاء الطلب:");
     expect(receivedCard).not.toMatch(/\d+ يوم/);
   });
@@ -132,7 +132,7 @@ describe("PHIF order monitoring reads and exports", () => {
     c.setQueryData(key, saved());
     const render = () => renderToStaticMarkup(<QueryClientProvider client={c}><OrdersPage /></QueryClientProvider>);
     const html = render();
-    for (const text of ["متابعة طلبيات PHIF", "بانتظار موافقة المورد", "بانتظار الاستلام", "تم الاستلام", "00123", "منذ إنشاء الطلب", "غير موثقة"])
+    for (const text of ["متابعة طلبيات PHIF", "بانتظار موافقة المورد", "بانتظار الاستلام", "تم الاستلام", "00123", "مدة الانتظار حتى اليوم", "غير موثقة"])
       expect(html).toContain(text);
     expect(html).not.toContain("جارٍ قراءة الطلبات وتفاصيلها");
     expect(html).toContain("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
@@ -182,6 +182,75 @@ describe("PHIF order monitoring reads and exports", () => {
     expect(JSON.stringify(data)).toBe(before);
     if (process.env.PHIF_ORDERS_TEST_PDF) writeFileSync(process.env.PHIF_ORDERS_TEST_PDF, bytes);
   }, 30000);
+});
+
+describe("compact order-card receipt timing", () => {
+  const now = Date.parse("2026-11-01T12:00:00Z");
+  const receipt = {
+    id: "00000000-0000-4000-8000-000000000001", pharmacy_id: "tiryaq", order_id: "10326", line_id: "60697",
+    order_number: "ORD_242_266_10326", order_created_at: "2026-10-13T02:38:20Z", medicine: "Test medicine", batch: "00123",
+    status: "received" as const, first_received_observed_at: "2026-10-22T09:30:00Z", confirmed_received_on: "2026-10-18",
+    confirmed_by: "manager", confirmed_at: "2026-10-23T12:00:00Z", version: 2,
+  };
+  const row = (patch: any = {}) => {
+    const line = { createdAt: "2026-10-13T02:38:20Z", status: "received" as const, receivedAt: null, ...patch };
+    return { ...line, duration: orderDuration(line, now) };
+  };
+  const render = (line: ReturnType<typeof row>) => renderToStaticMarkup(<OrderLineTiming row={line} />);
+
+  it("emphasizes actual receipt days while removing confirmation and observation clutter only from the card", () => {
+    const line = row({ receipt }), before = JSON.stringify(line), html = render(line);
+    expect(html).toContain("المدة من إنشاء الطلب حتى الاستلام");
+    expect(html).toContain('class="text-3xl font-bold tabular-nums leading-9">5</bdi>');
+    expect(html).toContain("أيام"); expect(html).toContain("تاريخ الاستلام الفعلي:");
+    expect(html).not.toContain("مؤكد يدويًا"); expect(html).not.toContain("أول رصد");
+    expect(html).not.toContain("رصد آلي"); expect(html).not.toContain("مدة الانتظار حتى اليوم");
+    expect(JSON.stringify(line)).toBe(before);
+    expect(line.receipt).toMatchObject({ first_received_observed_at: receipt.first_received_observed_at, confirmed_by: "manager" });
+  });
+
+  it("shows real PHIF receipt durations and never advances received days to today", () => {
+    const line = row({ receivedAt: "2026-10-18T02:38:20Z" });
+    expect(line.duration.days).toBe(5); expect(render(line)).toContain('leading-9">5</bdi>');
+    expect(orderDuration(line, now + 60 * 86400000).days).toBe(5);
+  });
+
+  it.each([undefined, { ...receipt, confirmed_received_on: null }])("never substitutes a first-observed date for receipt confirmation: %s", record => {
+    const line = row({ receipt: record }), html = render(line);
+    expect(line.duration.days).toBeNull(); expect(html).toContain("تاريخ الاستلام غير محدد");
+    expect(html).not.toContain("أيام"); expect(html).not.toContain("text-3xl");
+    expect(html).not.toContain("المدة من إنشاء الطلب حتى الاستلام");
+  });
+
+  it.each(["waiting", "not_approved", "review"] as const)("uses today for nonreceived state %s without interpreting stale receipt metadata as a real receipt", status => {
+    const line = row({ status, receipt }), html = render(line);
+    expect(line.duration.days).toBe(19);
+    expect(html).toContain("مدة الانتظار حتى اليوم"); expect(html).toContain('leading-9">19</bdi>');
+    expect(html).not.toContain("تاريخ الاستلام الفعلي");
+  });
+
+  it("preserves zero-day and Libya-calendar manual durations", () => {
+    const sameDay = row({ receipt: { ...receipt, confirmed_received_on: "2026-10-13" } });
+    expect(sameDay.duration.days).toBe(0); expect(render(sameDay)).toContain('leading-9">0</bdi>');
+    const midnight = row({ createdAt: "2026-10-12T23:30:00Z", receipt: { ...receipt, confirmed_received_on: "2026-10-14" } });
+    expect(midnight.duration.days).toBe(1);
+  });
+
+  it("does not show a fabricated number for missing or conflicting dates", () => {
+    for (const line of [row({ createdAt: null, receipt }), row({ receipt: { ...receipt, confirmed_received_on: "2026-10-12" } }),
+      row({ receipt: { ...receipt, confirmed_received_on: "2027-01-01" } }), row({ status: "waiting", createdAt: null })]) {
+      expect(line.duration.days).toBeNull(); expect(render(line)).not.toContain("text-3xl");
+    }
+  });
+
+  it("keeps the receipt editor and source records, without adding write, sync, or receipt-detection paths", () => {
+    const page = readFileSync("src/routes/management.orders.tsx", "utf8");
+    expect(page).toContain('<OrderLineTiming row={row} />');
+    expect(page).toContain('<OrderReceiptDateEditor record={row.receipt}');
+    expect(page).toContain('onSaved={report.receiptSaved}');
+    const editor = readFileSync("src/components/management/OrderReceiptDateEditor.tsx", "utf8");
+    expect(editor).toContain("أول رصد للاستلام:");
+  });
 });
 
 describe("order periods, approval tabs and linked statistics", () => {

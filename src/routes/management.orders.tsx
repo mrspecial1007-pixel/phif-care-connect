@@ -9,7 +9,7 @@ import { ReportBackLink } from "@/components/management/ReportBackLink";
 import { OrdersExportButton } from "@/components/management/OrdersExportButton";
 import { OrderReceiptDateEditor } from "@/components/management/OrderReceiptDateEditor";
 import { PhifTrackerIdentityNotice } from "@/components/management/PhifTrackerIdentityNotice";
-import { confirmedReceiptDate, receiptDateSource } from "@/lib/phif-order-receipts.helpers";
+import { confirmedReceiptDate } from "@/lib/phif-order-receipts.helpers";
 import { useSession } from "@/lib/queries";
 import { itemsAnalyticsScope } from "@/lib/items-analytics-cache.helpers";
 import { useStoredPhifOrders } from "@/lib/use-stored-phif-orders";
@@ -24,6 +24,27 @@ const dateLabel = (value: string | null) => value
 const statusStyle = { received: "border-emerald-200 bg-emerald-50 text-emerald-800",
   waiting: "border-amber-200 bg-amber-50 text-amber-900", not_approved: "border-zinc-200 bg-zinc-50 text-zinc-700",
   review: "border-red-200 bg-red-50 text-red-800" };
+
+export function OrderLineTiming({ row }: {
+  row: Pick<ReturnType<typeof ordersView>["rows"][number], "createdAt" | "status" | "receivedAt" | "receipt" | "duration">;
+}) {
+  const received = row.status === "received", actual = received ? confirmedReceiptDate(row) : null;
+  const days = !received || actual ? row.duration.days : null;
+  return <div dir="rtl" className="min-w-0 space-y-2">
+    <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span className="inline-flex items-center gap-1"><CalendarDays className="size-3 shrink-0" />إنشاء: {dateLabel(row.createdAt)}</span>
+      {actual && <span className="font-semibold text-emerald-800">تاريخ الاستلام الفعلي: {dateLabel(actual)}</span>}
+    </div>
+    {received && !actual ? <p className="text-xs text-amber-900">تاريخ الاستلام غير محدد</p> : <div className="space-y-1">
+      <p className="text-xs leading-5 text-muted-foreground">{received ? "المدة من إنشاء الطلب حتى الاستلام" : "مدة الانتظار حتى اليوم"}</p>
+      {days == null ? <p className="text-xs text-amber-900">{received ? "تعذر حساب المدة من التواريخ المسجلة" : "تاريخ إنشاء الطلب غير متوفر"}</p>
+        : <p className={`flex flex-wrap items-baseline gap-1.5 leading-none ${received ? "text-emerald-800" : "text-amber-900"}`}>
+          <bdi dir="ltr" className="text-3xl font-bold tabular-nums leading-9">{days.toLocaleString("ar-LY")}</bdi>
+          <span className="text-sm font-medium">أيام</span>
+        </p>}
+    </div>}
+  </div>;
+}
 
 export function OrdersPage() {
   const session = useSession();
@@ -154,12 +175,7 @@ function OrdersBody({ scope }: { scope: string }) {
               <div>الكمية المعتمدة<strong className="mt-1 block text-xl">{row.approvedQuantity == null ? "غير موثقة" : row.approvedQuantity.toLocaleString("en-US")}</strong></div>
               <div>التشغيلة<bdi className="mt-1 block break-all font-semibold">{row.batch || "غير مسجلة"}</bdi></div>
             </div>
-            <div className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1"><CalendarDays className="size-3" />إنشاء: {dateLabel(row.createdAt)}</span>
-              {row.status === "received" && confirmedReceiptDate(row) && <span className="text-emerald-800">استلام: {dateLabel(confirmedReceiptDate(row))} · {receiptDateSource(row)}</span>}
-              <span>{row.duration.label}</span>
-            </div>
-            {row.receipt?.first_received_observed_at && <p className="text-xs text-amber-900">أول رصد للاستلام: {dateLabel(row.receipt.first_received_observed_at)} · رصد آلي وليس تاريخ استلام فعليًا</p>}
+            <OrderLineTiming row={row} />
             {row.status === "received" && report.canManageReceipts && <OrderReceiptDateEditor record={row.receipt} medicine={row.medicine}
               enabled={Boolean(report.receipts?.ready)} onSaved={report.receiptSaved} />}
           </article>;
