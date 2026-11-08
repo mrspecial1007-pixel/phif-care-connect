@@ -183,7 +183,7 @@ export function ReportIdentityReview({
 }) {
   return (
     <section aria-label="مراجعة هوية الأصناف" className="min-w-0 border-b py-3">
-      <details>
+      <details open={items.length > 0}>
         <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
           مراجعة هوية الأصناف ({items.length})
         </summary>
