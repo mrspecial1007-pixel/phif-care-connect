@@ -11,3 +11,4 @@
 
 - Keep reporting as pharmacy-scoped server reads; profit analysis requires server-verified stock-cost permission so private costs never leak through official exports.
 - Store PHIF Supplier purchase unit prices in existing invoice-item financial fields, leaving imported invoice and sale values untouched for auditability.
+- Keep consumption sorting in the shared display/export selector using documented box totals and unknown totals last, so screen and export order agree without altering calculations.

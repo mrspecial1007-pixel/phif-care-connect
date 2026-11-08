@@ -240,6 +240,6 @@ export const getReferenceItem = createServerFn({ method: "POST" })
         unit: (s.source_quantity_unit ?? s.dosage_unit ?? "") as string,
         synced: s.synced_at as string | null,
       })),
-      movements: movements.filter((movement) => sourceMovementsVisible(movement.source, access)),
+      movements: movements.filter((movement: { source: Src }) => sourceMovementsVisible(movement.source, access)),
     };
   });

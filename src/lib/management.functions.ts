@@ -1266,6 +1266,7 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
       .maybeSingle();
     if (invoiceError) throw new Error(invoiceError.message);
     if (!invoice || invoice.pharmacy_id !== pharmacy_id) throw new Error("Invoice item not found");
+    const existingFinancialFields = typeof item.phif_financial_fields === "object" && item.phif_financial_fields !== null && !Array.isArray(item.phif_financial_fields) ? item.phif_financial_fields : {};
     const fields = {
       ...(typeof item.phif_financial_fields === "object" && item.phif_financial_fields !== null && !Array.isArray(item.phif_financial_fields) ? item.phif_financial_fields : {}),
       internal_purchase_cost_mode: data.purchaseCostMode,
@@ -1276,7 +1277,7 @@ export const savePhifSupplierPurchasePrice = createServerFn({ method: "POST" })
       purchase_price_unit: data.purchaseCostMode === "unit_price" ? purchaseUnit : null,
       internal_purchase_price_updated_at: new Date().toISOString(),
       internal_purchase_price_basis: null,
-      internal_purchase_history: [...(Array.isArray(item.phif_financial_fields?.internal_purchase_history) ? item.phif_financial_fields.internal_purchase_history : []), {
+      internal_purchase_history: [...(Array.isArray(existingFinancialFields.internal_purchase_history) ? existingFinancialFields.internal_purchase_history : []), {
         user_id: priceSession.session.data.user_id ?? null, at: new Date().toISOString(),
         previous: Object.fromEntries(Object.entries(item.phif_financial_fields ?? {}).filter(([key]) => key.startsWith("internal_purchase_") && key !== "internal_purchase_history")),
         next: { mode: data.purchaseCostMode, value: purchaseValue, unit: purchaseUnit ?? null },

@@ -76,7 +76,7 @@ export function resolveActualStockLink(item: any, links: ActualStockLink[]) {
   return { link: conflict ? null : candidates.sort((a,b)=>a.id.localeCompare(b.id))[0] || null, conflict };
 }
 
-export function applyActualStockLinks<T extends { id?: string | null; source_classification?: string | null }>(items: T[], links: ActualStockLink[]) {
+export function applyActualStockLinks<T extends { id?: string | null; source_classification?: string | null }>(items: T[], links: ActualStockLink[]): Array<Omit<T, "manual_stock_link" | "manual_link_conflict"> & { manual_stock_link?: ActualStockLink; manual_link_conflict?: boolean }> {
   // Per-read indexes: old decisions outside the selected invoice range remain usable without an N*M audit scan.
   const byItem = new Map<string,ActualStockLink[]>(), bySource = new Map<string,ActualStockLink[]>();
   for (const link of links) {
