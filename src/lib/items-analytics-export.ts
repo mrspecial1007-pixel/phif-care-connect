@@ -13,7 +13,17 @@ export function selectAnalyticsRows(report: any, view: AnalyticsView, filters: A
   return all
     .filter((row) => view === "consumption" || resultMatches(row, filters.result))
     .sort((a, b) => {
-      if (view === "consumption") return a.ingredient.localeCompare(b.ingredient, "ar");
+      if (view === "consumption") {
+        const byName = a.ingredient.localeCompare(b.ingredient, "ar")
+          || String(a.strength ?? "").localeCompare(String(b.strength ?? ""))
+          || String(a.id).localeCompare(String(b.id));
+        if (filters.sort === "name_asc") return byName;
+        // Only comparable, documented box totals participate in quantity ranking.
+        // Unknown totals remain unknown and sort last, never as zero.
+        if (a.boxes == null || b.boxes == null)
+          return a.boxes == null ? (b.boxes == null ? byName : 1) : -1;
+        return (filters.sort === "consumption_asc" ? a.boxes - b.boxes : b.boxes - a.boxes) || byName;
+      }
       const metric = (r: any) =>
         filters.sort === "sale_desc"
           ? r.revenue

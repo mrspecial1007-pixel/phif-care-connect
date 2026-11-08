@@ -4,7 +4,7 @@ import { isTreasuryManager, treasuryFinanceAccess, treasuryReportForSession } fr
 import { ANDALUS_PHARMACY_NAME, TIRYAQ_PHARMACY_NAME } from "@/lib/pharmacy-isolation";
 
 function session(role: string | undefined = "admin", permissions: Record<string, boolean> = {}, userId?: string) {
-  return { pharmacy_id: "tiryaq-test", pharmacy_name: TIRYAQ_PHARMACY_NAME, session: { data: { user_role: role, user_permissions: permissions, user_id: userId } } };
+  return { pharmacy_id: "tiryaq-test", pharmacy_name: TIRYAQ_PHARMACY_NAME, session: { data: { user_role: role as string | undefined, user_permissions: permissions, user_id: userId } } };
 }
 
 function report() {

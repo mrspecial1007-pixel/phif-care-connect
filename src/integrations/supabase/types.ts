@@ -971,6 +971,178 @@ export type Database = {
           },
         ]
       }
+      phif_actual_stock_links: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          pharmacy_id: string
+          phif_invoice_item_id: string
+          source_identity: string | null
+          source_signature: string
+          target_stock_item_id: string
+          updated_actor: string
+          updated_at: string
+          updated_by: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          pharmacy_id: string
+          phif_invoice_item_id: string
+          source_identity?: string | null
+          source_signature: string
+          target_stock_item_id: string
+          updated_actor: string
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          pharmacy_id?: string
+          phif_invoice_item_id?: string
+          source_identity?: string | null
+          source_signature?: string
+          target_stock_item_id?: string
+          updated_actor?: string
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_actual_stock_links_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_stock_links_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_stock_links_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_stock_links_phif_invoice_item_id_fkey"
+            columns: ["phif_invoice_item_id"]
+            isOneToOne: false
+            referencedRelation: "phif_invoice_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_stock_links_target_stock_item_id_fkey"
+            columns: ["target_stock_item_id"]
+            isOneToOne: false
+            referencedRelation: "phif_stock_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_stock_links_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "pharmacy_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_actual_unit_decisions: {
+        Row: {
+          cost_unit: string
+          created_at: string
+          dispensing_unit: string
+          id: string
+          is_active: boolean
+          pharmacy_id: string
+          phif_invoice_item_id: string
+          source_signature: string
+          stock_signature: string
+          updated_actor: string
+          updated_at: string
+          updated_by: string
+          version: number
+        }
+        Insert: {
+          cost_unit: string
+          created_at?: string
+          dispensing_unit: string
+          id?: string
+          is_active?: boolean
+          pharmacy_id: string
+          phif_invoice_item_id: string
+          source_signature: string
+          stock_signature: string
+          updated_actor: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+        }
+        Update: {
+          cost_unit?: string
+          created_at?: string
+          dispensing_unit?: string
+          id?: string
+          is_active?: boolean
+          pharmacy_id?: string
+          phif_invoice_item_id?: string
+          source_signature?: string
+          stock_signature?: string
+          updated_actor?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_actual_unit_decisions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_unit_decisions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_unit_decisions_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_unit_decisions_phif_invoice_item_id_fkey"
+            columns: ["phif_invoice_item_id"]
+            isOneToOne: false
+            referencedRelation: "phif_invoice_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_actual_unit_decisions_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "pharmacy_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       phif_bridge_sessions: {
         Row: {
           bridge_session_id: string
@@ -1196,11 +1368,404 @@ export type Database = {
           },
         ]
       }
+      phif_manual_sync_operations: {
+        Row: {
+          actor_id: string
+          expires_at: string
+          finished_at: string | null
+          id: string
+          kind: string
+          pharmacy_id: string
+          session_record_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          actor_id: string
+          expires_at?: string
+          finished_at?: string | null
+          id?: string
+          kind: string
+          pharmacy_id: string
+          session_record_id: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          actor_id?: string
+          expires_at?: string
+          finished_at?: string | null
+          id?: string
+          kind?: string
+          pharmacy_id?: string
+          session_record_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_manual_sync_operations_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacy_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_manual_sync_operations_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_manual_sync_operations_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_manual_sync_operations_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_manual_sync_operations_session_record_id_fkey"
+            columns: ["session_record_id"]
+            isOneToOne: false
+            referencedRelation: "phif_bridge_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_medication_follow_ups: {
+        Row: {
+          baseline_invoice_ids: string[]
+          is_stopped: boolean
+          medication_identity_key: string
+          patient_id: string
+          pharmacy_id: string
+          reactivated_at: string | null
+          reason: string | null
+          stopped_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          baseline_invoice_ids?: string[]
+          is_stopped?: boolean
+          medication_identity_key: string
+          patient_id: string
+          pharmacy_id: string
+          reactivated_at?: string | null
+          reason?: string | null
+          stopped_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          baseline_invoice_ids?: string[]
+          is_stopped?: boolean
+          medication_identity_key?: string
+          patient_id?: string
+          pharmacy_id?: string
+          reactivated_at?: string | null
+          reason?: string | null
+          stopped_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_medication_follow_ups_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_medication_follow_ups_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_pharmacy_access_unassigned"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "phif_medication_follow_ups_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_medication_follow_ups_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "v_patient_status"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "phif_medication_follow_ups_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_medication_follow_ups_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_medication_follow_ups_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_order_receipt_sync: {
+        Row: {
+          fetched_at: string
+          pharmacy_id: string
+        }
+        Insert: {
+          fetched_at: string
+          pharmacy_id: string
+        }
+        Update: {
+          fetched_at?: string
+          pharmacy_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_order_receipt_sync_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: true
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_receipt_sync_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: true
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_receipt_sync_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: true
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_order_receipts: {
+        Row: {
+          batch: string | null
+          confirmed_at: string | null
+          confirmed_by: string | null
+          confirmed_received_on: string | null
+          first_received_observed_at: string | null
+          id: string
+          line_id: string
+          medicine: string
+          order_created_at: string | null
+          order_id: string
+          order_number: string
+          pharmacy_id: string
+          status: string
+          version: number
+        }
+        Insert: {
+          batch?: string | null
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          confirmed_received_on?: string | null
+          first_received_observed_at?: string | null
+          id?: string
+          line_id: string
+          medicine: string
+          order_created_at?: string | null
+          order_id: string
+          order_number: string
+          pharmacy_id: string
+          status: string
+          version?: number
+        }
+        Update: {
+          batch?: string | null
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          confirmed_received_on?: string | null
+          first_received_observed_at?: string | null
+          id?: string
+          line_id?: string
+          medicine?: string
+          order_created_at?: string | null
+          order_id?: string
+          order_number?: string
+          pharmacy_id?: string
+          status?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_order_receipts_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "pharmacy_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_receipts_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_receipts_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_receipts_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phif_order_snapshots: {
+        Row: {
+          fetched_at: string
+          pharmacy_id: string
+          report: Json
+          saved_at: string
+          saved_by: string
+          version: number
+        }
+        Insert: {
+          fetched_at: string
+          pharmacy_id: string
+          report: Json
+          saved_at?: string
+          saved_by: string
+          version: number
+        }
+        Update: {
+          fetched_at?: string
+          pharmacy_id?: string
+          report?: Json
+          saved_at?: string
+          saved_by?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_order_snapshots_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: true
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_snapshots_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: true
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_snapshots_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: true
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_snapshots_saved_by_fkey"
+            columns: ["saved_by"]
+            isOneToOne: false
+            referencedRelation: "pharmacy_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       phif_report_box_settings: {
-        Row: { id: string; pharmacy_id: string; item_identity: string; units_per_box: number; base_unit: string; supplier_quantity_unit: string | null; supplier_unit_exceptions: Json; version: number; updated_by: string; updated_at: string }
-        Insert: { id?: string; pharmacy_id: string; item_identity: string; units_per_box: number; base_unit: string; version?: number; updated_by: string; updated_at?: string }
-        Update: { units_per_box?: number; base_unit?: string; version?: number; updated_by?: string; updated_at?: string }
-        Relationships: []
+        Row: {
+          base_unit: string
+          id: string
+          item_identity: string
+          pharmacy_id: string
+          supplier_quantity_unit: string | null
+          supplier_unit_exceptions: Json
+          units_per_box: number
+          updated_at: string
+          updated_by: string
+          version: number
+        }
+        Insert: {
+          base_unit: string
+          id?: string
+          item_identity: string
+          pharmacy_id: string
+          supplier_quantity_unit?: string | null
+          supplier_unit_exceptions?: Json
+          units_per_box: number
+          updated_at?: string
+          updated_by: string
+          version?: number
+        }
+        Update: {
+          base_unit?: string
+          id?: string
+          item_identity?: string
+          pharmacy_id?: string
+          supplier_quantity_unit?: string | null
+          supplier_unit_exceptions?: Json
+          units_per_box?: number
+          updated_at?: string
+          updated_by?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_report_box_settings_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_report_box_settings_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_report_box_settings_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_report_box_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "pharmacy_users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       phif_stock_items: {
         Row: {
@@ -2054,14 +2619,61 @@ export type Database = {
       }
     }
     Functions: {
-      set_phif_report_supplier_unit: {
-        Args: { p_pharmacy_id: string; p_actor_id: string; p_identity: string; p_unit: string | null; p_exceptions: Json; p_expected_version: number }
+      _apply_phif_stock_snapshots: {
+        Args: { p_items: Json; p_pharmacy_id: string; p_sync_run_id: string }
+        Returns: number
+      }
+      _phif_manual_sync_actor: {
+        Args: { p_actor_id: string; p_pharmacy_id: string }
+        Returns: undefined
+      }
+      _phif_scope_actual_identity: {
+        Args: { p_item_id: string; p_pharmacy_id: string; p_target_id: string }
         Returns: Json
       }
-      set_phif_report_box_setting: {
-        Args: { p_pharmacy_id: string; p_actor_id: string; p_identity: string; p_units_per_box: number; p_base_unit: string; p_expected_version: number }
+      _phif_scope_form: { Args: { p_value: string }; Returns: string }
+      _phif_scope_item_form: { Args: { p_item: Json }; Returns: string }
+      _phif_scope_item_identity: {
+        Args: { p_item_id: string; p_pharmacy_id: string; p_target_id?: string }
         Returns: Json
       }
+      _phif_scope_strength: { Args: { p_value: string }; Returns: string }
+      _phif_scope_text: {
+        Args: { p_ingredient?: boolean; p_value: string }
+        Returns: string
+      }
+      begin_phif_manual_sync: {
+        Args: {
+          p_actor_id: string
+          p_kind: string
+          p_pharmacy_id: string
+          p_session_record_id: string
+        }
+        Returns: Json
+      }
+      complete_phif_orders_sync: {
+        Args: {
+          p_actor_id: string
+          p_expected_version: number
+          p_operation_id: string
+          p_pharmacy_id: string
+          p_report: Json
+        }
+        Returns: number
+      }
+      fail_phif_manual_sync: {
+        Args: {
+          p_actor_id: string
+          p_operation_id: string
+          p_pharmacy_id: string
+        }
+        Returns: string
+      }
+      observe_phif_order_receipts: {
+        Args: { p_actor_id: string; p_pharmacy_id: string; p_report: Json }
+        Returns: undefined
+      }
+      phif_actual_canonical_unit: { Args: { p_value: string }; Returns: string }
       register_gateway_device_with_code: {
         Args: { _code_hash: string; _device_name: string; _fcm_token?: string }
         Returns: Json
@@ -2069,6 +2681,108 @@ export type Database = {
       replace_phif_stock_snapshots: {
         Args: { p_items: Json; p_pharmacy_id: string; p_sync_run_id: string }
         Returns: number
+      }
+      set_phif_actual_identity_link: {
+        Args: {
+          p_actor: string
+          p_expected_members: Json
+          p_identity: string
+          p_item_id: string
+          p_pharmacy_id: string
+          p_revoke?: boolean
+          p_signature: string
+          p_target_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      set_phif_actual_stock_link: {
+        Args: {
+          p_actor: string
+          p_expected_version: number
+          p_item_id: string
+          p_pharmacy_id: string
+          p_revoke?: boolean
+          p_signature: string
+          p_target_id: string
+          p_user_id: string
+        }
+        Returns: {
+          created_at: string
+          id: string
+          is_active: boolean
+          pharmacy_id: string
+          phif_invoice_item_id: string
+          source_identity: string | null
+          source_signature: string
+          target_stock_item_id: string
+          updated_actor: string
+          updated_at: string
+          updated_by: string | null
+          version: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "phif_actual_stock_links"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      set_phif_actual_units: {
+        Args: {
+          p_actor: string
+          p_cost_unit: string
+          p_dispensing_unit: string
+          p_pharmacy_id: string
+          p_revoke?: boolean
+          p_rows: Json
+          p_user_id: string
+        }
+        Returns: number
+      }
+      set_phif_medication_follow_up: {
+        Args: {
+          p_identity_key: string
+          p_invoice_ids: string[]
+          p_is_stopped: boolean
+          p_patient_id: string
+          p_pharmacy_id: string
+          p_reason: string
+        }
+        Returns: undefined
+      }
+      set_phif_order_receipt_date: {
+        Args: {
+          p_actor_id: string
+          p_expected_version: number
+          p_line_id: string
+          p_order_id: string
+          p_pharmacy_id: string
+          p_received_on: string
+        }
+        Returns: Json
+      }
+      set_phif_report_box_setting: {
+        Args: {
+          p_actor_id: string
+          p_base_unit: string
+          p_expected_version: number
+          p_identity: string
+          p_pharmacy_id: string
+          p_units_per_box: number
+        }
+        Returns: Json
+      }
+      set_phif_report_supplier_unit: {
+        Args: {
+          p_actor_id: string
+          p_exceptions: Json
+          p_expected_version: number
+          p_identity: string
+          p_pharmacy_id: string
+          p_unit: string
+        }
+        Returns: Json
       }
     }
     Enums: {

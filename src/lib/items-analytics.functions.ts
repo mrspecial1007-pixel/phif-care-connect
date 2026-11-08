@@ -191,7 +191,8 @@ export const saveReportSupplierUnit = createServerFn({ method: "POST" })
           p_pharmacy_id: context.pharmacy_id,
           p_actor_id: actorId,
           p_identity: aliases[0].item_identity,
-          p_unit: data.unit,
+          // The RPC accepts SQL NULL to clear the unit; generated argument types omit nullability.
+          p_unit: data.unit as string,
           p_exceptions: exceptions,
           p_expected_version: data.version,
         }),

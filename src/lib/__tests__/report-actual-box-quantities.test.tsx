@@ -171,7 +171,9 @@ describe("independent Actual reporting boxes", () => {
   it("keeps different Actual brand pack sizes separate for totals, not a false common box", () => {
     const data = fixture(30);
     data.items.push({ ...data.items[0], id: "c" });
-    data.rows.push({ ...data.rows[0], item_id: "c", matched_stock_id: "other" });
+    const actualRow = data.rows[0];
+    if (!actualRow.matched_stock_id) throw new Error("Missing Actual fixture row");
+    data.rows.push({ ...actualRow, item_id: "c", matched_stock_id: "other" });
     data.stocks.push({ ...data.stocks[0], source_stock_id: "other", package_quantity: 60 });
     const result = buildItemsAnalytics(data);
     expect(result.movements.filter(r => r.source === "actual").map(r => r.boxes)).toEqual([1, 0.5]);

@@ -128,7 +128,7 @@ export function quickCostInput(item: QuickCostEntry, mode: SupplierCostMode, raw
   if (!raw.trim() || !Number.isFinite(value) || value < 0) throw new Error("أدخل تكلفة صحيحة لا تقل عن صفر");
   const unit = normalizeSupplierUnit(item.invoice_quantity_unit);
   if (mode === "unit_price" && (!unit || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) throw new Error("سعر الوحدة يحتاج كمية ووحدة صرف موثقتين");
-  return { itemId: item.item_id, purchaseCostMode: mode, purchaseCostValue: value, ...(mode === "unit_price" ? { purchaseCostUnit: unit } : {}) };
+  return { itemId: item.item_id, purchaseCostMode: mode, purchaseCostValue: value, ...(mode === "unit_price" && unit ? { purchaseCostUnit: unit } : {}) };
 }
 
 export async function saveQuickCostEntry(lock: { busy: boolean }, input: SupplierCostInput,

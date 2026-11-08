@@ -9,72 +9,42 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as QualityRouteImport } from './routes/quality'
-import { Route as PhifSyncRouteImport } from './routes/phif-sync'
-import { Route as PhifReviewRouteImport } from './routes/phif-review'
-import { Route as MessagesRouteImport } from './routes/messages'
-import { Route as ManagementRouteImport } from './routes/management'
-import { Route as ImportRouteImport } from './routes/import'
-import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as PhifInvoicesIndexRouteImport } from './routes/phif-invoices.index'
-import { Route as PatientsIndexRouteImport } from './routes/patients.index'
-import { Route as SettingsUsersRouteImport } from './routes/settings.users'
-import { Route as SettingsPhifRouteImport } from './routes/settings.phif'
-import { Route as PhifInvoicesIdRouteImport } from './routes/phif-invoices.$id'
-import { Route as PatientsIdRouteImport } from './routes/patients.$id'
-import { Route as ManagementTreasuryRouteImport } from './routes/management.treasury'
-import { Route as ManagementReportsRouteImport } from './routes/management.reports'
-import { Route as ManagementOrdersRouteImport } from './routes/management.orders'
-import { Route as ManagementInventoryRouteImport } from './routes/management.inventory'
+import { Route as ActivityRouteImport } from './routes/activity'
+import { Route as ImportRouteImport } from './routes/import'
+import { Route as ManagementRouteImport } from './routes/management'
+import { Route as MessagesRouteImport } from './routes/messages'
+import { Route as PhifReviewRouteImport } from './routes/phif-review'
+import { Route as PhifSyncRouteImport } from './routes/phif-sync'
+import { Route as QualityRouteImport } from './routes/quality'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ManagementAuditRouteImport } from './routes/management.audit'
-import { Route as ManagementReportsSummaryRouteImport } from './routes/management.reports.summary'
-import { Route as ManagementReportsProfitAnalysisRouteImport } from './routes/management.reports.profit-analysis'
-import { Route as ManagementReportsItemsRouteImport } from './routes/management.reports.items'
-import { Route as ManagementReportsItemTrackingRouteImport } from './routes/management.reports.item-tracking'
-import { Route as ManagementReportsItemProfitRouteImport } from './routes/management.reports.item-profit'
-import { Route as ManagementReportsInvoiceProfitRouteImport } from './routes/management.reports.invoice-profit'
-import { Route as ManagementReportsBeneficiaryProfitRouteImport } from './routes/management.reports.beneficiary-profit'
+import { Route as ManagementInventoryRouteImport } from './routes/management.inventory'
+import { Route as ManagementOrdersRouteImport } from './routes/management.orders'
+import { Route as ManagementReportsRouteImport } from './routes/management.reports'
+import { Route as ManagementTreasuryRouteImport } from './routes/management.treasury'
+import { Route as PatientsIndexRouteImport } from './routes/patients.index'
+import { Route as PatientsIdRouteImport } from './routes/patients.$id'
+import { Route as PhifInvoicesIndexRouteImport } from './routes/phif-invoices.index'
+import { Route as PhifInvoicesIdRouteImport } from './routes/phif-invoices.$id'
+import { Route as SettingsPhifRouteImport } from './routes/settings.phif'
+import { Route as SettingsUsersRouteImport } from './routes/settings.users'
 import { Route as ApiPublicSchedulerRouteImport } from './routes/api/public/scheduler'
-import { Route as ManagementReportsItemsItemIdRouteImport } from './routes/management.reports.items.$itemId'
-import { Route as ApiPublicGatewayStatusRouteImport } from './routes/api/public/gateway/status'
-import { Route as ApiPublicGatewayRegisterRouteImport } from './routes/api/public/gateway/register'
+import { Route as ManagementReportsBeneficiaryProfitRouteImport } from './routes/management.reports.beneficiary-profit'
+import { Route as ManagementReportsInvoiceProfitRouteImport } from './routes/management.reports.invoice-profit'
+import { Route as ManagementReportsItemProfitRouteImport } from './routes/management.reports.item-profit'
+import { Route as ManagementReportsItemTrackingRouteImport } from './routes/management.reports.item-tracking'
+import { Route as ManagementReportsItemsRouteImport } from './routes/management.reports.items'
+import { Route as ManagementReportsProfitAnalysisRouteImport } from './routes/management.reports.profit-analysis'
+import { Route as ManagementReportsSummaryRouteImport } from './routes/management.reports.summary'
 import { Route as ApiPublicGatewayJobsRouteImport } from './routes/api/public/gateway/jobs'
+import { Route as ApiPublicGatewayRegisterRouteImport } from './routes/api/public/gateway/register'
+import { Route as ApiPublicGatewayStatusRouteImport } from './routes/api/public/gateway/status'
+import { Route as ManagementReportsItemsItemIdRouteImport } from './routes/management.reports.items.$itemId'
 
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const QualityRoute = QualityRouteImport.update({
-  id: '/quality',
-  path: '/quality',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PhifSyncRoute = PhifSyncRouteImport.update({
-  id: '/phif-sync',
-  path: '/phif-sync',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PhifReviewRoute = PhifReviewRouteImport.update({
-  id: '/phif-review',
-  path: '/phif-review',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MessagesRoute = MessagesRouteImport.update({
-  id: '/messages',
-  path: '/messages',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ManagementRoute = ManagementRouteImport.update({
-  id: '/management',
-  path: '/management',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ImportRoute = ImportRouteImport.update({
-  id: '/import',
-  path: '/import',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ActivityRoute = ActivityRouteImport.update({
@@ -82,54 +52,44 @@ const ActivityRoute = ActivityRouteImport.update({
   path: '/activity',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ImportRoute = ImportRouteImport.update({
+  id: '/import',
+  path: '/import',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PhifInvoicesIndexRoute = PhifInvoicesIndexRouteImport.update({
-  id: '/phif-invoices/',
-  path: '/phif-invoices/',
+const ManagementRoute = ManagementRouteImport.update({
+  id: '/management',
+  path: '/management',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PatientsIndexRoute = PatientsIndexRouteImport.update({
-  id: '/patients/',
-  path: '/patients/',
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsUsersRoute = SettingsUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsPhifRoute = SettingsPhifRouteImport.update({
-  id: '/phif',
-  path: '/phif',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const PhifInvoicesIdRoute = PhifInvoicesIdRouteImport.update({
-  id: '/phif-invoices/$id',
-  path: '/phif-invoices/$id',
+const PhifReviewRoute = PhifReviewRouteImport.update({
+  id: '/phif-review',
+  path: '/phif-review',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PatientsIdRoute = PatientsIdRouteImport.update({
-  id: '/patients/$id',
-  path: '/patients/$id',
+const PhifSyncRoute = PhifSyncRouteImport.update({
+  id: '/phif-sync',
+  path: '/phif-sync',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ManagementTreasuryRoute = ManagementTreasuryRouteImport.update({
-  id: '/treasury',
-  path: '/treasury',
-  getParentRoute: () => ManagementRoute,
+const QualityRoute = QualityRouteImport.update({
+  id: '/quality',
+  path: '/quality',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ManagementReportsRoute = ManagementReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => ManagementRoute,
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ManagementOrdersRoute = ManagementOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
+const ManagementAuditRoute = ManagementAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
   getParentRoute: () => ManagementRoute,
 } as any)
 const ManagementInventoryRoute = ManagementInventoryRouteImport.update({
@@ -137,38 +97,60 @@ const ManagementInventoryRoute = ManagementInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => ManagementRoute,
 } as any)
-const ManagementAuditRoute = ManagementAuditRouteImport.update({
-  id: '/audit',
-  path: '/audit',
+const ManagementOrdersRoute = ManagementOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
   getParentRoute: () => ManagementRoute,
 } as any)
-const ManagementReportsSummaryRoute =
-  ManagementReportsSummaryRouteImport.update({
-    id: '/summary',
-    path: '/summary',
-    getParentRoute: () => ManagementReportsRoute,
-  } as any)
-const ManagementReportsProfitAnalysisRoute =
-  ManagementReportsProfitAnalysisRouteImport.update({
-    id: '/profit-analysis',
-    path: '/profit-analysis',
-    getParentRoute: () => ManagementReportsRoute,
-  } as any)
-const ManagementReportsItemsRoute = ManagementReportsItemsRouteImport.update({
-  id: '/items',
-  path: '/items',
-  getParentRoute: () => ManagementReportsRoute,
+const ManagementReportsRoute = ManagementReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => ManagementRoute,
 } as any)
-const ManagementReportsItemTrackingRoute =
-  ManagementReportsItemTrackingRouteImport.update({
-    id: '/item-tracking',
-    path: '/item-tracking',
-    getParentRoute: () => ManagementReportsRoute,
-  } as any)
-const ManagementReportsItemProfitRoute =
-  ManagementReportsItemProfitRouteImport.update({
-    id: '/item-profit',
-    path: '/item-profit',
+const ManagementTreasuryRoute = ManagementTreasuryRouteImport.update({
+  id: '/treasury',
+  path: '/treasury',
+  getParentRoute: () => ManagementRoute,
+} as any)
+const PatientsIndexRoute = PatientsIndexRouteImport.update({
+  id: '/patients/',
+  path: '/patients/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PatientsIdRoute = PatientsIdRouteImport.update({
+  id: '/patients/$id',
+  path: '/patients/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PhifInvoicesIndexRoute = PhifInvoicesIndexRouteImport.update({
+  id: '/phif-invoices/',
+  path: '/phif-invoices/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PhifInvoicesIdRoute = PhifInvoicesIdRouteImport.update({
+  id: '/phif-invoices/$id',
+  path: '/phif-invoices/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsPhifRoute = SettingsPhifRouteImport.update({
+  id: '/phif',
+  path: '/phif',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsUsersRoute = SettingsUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const ApiPublicSchedulerRoute = ApiPublicSchedulerRouteImport.update({
+  id: '/api/public/scheduler',
+  path: '/api/public/scheduler',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManagementReportsBeneficiaryProfitRoute =
+  ManagementReportsBeneficiaryProfitRouteImport.update({
+    id: '/beneficiary-profit',
+    path: '/beneficiary-profit',
     getParentRoute: () => ManagementReportsRoute,
   } as any)
 const ManagementReportsInvoiceProfitRoute =
@@ -177,26 +159,38 @@ const ManagementReportsInvoiceProfitRoute =
     path: '/invoice-profit',
     getParentRoute: () => ManagementReportsRoute,
   } as any)
-const ManagementReportsBeneficiaryProfitRoute =
-  ManagementReportsBeneficiaryProfitRouteImport.update({
-    id: '/beneficiary-profit',
-    path: '/beneficiary-profit',
+const ManagementReportsItemProfitRoute =
+  ManagementReportsItemProfitRouteImport.update({
+    id: '/item-profit',
+    path: '/item-profit',
     getParentRoute: () => ManagementReportsRoute,
   } as any)
-const ApiPublicSchedulerRoute = ApiPublicSchedulerRouteImport.update({
-  id: '/api/public/scheduler',
-  path: '/api/public/scheduler',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ManagementReportsItemsItemIdRoute =
-  ManagementReportsItemsItemIdRouteImport.update({
-    id: '/$itemId',
-    path: '/$itemId',
-    getParentRoute: () => ManagementReportsItemsRoute,
+const ManagementReportsItemTrackingRoute =
+  ManagementReportsItemTrackingRouteImport.update({
+    id: '/item-tracking',
+    path: '/item-tracking',
+    getParentRoute: () => ManagementReportsRoute,
   } as any)
-const ApiPublicGatewayStatusRoute = ApiPublicGatewayStatusRouteImport.update({
-  id: '/api/public/gateway/status',
-  path: '/api/public/gateway/status',
+const ManagementReportsItemsRoute = ManagementReportsItemsRouteImport.update({
+  id: '/items',
+  path: '/items',
+  getParentRoute: () => ManagementReportsRoute,
+} as any)
+const ManagementReportsProfitAnalysisRoute =
+  ManagementReportsProfitAnalysisRouteImport.update({
+    id: '/profit-analysis',
+    path: '/profit-analysis',
+    getParentRoute: () => ManagementReportsRoute,
+  } as any)
+const ManagementReportsSummaryRoute =
+  ManagementReportsSummaryRouteImport.update({
+    id: '/summary',
+    path: '/summary',
+    getParentRoute: () => ManagementReportsRoute,
+  } as any)
+const ApiPublicGatewayJobsRoute = ApiPublicGatewayJobsRouteImport.update({
+  id: '/api/public/gateway/jobs',
+  path: '/api/public/gateway/jobs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicGatewayRegisterRoute =
@@ -205,11 +199,17 @@ const ApiPublicGatewayRegisterRoute =
     path: '/api/public/gateway/register',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicGatewayJobsRoute = ApiPublicGatewayJobsRouteImport.update({
-  id: '/api/public/gateway/jobs',
-  path: '/api/public/gateway/jobs',
+const ApiPublicGatewayStatusRoute = ApiPublicGatewayStatusRouteImport.update({
+  id: '/api/public/gateway/status',
+  path: '/api/public/gateway/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ManagementReportsItemsItemIdRoute =
+  ManagementReportsItemsItemIdRouteImport.update({
+    id: '/$itemId',
+    path: '/$itemId',
+    getParentRoute: () => ManagementReportsItemsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -441,53 +441,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/quality': {
-      id: '/quality'
-      path: '/quality'
-      fullPath: '/quality'
-      preLoaderRoute: typeof QualityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/phif-sync': {
-      id: '/phif-sync'
-      path: '/phif-sync'
-      fullPath: '/phif-sync'
-      preLoaderRoute: typeof PhifSyncRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/phif-review': {
-      id: '/phif-review'
-      path: '/phif-review'
-      fullPath: '/phif-review'
-      preLoaderRoute: typeof PhifReviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/messages': {
-      id: '/messages'
-      path: '/messages'
-      fullPath: '/messages'
-      preLoaderRoute: typeof MessagesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/management': {
-      id: '/management'
-      path: '/management'
-      fullPath: '/management'
-      preLoaderRoute: typeof ManagementRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/import': {
-      id: '/import'
-      path: '/import'
-      fullPath: '/import'
-      preLoaderRoute: typeof ImportRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/activity': {
@@ -497,74 +455,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActivityRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/import': {
+      id: '/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof ImportRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/phif-invoices/': {
-      id: '/phif-invoices/'
-      path: '/phif-invoices'
-      fullPath: '/phif-invoices/'
-      preLoaderRoute: typeof PhifInvoicesIndexRouteImport
+    '/management': {
+      id: '/management'
+      path: '/management'
+      fullPath: '/management'
+      preLoaderRoute: typeof ManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/patients/': {
-      id: '/patients/'
-      path: '/patients'
-      fullPath: '/patients/'
-      preLoaderRoute: typeof PatientsIndexRouteImport
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/users': {
-      id: '/settings/users'
-      path: '/users'
-      fullPath: '/settings/users'
-      preLoaderRoute: typeof SettingsUsersRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/phif': {
-      id: '/settings/phif'
-      path: '/phif'
-      fullPath: '/settings/phif'
-      preLoaderRoute: typeof SettingsPhifRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/phif-invoices/$id': {
-      id: '/phif-invoices/$id'
-      path: '/phif-invoices/$id'
-      fullPath: '/phif-invoices/$id'
-      preLoaderRoute: typeof PhifInvoicesIdRouteImport
+    '/phif-review': {
+      id: '/phif-review'
+      path: '/phif-review'
+      fullPath: '/phif-review'
+      preLoaderRoute: typeof PhifReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/patients/$id': {
-      id: '/patients/$id'
-      path: '/patients/$id'
-      fullPath: '/patients/$id'
-      preLoaderRoute: typeof PatientsIdRouteImport
+    '/phif-sync': {
+      id: '/phif-sync'
+      path: '/phif-sync'
+      fullPath: '/phif-sync'
+      preLoaderRoute: typeof PhifSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/management/treasury': {
-      id: '/management/treasury'
-      path: '/treasury'
-      fullPath: '/management/treasury'
-      preLoaderRoute: typeof ManagementTreasuryRouteImport
-      parentRoute: typeof ManagementRoute
+    '/quality': {
+      id: '/quality'
+      path: '/quality'
+      fullPath: '/quality'
+      preLoaderRoute: typeof QualityRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/management/reports': {
-      id: '/management/reports'
-      path: '/reports'
-      fullPath: '/management/reports'
-      preLoaderRoute: typeof ManagementReportsRouteImport
-      parentRoute: typeof ManagementRoute
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/management/orders': {
-      id: '/management/orders'
-      path: '/orders'
-      fullPath: '/management/orders'
-      preLoaderRoute: typeof ManagementOrdersRouteImport
+    '/management/audit': {
+      id: '/management/audit'
+      path: '/audit'
+      fullPath: '/management/audit'
+      preLoaderRoute: typeof ManagementAuditRouteImport
       parentRoute: typeof ManagementRoute
     }
     '/management/inventory': {
@@ -574,46 +518,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagementInventoryRouteImport
       parentRoute: typeof ManagementRoute
     }
-    '/management/audit': {
-      id: '/management/audit'
-      path: '/audit'
-      fullPath: '/management/audit'
-      preLoaderRoute: typeof ManagementAuditRouteImport
+    '/management/orders': {
+      id: '/management/orders'
+      path: '/orders'
+      fullPath: '/management/orders'
+      preLoaderRoute: typeof ManagementOrdersRouteImport
       parentRoute: typeof ManagementRoute
     }
-    '/management/reports/summary': {
-      id: '/management/reports/summary'
-      path: '/summary'
-      fullPath: '/management/reports/summary'
-      preLoaderRoute: typeof ManagementReportsSummaryRouteImport
-      parentRoute: typeof ManagementReportsRoute
+    '/management/reports': {
+      id: '/management/reports'
+      path: '/reports'
+      fullPath: '/management/reports'
+      preLoaderRoute: typeof ManagementReportsRouteImport
+      parentRoute: typeof ManagementRoute
     }
-    '/management/reports/profit-analysis': {
-      id: '/management/reports/profit-analysis'
-      path: '/profit-analysis'
-      fullPath: '/management/reports/profit-analysis'
-      preLoaderRoute: typeof ManagementReportsProfitAnalysisRouteImport
-      parentRoute: typeof ManagementReportsRoute
+    '/management/treasury': {
+      id: '/management/treasury'
+      path: '/treasury'
+      fullPath: '/management/treasury'
+      preLoaderRoute: typeof ManagementTreasuryRouteImport
+      parentRoute: typeof ManagementRoute
     }
-    '/management/reports/items': {
-      id: '/management/reports/items'
-      path: '/items'
-      fullPath: '/management/reports/items'
-      preLoaderRoute: typeof ManagementReportsItemsRouteImport
-      parentRoute: typeof ManagementReportsRoute
+    '/patients/': {
+      id: '/patients/'
+      path: '/patients'
+      fullPath: '/patients/'
+      preLoaderRoute: typeof PatientsIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/management/reports/item-tracking': {
-      id: '/management/reports/item-tracking'
-      path: '/item-tracking'
-      fullPath: '/management/reports/item-tracking'
-      preLoaderRoute: typeof ManagementReportsItemTrackingRouteImport
-      parentRoute: typeof ManagementReportsRoute
+    '/patients/$id': {
+      id: '/patients/$id'
+      path: '/patients/$id'
+      fullPath: '/patients/$id'
+      preLoaderRoute: typeof PatientsIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/management/reports/item-profit': {
-      id: '/management/reports/item-profit'
-      path: '/item-profit'
-      fullPath: '/management/reports/item-profit'
-      preLoaderRoute: typeof ManagementReportsItemProfitRouteImport
+    '/phif-invoices/': {
+      id: '/phif-invoices/'
+      path: '/phif-invoices'
+      fullPath: '/phif-invoices/'
+      preLoaderRoute: typeof PhifInvoicesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/phif-invoices/$id': {
+      id: '/phif-invoices/$id'
+      path: '/phif-invoices/$id'
+      fullPath: '/phif-invoices/$id'
+      preLoaderRoute: typeof PhifInvoicesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/phif': {
+      id: '/settings/phif'
+      path: '/phif'
+      fullPath: '/settings/phif'
+      preLoaderRoute: typeof SettingsPhifRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/users': {
+      id: '/settings/users'
+      path: '/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof SettingsUsersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/api/public/scheduler': {
+      id: '/api/public/scheduler'
+      path: '/api/public/scheduler'
+      fullPath: '/api/public/scheduler'
+      preLoaderRoute: typeof ApiPublicSchedulerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/management/reports/beneficiary-profit': {
+      id: '/management/reports/beneficiary-profit'
+      path: '/beneficiary-profit'
+      fullPath: '/management/reports/beneficiary-profit'
+      preLoaderRoute: typeof ManagementReportsBeneficiaryProfitRouteImport
       parentRoute: typeof ManagementReportsRoute
     }
     '/management/reports/invoice-profit': {
@@ -623,32 +602,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagementReportsInvoiceProfitRouteImport
       parentRoute: typeof ManagementReportsRoute
     }
-    '/management/reports/beneficiary-profit': {
-      id: '/management/reports/beneficiary-profit'
-      path: '/beneficiary-profit'
-      fullPath: '/management/reports/beneficiary-profit'
-      preLoaderRoute: typeof ManagementReportsBeneficiaryProfitRouteImport
+    '/management/reports/item-profit': {
+      id: '/management/reports/item-profit'
+      path: '/item-profit'
+      fullPath: '/management/reports/item-profit'
+      preLoaderRoute: typeof ManagementReportsItemProfitRouteImport
       parentRoute: typeof ManagementReportsRoute
     }
-    '/api/public/scheduler': {
-      id: '/api/public/scheduler'
-      path: '/api/public/scheduler'
-      fullPath: '/api/public/scheduler'
-      preLoaderRoute: typeof ApiPublicSchedulerRouteImport
-      parentRoute: typeof rootRouteImport
+    '/management/reports/item-tracking': {
+      id: '/management/reports/item-tracking'
+      path: '/item-tracking'
+      fullPath: '/management/reports/item-tracking'
+      preLoaderRoute: typeof ManagementReportsItemTrackingRouteImport
+      parentRoute: typeof ManagementReportsRoute
     }
-    '/management/reports/items/$itemId': {
-      id: '/management/reports/items/$itemId'
-      path: '/$itemId'
-      fullPath: '/management/reports/items/$itemId'
-      preLoaderRoute: typeof ManagementReportsItemsItemIdRouteImport
-      parentRoute: typeof ManagementReportsItemsRoute
+    '/management/reports/items': {
+      id: '/management/reports/items'
+      path: '/items'
+      fullPath: '/management/reports/items'
+      preLoaderRoute: typeof ManagementReportsItemsRouteImport
+      parentRoute: typeof ManagementReportsRoute
     }
-    '/api/public/gateway/status': {
-      id: '/api/public/gateway/status'
-      path: '/api/public/gateway/status'
-      fullPath: '/api/public/gateway/status'
-      preLoaderRoute: typeof ApiPublicGatewayStatusRouteImport
+    '/management/reports/profit-analysis': {
+      id: '/management/reports/profit-analysis'
+      path: '/profit-analysis'
+      fullPath: '/management/reports/profit-analysis'
+      preLoaderRoute: typeof ManagementReportsProfitAnalysisRouteImport
+      parentRoute: typeof ManagementReportsRoute
+    }
+    '/management/reports/summary': {
+      id: '/management/reports/summary'
+      path: '/summary'
+      fullPath: '/management/reports/summary'
+      preLoaderRoute: typeof ManagementReportsSummaryRouteImport
+      parentRoute: typeof ManagementReportsRoute
+    }
+    '/api/public/gateway/jobs': {
+      id: '/api/public/gateway/jobs'
+      path: '/api/public/gateway/jobs'
+      fullPath: '/api/public/gateway/jobs'
+      preLoaderRoute: typeof ApiPublicGatewayJobsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/gateway/register': {
@@ -658,12 +651,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGatewayRegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/gateway/jobs': {
-      id: '/api/public/gateway/jobs'
-      path: '/api/public/gateway/jobs'
-      fullPath: '/api/public/gateway/jobs'
-      preLoaderRoute: typeof ApiPublicGatewayJobsRouteImport
+    '/api/public/gateway/status': {
+      id: '/api/public/gateway/status'
+      path: '/api/public/gateway/status'
+      fullPath: '/api/public/gateway/status'
+      preLoaderRoute: typeof ApiPublicGatewayStatusRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/management/reports/items/$itemId': {
+      id: '/management/reports/items/$itemId'
+      path: '/$itemId'
+      fullPath: '/management/reports/items/$itemId'
+      preLoaderRoute: typeof ManagementReportsItemsItemIdRouteImport
+      parentRoute: typeof ManagementReportsItemsRoute
     }
   }
 }

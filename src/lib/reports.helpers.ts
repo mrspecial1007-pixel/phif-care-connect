@@ -446,7 +446,7 @@ export function buildMonthlyReport(input: BuildReportInput) {
     total_value: group.total_value,
     formatted_quantity: [
       group.box_quantity > 0 || !group.unconverted_quantities.size ? `${round(group.box_quantity)} علبة` : null,
-      ...[...group.unconverted_quantities.values()].map((issue) => {
+      ...[...group.unconverted_quantities.values()].map((issue: { quantity: number; unit: string | null; reason: BoxConversionReason }) => {
         const unitLabel = ({ tablet: "قرص", capsule: "كبسولة", strip: "شريط" } as Record<string, string>)[issue.unit ?? ""] ?? issue.unit ?? "وحدة";
         return `${issue.quantity} ${unitLabel} (${boxConversionLabels[issue.reason]})`;
       }),

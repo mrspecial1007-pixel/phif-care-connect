@@ -5,6 +5,12 @@ import { todayISOLocal } from "@/lib/date";
 import { canReturnToDashboard, dashboardScope, readDashboardView, saveDashboardView, type DashboardView } from "@/lib/dashboard-navigation.helpers";
 import { ArrowRight } from "lucide-react";
 
+declare module "@tanstack/react-router" {
+  interface HistoryState {
+    dashboardOrigin?: { scope: string; entry: string; index: number; patientId: string };
+  }
+}
+
 function tabStorage() { try { return window.sessionStorage; } catch { return undefined; } }
 type Visit = {
   view: DashboardView; update: (change: (previous: DashboardView) => DashboardView) => void;

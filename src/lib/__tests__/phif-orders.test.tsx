@@ -370,7 +370,7 @@ describe("pharmacy-scoped Tracker to Bridge read", () => {
   it("uses only the server pharmacy's existing active session, GET, and sanitized fields", async () => {
     vi.stubEnv("PHIF_BRIDGE_SECRET", "test-secret"); vi.stubEnv("PHIF_BRIDGE_BASE_URL", "http://bridge-test");
     const source = db({ bridge_session_id: "private-session", expires_at: "2099-01-01T00:00:00Z" });
-    const fetcher = vi.fn(async () => Response.json({ ok: true, ...ordersFixture(), cookieJar: "secret", raw: "private" }));
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ ok: true, ...ordersFixture(), cookieJar: "secret", raw: "private" }));
     const result = await readPhifOrders(source.database, "tiryaq", fetcher);
     expect(source.calls).toContainEqual(["pharmacy_id", "tiryaq"]);
     expect(source.calls).toContainEqual(["status", "active"]);
