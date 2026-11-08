@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Loader2, RefreshCw, Search, Settings2 } from "lucide-react";
+import { ArrowDownWideNarrow, Download, Loader2, RefreshCw, Search, Settings2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -123,7 +123,7 @@ function ItemTitle({ item }: { item: any }) {
           {" "}
           <span
             dir="ltr"
-            className="inline-block max-w-full rounded-md border border-teal-200 bg-teal-50 px-1.5 py-0.5 align-middle text-xs font-semibold text-teal-800 [overflow-wrap:anywhere]"
+            className="inline-block max-w-full rounded-md border border-primary/20 bg-accent px-1.5 py-0.5 align-middle text-xs font-semibold text-primary [overflow-wrap:anywhere]"
           >
             {item.strength}
           </span>
@@ -182,9 +182,9 @@ export function ReportIdentityReview({
   onShowAll: () => void;
 }) {
   return (
-    <section aria-label="مراجعة هوية الأصناف" className="min-w-0 border-y border-amber-200 py-3">
-      <details open>
-        <summary className="cursor-pointer text-sm font-semibold text-amber-800">
+    <section aria-label="مراجعة هوية الأصناف" className="min-w-0 border-b py-3">
+      <details>
+        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
           مراجعة هوية الأصناف ({items.length})
         </summary>
         <p className="py-2 text-xs text-muted-foreground">
@@ -506,6 +506,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
   const filters = analyticsSearchSchema.parse(useSearch({ strict: false }));
   const navigate = useNavigate();
   const [search, setSearch] = useState(filters.q);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestFilters = useRef(filters);
   latestFilters.current = filters;
@@ -577,11 +578,25 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
   }
   return (
     <div dir="rtl" className="min-w-0 space-y-4">
-      <header>
+      <header className="min-w-0 space-y-3">
         <ReportBackLink to="/management/reports" label="مركز التقارير" />
-        <h1 className="mt-1 text-xl font-bold">{titles[view]}</h1>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+          <h1 className="min-w-0 text-xl font-bold leading-8">{titles[view]}</h1>
+          {view === "consumption" && <div className="flex shrink-0 gap-1">
+            <Button size="icon" variant="ghost" title="تحديث التقرير" aria-label="تحديث التقرير" disabled={report.isFetching} onClick={() => report.refetch()}>
+              <RefreshCw className={`size-4 ${report.isFetching ? "animate-spin" : ""}`} />
+            </Button>
+            <Button size="icon" variant="ghost" title="تصدير Excel" aria-label="تصدير Excel" onClick={exportExcel} disabled={!report.data?.canExport || exporting}>
+              {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            </Button>
+          </div>}
+        </div>
+        {view === "consumption" && <p className="text-xs text-muted-foreground">
+          {filters.month === "all" ? "كل التاريخ" : new Intl.DateTimeFormat("ar-LY", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${filters.month}-01T12:00:00Z`))}
+          {" · "}{filters.source === "all" ? "كل المصادر" : sources[filters.source]}
+        </p>}
       </header>
-      <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
+      {view !== "consumption" && <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
         <Input
           type="month"
           aria-label="الشهر والسنة"
@@ -609,7 +624,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           <RefreshCw className={`size-4 ${report.isFetching ? "animate-spin" : ""}`} />
           تحديث
         </Button>
-      </div>
+      </div>}
       <div className="relative">
         <Search className="absolute right-3 top-3 size-4 text-muted-foreground" />
         <Input
@@ -632,6 +647,22 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           className="pr-9"
         />
       </div>
+      {view === "consumption" && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <div className="relative min-w-0">
+          <ArrowDownWideNarrow className="pointer-events-none absolute right-3 top-3 z-10 size-4 text-primary" />
+          <Select value={["consumption_desc", "consumption_asc", "name_asc"].includes(filters.sort) ? filters.sort : "consumption_desc"} onValueChange={(sort) => change({ sort: sort as AnalyticsFilters["sort"] })}>
+            <SelectTrigger aria-label="ترتيب الاستهلاك" className="min-w-0 pr-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="consumption_desc">الأكثر استهلاكًا بالعلب</SelectItem>
+              <SelectItem value="consumption_asc">الأقل استهلاكًا بالعلب</SelectItem>
+              <SelectItem value="name_asc">الاسم العلمي</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button variant="outline" className="shrink-0" onClick={() => setFiltersOpen(true)}>
+          <SlidersHorizontal className="size-4" />الفلاتر
+        </Button>
+      </div>}
       {view !== "consumption" && (
         <div className="grid grid-cols-2 gap-2">
           <Options
@@ -670,9 +701,9 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           )}
         </div>
       )}
-      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>{shown.length} نتيجة</span>
-        <Button
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b pb-3 text-xs text-muted-foreground">
+        <span>{shown.length} {view === "consumption" ? "صنف" : "نتيجة"}</span>
+        {view === "consumption" ? <span>الاستهلاك خلال الفترة المحددة</span> : <Button
           size="sm"
           variant="outline"
           onClick={exportExcel}
@@ -680,7 +711,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
         >
           <Download className="size-4" />
           {exporting ? "جارٍ التصدير" : "تصدير Excel"}
-        </Button>
+        </Button>}
       </div>
       {report.isLoading && (
         <p role="status" className="flex items-center justify-center gap-2 py-8 text-sm">
@@ -719,31 +750,20 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
               onShowAll={() => change({ month: "all", source: "all", q: "", result: "all" })}
             />
           )}
-          {view === "consumption" && (
-            <div className="grid grid-cols-2 gap-3 border-y py-3 text-xs sm:grid-cols-4">
-              {[
-                ["علب Actual", report.data.summary.actualBoxes],
-                ["علب PHIF Supplier", report.data.summary.phifBoxes],
-                ["إجمالي العلب", report.data.summary.boxes],
-                ["مستفيدون برقم بطاقة", report.data.summary.beneficiaries],
-              ].map(([label, value]) => (
-                <div key={label as string}>
-                  {label}
-                  <strong className="mt-1 block text-base">{number(value as number | null)}</strong>
-                </div>
-              ))}
-            </div>
-          )}
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-            {shown.slice(0, limit).map((row) => (
-              <Card key={row.id} className="min-w-0 space-y-2 rounded-lg p-3">
-                <button
+            {shown.slice(0, limit).map((row, index) => (
+              <Card key={row.id} className="min-w-0 gap-0 space-y-2 rounded-lg border-border p-4 shadow-none">
+                <Button
                   type="button"
-                  className="block w-full min-w-0 space-y-2 text-right"
+                  variant="ghost"
+                  className="block h-auto w-full min-w-0 space-y-3 whitespace-normal p-0 text-right font-normal hover:bg-transparent"
                   onClick={() => setSelected(row)}
                 >
                   {view === "consumption" || view === "items" ? (
-                    <ItemTitle item={row} />
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                      <ItemTitle item={row} />
+                      {view === "consumption" && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{index + 1}</span>}
+                    </div>
                   ) : (
                     <>
                       <h2 className="break-words font-bold">
@@ -771,12 +791,15 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                   )}
                   {view === "consumption" ? (
                     <>
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b pb-2">
-                        <strong className="block break-words text-lg text-emerald-700">
+                      <ReportBoxQuantities row={row} />
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-t pt-3">
+                        <span className="text-xs text-muted-foreground">سعر بيع علبة PHIF</span>
+                        <strong className="min-w-0 break-words text-sm text-primary">
                           {row.boxSale != null ? `${money(row.boxSale)} / علبة`
                             : !row.latestSale ? "لا يوجد سعر بيع PHIF Supplier مسجل" : "حدد حجم علبة PHIF Supplier"}
                         </strong>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                      </div>
+                        <p className="text-[11px] leading-5 text-muted-foreground">
                           {row.setting &&
                             `${row.setting.units_per_box} ${ACTUAL_UNITS[row.setting.base_unit as ActualUnit]} / علبة · `}
                           PHIF Supplier
@@ -785,9 +808,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                             ? " · سعر تاريخي"
                             : ""}
                         </p>
-                      </div>
-                      <ReportBoxQuantities row={row} />
-                      <p className="text-xs">
+                      <p className="text-xs text-muted-foreground">
                         {row.beneficiaries == null
                           ? "عدد المستفيدين محجوب"
                           : `${row.beneficiaries} مستفيد برقم بطاقة`}{" "}
@@ -819,7 +840,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                       )}
                     </>
                   )}
-                </button>
+                </Button>
               </Card>
             ))}
           </div>
@@ -905,6 +926,29 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           {selected && <Movements key={`${view}:${selected.id}`} rows={selectedRows} />}
         </SheetContent>
       </Sheet>
+      {view === "consumption" && <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="bottom" dir="rtl" className="max-h-[85dvh] overflow-y-auto rounded-t-lg p-4 pt-10 sm:mx-auto sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>فلاتر الاستهلاك</SheetTitle>
+            <SheetDescription>الفترة والمصدر</SheetDescription>
+          </SheetHeader>
+          <div className="mt-5 space-y-4">
+            <label className="block space-y-2 text-sm">
+              <span>الشهر والسنة</span>
+              <Input type="month" aria-label="الشهر والسنة" value={filters.month === "all" ? "" : filters.month} onChange={(e) => change({ month: e.target.value || "all" })} className="w-full min-w-0" />
+            </label>
+            <Button className="w-full" variant={filters.month === "all" ? "default" : "outline"} onClick={() => change({ month: "all" })}>كل التاريخ</Button>
+            <div className="space-y-2">
+              <span className="text-sm">المصدر</span>
+              <Options label="المصدر" value={filters.source} onChange={(source) => change({ source: source as AnalyticsFilters["source"] })} options={[["all", "كل المصادر"], ["actual", "Actual"], ["phif", "PHIF Supplier"]]} />
+            </div>
+            {report.data && <dl className="space-y-3 border-t pt-4 text-sm">
+              {[["علب Actual", report.data.summary.actualBoxes], ["علب PHIF Supplier", report.data.summary.phifBoxes], ["إجمالي العلب", report.data.summary.boxes], ["المستفيدون", report.data.summary.beneficiaries]].map(([label, value]) => <div key={String(label)} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3"><dt className="text-muted-foreground">{label}</dt><dd className="font-semibold tabular-nums">{number(value as number | null)}</dd></div>)}
+            </dl>}
+            <Button className="w-full" onClick={() => setFiltersOpen(false)}>عرض النتائج</Button>
+          </div>
+        </SheetContent>
+      </Sheet>}
       {editing && (
         <BoxEditor
           item={editing}
