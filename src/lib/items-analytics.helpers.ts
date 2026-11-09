@@ -23,7 +23,7 @@ export const analyticsSearchSchema = z.object({
     .catch(currentReportMonth),
   source: z.enum(["all", "actual", "phif"]).catch("all"),
   q: z.string().max(120).catch(""),
-  sort: z.enum(["profit_asc", "profit_desc", "sale_desc", "date_desc", "consumption_desc", "consumption_asc", "name_asc"]).catch("profit_asc"),
+  sort: z.enum(["profit_asc", "profit_desc", "sale_desc", "date_desc", "consumption_desc", "consumption_asc", "beneficiaries_desc", "name_asc"]).catch("profit_asc"),
   result: z.enum(["all", "loss", "zero", "positive", "incomplete"]).catch("all"),
   mode: z.enum(["cumulative", "single"]).catch("cumulative"),
 });
