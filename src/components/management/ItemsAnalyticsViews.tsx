@@ -650,11 +650,12 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
       {view === "consumption" && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <div className="relative min-w-0">
           <ArrowDownWideNarrow className="pointer-events-none absolute right-3 top-3 z-10 size-4 text-primary" />
-          <Select value={["consumption_desc", "consumption_asc", "name_asc"].includes(filters.sort) ? filters.sort : "consumption_desc"} onValueChange={(sort) => change({ sort: sort as AnalyticsFilters["sort"] })}>
+          <Select value={["consumption_desc", "consumption_asc", "beneficiaries_desc", "name_asc"].includes(filters.sort) ? filters.sort : "consumption_desc"} onValueChange={(sort) => change({ sort: sort as AnalyticsFilters["sort"] })}>
             <SelectTrigger aria-label="ترتيب الاستهلاك" className="min-w-0 pr-9"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="consumption_desc">الأكثر استهلاكًا بالعلب</SelectItem>
               <SelectItem value="consumption_asc">الأقل استهلاكًا بالعلب</SelectItem>
+              <SelectItem value="beneficiaries_desc">الأكثر حسب عدد المستفيدين</SelectItem>
               <SelectItem value="name_asc">الاسم العلمي</SelectItem>
             </SelectContent>
           </Select>

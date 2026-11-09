@@ -18,6 +18,12 @@ export function selectAnalyticsRows(report: any, view: AnalyticsView, filters: A
           || String(a.strength ?? "").localeCompare(String(b.strength ?? ""))
           || String(a.id).localeCompare(String(b.id));
         if (filters.sort === "name_asc") return byName;
+        if (filters.sort === "beneficiaries_desc") {
+          // Hidden (null) beneficiary counts sort last, never as zero.
+          if (a.beneficiaries == null || b.beneficiaries == null)
+            return a.beneficiaries == null ? (b.beneficiaries == null ? byName : 1) : -1;
+          return b.beneficiaries - a.beneficiaries || byName;
+        }
         // Only comparable, documented box totals participate in quantity ranking.
         // Unknown totals remain unknown and sort last, never as zero.
         if (a.boxes == null || b.boxes == null)
