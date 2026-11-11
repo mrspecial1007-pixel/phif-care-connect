@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { claimSmsJobs } from '@/lib/sms-gateway.functions'
 
 export const Route = createFileRoute('/api/public/gateway/jobs')({
   server: {
@@ -13,6 +12,7 @@ export const Route = createFileRoute('/api/public/gateway/jobs')({
             return new Response('Missing credentials', { status: 401 })
           }
 
+          const { claimSmsJobs } = await import('@/lib/sms-gateway.functions')
           const result = await claimSmsJobs({ 
             data: { deviceId, deviceToken } 
           })
