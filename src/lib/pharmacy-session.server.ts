@@ -1,6 +1,6 @@
-import { useSession } from "@tanstack/react-start/server";
-
-export type PharmacySessionData = {
+export async function getPharmacySession(remember = false) {
+  const { useSession } = await import("@tanstack/react-start/server");
+  const config = { ...pharmacySessionConfig };
   pharmacy_id?: string;
   pharmacy_name?: string;
   pharmacy_address?: string;
