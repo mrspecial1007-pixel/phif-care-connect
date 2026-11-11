@@ -33,6 +33,7 @@ import {
 import {
   movementMatches,
   selectAnalyticsRows,
+  summaryScope,
   type AnalyticsView,
 } from "@/lib/items-analytics-export";
 import { useSession } from "@/lib/queries";
@@ -557,6 +558,10 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
         : [],
     [selected, report.data, view],
   );
+  const summaryItemScope = useMemo(
+    () => (report.data ? summaryScope(report.data) : null),
+    [report.data],
+  );
   async function exportExcel() {
     if (exporting) return;
     setExporting(true);
@@ -943,9 +948,22 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
               <span className="text-sm">المصدر</span>
               <Options label="المصدر" value={filters.source} onChange={(source) => change({ source: source as AnalyticsFilters["source"] })} options={[["all", "كل المصادر"], ["actual", "Actual"], ["phif", "PHIF Supplier"]]} />
             </div>
-            {report.data && <dl className="space-y-3 border-t pt-4 text-sm">
-              {[["علب Actual", report.data.summary.actualBoxes], ["علب PHIF Supplier", report.data.summary.phifBoxes], ["إجمالي العلب", report.data.summary.boxes], ["المستفيدون", report.data.summary.beneficiaries]].map(([label, value]) => <div key={String(label)} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3"><dt className="text-muted-foreground">{label}</dt><dd className="font-semibold tabular-nums">{number(value as number | null)}</dd></div>)}
-            </dl>}
+            {report.data && <div className="border-t pt-4">
+              <p className="text-xs text-muted-foreground">{summaryItemScope?.item ? "الصنف" : "الأصناف"}</p>
+              {summaryItemScope?.item ? (
+                <div className="mt-1 rounded-lg border border-primary/20 bg-accent px-3 py-2">
+                  <ItemTitle item={summaryItemScope.item} />
+                </div>
+              ) : (
+                <p className="mt-1 text-sm font-semibold">
+                  {summaryItemScope?.count ? `${number(summaryItemScope.count)} صنف` : "لا حركات ضمن الفترة"}
+                  {filters.q.trim() && <span className="text-xs font-normal text-muted-foreground"> · البحث: {filters.q.trim()}</span>}
+                </p>
+              )}
+              <dl className="mt-3 space-y-3 text-sm">
+                {[["علب Actual", report.data.summary.actualBoxes], ["علب PHIF Supplier", report.data.summary.phifBoxes], ["إجمالي العلب", report.data.summary.boxes], ["المستفيدون", report.data.summary.beneficiaries]].map(([label, value]) => <div key={String(label)} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3"><dt className="text-muted-foreground">{label}</dt><dd className="font-semibold tabular-nums">{number(value as number | null)}</dd></div>)}
+              </dl>
+            </div>}
             <Button className="w-full" onClick={() => setFiltersOpen(false)}>عرض النتائج</Button>
           </div>
         </SheetContent>
