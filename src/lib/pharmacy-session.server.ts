@@ -1,6 +1,4 @@
-export async function getPharmacySession(remember = false) {
-  const { useSession } = await import("@tanstack/react-start/server");
-  const config = { ...pharmacySessionConfig };
+export type PharmacySessionData = {
   pharmacy_id?: string;
   pharmacy_name?: string;
   pharmacy_address?: string;
@@ -26,6 +24,7 @@ export const pharmacySessionConfig = {
 };
 
 export async function getPharmacySession(remember = false) {
+  const { useSession } = await import("@tanstack/react-start/server");
   const config = { ...pharmacySessionConfig };
   if (remember) {
     // 30 days if remembered
