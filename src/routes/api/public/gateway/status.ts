@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { updateSmsStatus } from '@/lib/sms-gateway.functions'
 
 export const Route = createFileRoute('/api/public/gateway/status')({
   server: {
@@ -14,6 +13,7 @@ export const Route = createFileRoute('/api/public/gateway/status')({
           }
 
           const body = await request.json()
+          const { updateSmsStatus } = await import('@/lib/sms-gateway.functions')
           const result = await updateSmsStatus({ 
             data: { 
               ...body,

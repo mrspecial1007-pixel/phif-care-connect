@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { registerGatewayDevice } from '@/lib/sms-gateway.functions'
 
 export const Route = createFileRoute('/api/public/gateway/register')({
   server: {
@@ -15,6 +14,7 @@ export const Route = createFileRoute('/api/public/gateway/register')({
             })
           }
           
+          const { registerGatewayDevice } = await import('@/lib/sms-gateway.functions')
           const result = await registerGatewayDevice({ data: body })
           return new Response(JSON.stringify(result), {
             status: 200,

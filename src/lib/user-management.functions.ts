@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { ALL_TIRYAQ_PERMISSIONS, adminPermissions, normalizePermissions, TIRYAQ_PERMISSIONS, type TiryaqPermission } from "@/lib/user-permissions";
 
@@ -56,7 +56,7 @@ async function writeUserOperation(db: any, input: { pharmacy_id: string; user_id
   }
 }
 
-export async function requireTiryaqPermission(permission: TiryaqPermission) {
+export const requireTiryaqPermission = createServerOnlyFn(async (permission: TiryaqPermission) => {
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
   const { hasPermission } = await import("@/lib/user-permissions");
   const session = await requirePharmacySession();
@@ -66,7 +66,7 @@ export async function requireTiryaqPermission(permission: TiryaqPermission) {
     throw new Error("Forbidden");
   }
   return session;
-}
+});
 
 async function requireUserManagement() {
   return requireTiryaqPermission("users_manage");

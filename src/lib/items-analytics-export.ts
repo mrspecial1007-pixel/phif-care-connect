@@ -53,6 +53,22 @@ export function movementMatches(row: AnalyticsRow, selected: any, view: Analytic
       : row.card === selected.card;
 }
 
+/**
+ * Names the item(s) whose movements actually feed the report summary totals.
+ * Summary totals come from period- and source-scoped movements, so the scope is
+ * read from those movements rather than from the visible item cards.
+ */
+export function summaryScope(report: any): { item: any | null; count: number } {
+  const byId = new Map<string, any>();
+  for (const row of [...(report.items ?? []), ...(report.reviewItems ?? [])])
+    if (row?.id) byId.set(row.id, row);
+  const ids = new Set<string>(
+    (report.movements ?? []).map((r: any) => r?.identity).filter(Boolean),
+  );
+  if (ids.size === 1) return { item: byId.get([...ids][0]) ?? null, count: 1 };
+  return { item: null, count: ids.size };
+}
+
 /** The caller supplies a newly server-authorized export payload, not cached UI data. */
 export async function buildAnalyticsWorkbook(
   report: any,
