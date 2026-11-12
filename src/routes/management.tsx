@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Gate } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
-import { BarChart3, BriefcaseBusiness, PackageSearch, ShieldCheck, Truck } from "lucide-react";
+import { Activity, BarChart3, BriefcaseBusiness, PackageSearch, ShieldCheck, Truck } from "lucide-react";
 
 export const Route = createFileRoute("/management")({
   component: () => <Gate><ManagementPage /></Gate>,
@@ -11,6 +11,7 @@ export const Route = createFileRoute("/management")({
 function ManagementPage() {
   const location = useLocation();
   const items = [
+    { to: "/management/analytics", title: "PHIF Analytics", desc: "التحليلات الدوائية: مؤشرات ورسوم الصرف حسب المادة العلمية", icon: Activity },
     { to: "/management/reports", title: "التقارير", desc: "تقارير الصرف والفواتير المحفوظة", icon: BarChart3 },
     { to: "/management/treasury", title: "خزينة الصرف", desc: "قيم الصرف Actual وPHIF دون افتراض تحصيل نقدي", icon: BriefcaseBusiness },
     { to: "/management/inventory", title: "مخزون PHIF", desc: "مزامنة وقراءة مخزون التأمين بدون تعديل بيانات PHIF", icon: PackageSearch },
