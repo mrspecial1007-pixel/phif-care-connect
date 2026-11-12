@@ -18,6 +18,7 @@ import { Route as PhifReviewRouteImport } from './routes/phif-review'
 import { Route as PhifSyncRouteImport } from './routes/phif-sync'
 import { Route as QualityRouteImport } from './routes/quality'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ManagementAnalyticsRouteImport } from './routes/management.analytics'
 import { Route as ManagementAuditRouteImport } from './routes/management.audit'
 import { Route as ManagementInventoryRouteImport } from './routes/management.inventory'
 import { Route as ManagementOrdersRouteImport } from './routes/management.orders'
@@ -86,6 +87,11 @@ const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ManagementAnalyticsRoute = ManagementAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => ManagementRoute,
 } as any)
 const ManagementAuditRoute = ManagementAuditRouteImport.update({
   id: '/audit',
@@ -221,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/management/analytics': typeof ManagementAnalyticsRoute
   '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/orders': typeof ManagementOrdersRoute
@@ -255,6 +262,7 @@ export interface FileRoutesByTo {
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/management/analytics': typeof ManagementAnalyticsRoute
   '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/orders': typeof ManagementOrdersRoute
@@ -290,6 +298,7 @@ export interface FileRoutesById {
   '/phif-sync': typeof PhifSyncRoute
   '/quality': typeof QualityRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/management/analytics': typeof ManagementAnalyticsRoute
   '/management/audit': typeof ManagementAuditRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/orders': typeof ManagementOrdersRoute
@@ -326,6 +335,7 @@ export interface FileRouteTypes {
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/analytics'
     | '/management/audit'
     | '/management/inventory'
     | '/management/orders'
@@ -360,6 +370,7 @@ export interface FileRouteTypes {
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/analytics'
     | '/management/audit'
     | '/management/inventory'
     | '/management/orders'
@@ -394,6 +405,7 @@ export interface FileRouteTypes {
     | '/phif-sync'
     | '/quality'
     | '/settings'
+    | '/management/analytics'
     | '/management/audit'
     | '/management/inventory'
     | '/management/orders'
@@ -503,6 +515,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/management/analytics': {
+      id: '/management/analytics'
+      path: '/analytics'
+      fullPath: '/management/analytics'
+      preLoaderRoute: typeof ManagementAnalyticsRouteImport
+      parentRoute: typeof ManagementRoute
     }
     '/management/audit': {
       id: '/management/audit'
@@ -707,6 +726,7 @@ const ManagementReportsRouteWithChildren =
   ManagementReportsRoute._addFileChildren(ManagementReportsRouteChildren)
 
 interface ManagementRouteChildren {
+  ManagementAnalyticsRoute: typeof ManagementAnalyticsRoute
   ManagementAuditRoute: typeof ManagementAuditRoute
   ManagementInventoryRoute: typeof ManagementInventoryRoute
   ManagementOrdersRoute: typeof ManagementOrdersRoute
@@ -715,6 +735,7 @@ interface ManagementRouteChildren {
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
+  ManagementAnalyticsRoute: ManagementAnalyticsRoute,
   ManagementAuditRoute: ManagementAuditRoute,
   ManagementInventoryRoute: ManagementInventoryRoute,
   ManagementOrdersRoute: ManagementOrdersRoute,
