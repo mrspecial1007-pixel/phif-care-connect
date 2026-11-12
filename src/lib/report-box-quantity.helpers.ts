@@ -63,6 +63,17 @@ type BoxRow = {
   boxSize?: number | null; baseUnit?: ActualUnit | null; boxIssue?: string | null;
 };
 
+/** Shared totals retain unknown quantities and check compatibility of the known subset. */
+export function summarizeReportBoxes(rows: BoxRow[]) {
+  const safe = rows.map(r => ({ ...r, boxes: r.boxes != null && Number.isFinite(r.boxes) && r.boxes >= 0 ? r.boxes : null }));
+  const known = safe.filter(r => r.boxes != null);
+  const issues = [...new Set([...reportBoxIssues(safe), ...reportBoxIssues(known)])];
+  const state = issues.includes("incompatible_box_sizes") || issues.includes("conflicting_package")
+    ? "incompatible" : issues.length ? "unknown" : "complete";
+  return { value: state === "complete" ? known.reduce((n, r) => n + r.boxes!, 0) : null,
+    state, issues, rows: rows.length, unknown: safe.length - known.length };
+}
+
 export function reportBoxIssues(rows: BoxRow[]): string[] {
   const issues = new Set<string>();
   const identities = new Map<string, BoxRow[]>();

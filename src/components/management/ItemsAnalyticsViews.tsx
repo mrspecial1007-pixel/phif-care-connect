@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownWideNarrow, Download, Loader2, RefreshCw, Search, Settings2, SlidersHorizontal } from "lucide-react";
+import { ArrowDownWideNarrow, ArrowRight, Download, Loader2, RefreshCw, Search, Settings2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -44,6 +44,8 @@ import {
   reportSettingRequest,
   refreshReportAfterSettingSave,
 } from "@/lib/report-setting-save.helpers";
+import { itemReportReturn, openItemIdentityReview, reportItemAnchor, reportReviewTarget, restoreItemReportPosition, type ItemReportReturn } from "@/lib/report-review-navigation.helpers";
+import { reportSettingKey } from "@/lib/report-medication-evidence.helpers";
 
 const money = (v: number | null | undefined) =>
   v == null
@@ -136,6 +138,12 @@ function ItemTitle({ item }: { item: any }) {
     </h2>
   );
 }
+export function ItemIdentityReviewAction({ item, onReview }: { item: any; onReview: (item: any) => void }) {
+  if (item.latestSale?.price != null) return null;
+  return <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => onReview(item)}>
+    <Settings2 className="size-4" />مراجعة الهوية
+  </Button>;
+}
 function Finance({ row, profitLabel = "الربح / الخسارة" }: { row: any; profitLabel?: string }) {
   return (
     <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-2 text-xs sm:grid-cols-4">
@@ -226,12 +234,16 @@ export function BoxEditor({
   unitsAvailable,
   reportKey,
   onClose,
+  onSaved,
+  returnToReport = false,
 }: {
   item: any;
   rows: AnalyticsRow[];
   unitsAvailable: boolean;
   reportKey: readonly unknown[];
   onClose: () => void;
+  onSaved?: (setting: { item_identity: string }) => void;
+  returnToReport?: boolean;
 }) {
   const reviewing = item.identityComplete === false;
   const [form, setForm] = useState(item.form || "");
@@ -243,6 +255,7 @@ export function BoxEditor({
   const reviewItemId = rows.find(r => r.source === "phif")?.id;
   const reviewRequest = reviewing ? reportReviewRequest(item, form, count, unit, reviewItemId) : null;
   const saveLock = useRef(false);
+  const [unitSaving, setUnitSaving] = useState(false);
   const save = useMutation({
     mutationFn: () => {
       if (reviewing && !reviewRequest) throw new Error("أكمل الشكل الدوائي وحجم العبوة ووحدة محتواها أولًا");
@@ -257,16 +270,17 @@ export function BoxEditor({
         }),
       );
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      onSaved?.(saved);
       toast.success(reviewing ? "تم حفظ تعريف الصنف وحجم عبوة PHIF Supplier" : "تم حفظ حجم العلبة");
       refreshReportAfterSettingSave(client, reportKey, () =>
         toast.error("حُفظ حجم العلبة، لكن تعذر تحديث التقرير. اضغط تحديث."),
+        onClose,
       );
-      onClose();
     },
   });
   return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
+    <Sheet open onOpenChange={(open) => !open && !save.isPending && !unitSaving && onClose()}>
       <SheetContent
         side="bottom"
         className="max-h-[90dvh] overflow-y-auto rounded-t-lg p-4 pt-10 sm:mx-auto sm:max-w-lg"
@@ -282,7 +296,7 @@ export function BoxEditor({
           className="mt-4 space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!saveLock.current && !save.isPending && (!reviewing || reviewRequest)) {
+            if (!saveLock.current && !save.isPending && !unitSaving && (!reviewing || reviewRequest)) {
               saveLock.current = true;
               save.mutate(undefined, {
                 onSettled: () => {
@@ -314,6 +328,7 @@ export function BoxEditor({
               )}
             </div>
           )}
+          {reviewing && !reviewItemId && <p role="alert" className="text-xs text-amber-800">لا يوجد بند PHIF Supplier مؤهل لتوثيق هذا التعريف. لن تتغير بيانات Actual.</p>}
           <label className="block text-sm">
             عدد الوحدات في العلبة
             <Input
@@ -349,7 +364,7 @@ export function BoxEditor({
           <Button
             type="submit"
             disabled={
-              save.isPending || !unit || !Number.isInteger(Number(count)) || Number(count) < 1
+              save.isPending || unitSaving || !unit || !Number.isInteger(Number(count)) || Number(count) < 1
               || Number(count) > 10000 || (reviewing && !reviewRequest)
             }
           >
@@ -362,8 +377,13 @@ export function BoxEditor({
             rows={rows}
             available={unitsAvailable}
             reportKey={reportKey}
+            onSavingChange={setUnitSaving}
+            disabled={save.isPending}
           />
         </div>}
+        {returnToReport && <Button type="button" variant="outline" className="mt-4 w-full" disabled={save.isPending || unitSaving} onClick={onClose}>
+          <ArrowRight className="size-4" />الرجوع إلى الصنف في التقرير
+        </Button>}
       </SheetContent>
     </Sheet>
   );
@@ -485,7 +505,7 @@ function Movements({ rows }: { rows: AnalyticsRow[] }) {
   );
 }
 
-export function ItemsAnalyticsPage({ view = "consumption" }: { view?: AnalyticsView }) {
+export function ItemsAnalyticsPage({ view = "consumption", reviewIdentityId }: { view?: AnalyticsView; reviewIdentityId?: string }) {
   const session = useSession();
   if (session.error)
     return (
@@ -500,12 +520,58 @@ export function ItemsAnalyticsPage({ view = "consumption" }: { view?: AnalyticsV
       </p>
     );
   const scope = itemsAnalyticsScope(session.data)!;
+  if (reviewIdentityId) return <ItemIdentityReviewBody key={`${scope}:${reviewIdentityId}`} scope={scope} identityId={reviewIdentityId} />;
   return <ItemsAnalyticsBody key={scope} view={view} scope={scope} />;
+}
+
+function ItemIdentityReviewBody({ scope, identityId }: { scope: string; identityId: string }) {
+  const filters = analyticsSearchSchema.parse(useSearch({ strict: false }));
+  const state = useLocation({ select: location => location.state }) as any;
+  const navigate = useNavigate();
+  const context = itemReportReturn(state?.itemReportReturn, scope, filters);
+  const targetId = useRef(identityId);
+  // Read both permitted sources for this exact identity; retain the original report filters for return.
+  const reviewFilters = { ...filters, source: "all" as const };
+  const reportKey = ["items_analytics", scope, "consumption", reviewFilters] as const;
+  const report = useQuery({ ...itemsAnalyticsCacheOptions, queryKey: reportKey,
+    queryFn: () => getItemsAnalytics({ data: { ...reviewFilters, financial: false, export: false } }),
+  });
+  const item = report.data ? reportReviewTarget(report.data, identityId) : null;
+  const back = () => navigate({ to: "/management/reports/items", search: filters, resetScroll: false,
+    state: { itemReportReturn: { ...(context || { scope, filters, scrollY: 0, cardTop: null, limit: 40 }),
+      identityId: targetId.current === identityId ? item?.id || identityId : targetId.current } },
+  } as any);
+  return <div dir="rtl" className="min-w-0 space-y-3">
+    <Button type="button" variant="outline" onClick={() => void back()}><ArrowRight className="size-4" />الرجوع إلى التقرير</Button>
+    <h1 className="text-xl font-bold">مراجعة هوية الأصناف</h1>
+    {report.isLoading && <p role="status">جارٍ تحميل تعريف الصنف</p>}
+    {report.error && <div role="alert" className="space-y-2 text-sm text-destructive">
+      <p>تعذر تحديث تعريف الصنف. أعد المحاولة قبل الحفظ.</p>
+      <Button type="button" variant="outline" disabled={report.isFetching} onClick={() => void report.refetch()}><RefreshCw className="size-4" />إعادة المحاولة</Button>
+    </div>}
+    {item && <ItemTitle item={item} />}
+    {report.data && !item && <p role="alert" className="text-sm text-amber-800">لم يعد معرّف الصنف متاحًا ضمن صلاحياتك وفلاتر التقرير؛ لم يُنشأ تعريف بديل.</p>}
+    {item && (!report.data?.canManageBoxes || !report.data?.settingsAvailable || item.settingConflict) && <p role="alert" className="text-sm text-amber-800">
+      {!report.data?.canManageBoxes ? "تعديل التعريف متاح لحساب المدير فقط."
+        : item.settingConflict ? "توجد إعدادات متعارضة لهذا الصنف؛ لم يُستبدل أي تعريف."
+          : "حفظ إعدادات الأصناف غير متاح حاليًا."}
+    </p>}
+    {item && !report.error && report.data?.canManageBoxes && report.data.settingsAvailable && !item.settingConflict && <BoxEditor
+      key={`${item.id}:${item.setting?.version ?? 0}`}
+      item={item} rows={report.data.historyMovements.filter(row => row.identity === item.id)}
+      reportKey={reportKey} unitsAvailable={report.data.supplierUnitsAvailable} returnToReport
+      onSaved={saved => { targetId.current = reportSettingKey(saved.item_identity) || item.id; }} onClose={() => void back()}
+    />}
+  </div>;
 }
 
 function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: string }) {
   const filters = analyticsSearchSchema.parse(useSearch({ strict: false }));
   const navigate = useNavigate();
+  const state = useLocation({ select: location => location.state }) as any;
+  const returnContext = itemReportReturn(state?.itemReportReturn, scope, filters);
+  const positionRestored = useRef(false);
+  const navigationPending = useRef(false);
   const [search, setSearch] = useState(filters.q);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -522,7 +588,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
   );
   const [selected, setSelected] = useState<any>(null),
     [editing, setEditing] = useState<any>(null),
-    [limit, setLimit] = useState(40),
+    [limit, setLimit] = useState(returnContext?.limit || 40),
     [exporting, setExporting] = useState(false);
   const change = (patch: Partial<AnalyticsFilters>) => {
     setLimit(40);
@@ -548,6 +614,28 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
     () => (report.data ? selectAnalyticsRows(report.data, view, filters) : []),
     [report.data, view, JSON.stringify(filters)],
   );
+  useEffect(() => {
+    if (!returnContext || !report.data || positionRestored.current) return;
+    const index = shown.findIndex(row => row.id === returnContext.identityId);
+    if (index >= limit) { setLimit(index + 1); return; }
+    const frame = requestAnimationFrame(() => {
+      restoreItemReportPosition(returnContext, document.getElementById(reportItemAnchor(returnContext.identityId)),
+        window.scrollY, y => window.scrollTo({ top: y, behavior: "instant" }));
+      if (!report.isFetching) positionRestored.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [JSON.stringify(returnContext), report.data, report.isFetching, shown, limit]);
+  const reviewIdentity = (row: any) => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const element = document.getElementById(reportItemAnchor(row.id));
+    const context: ItemReportReturn = { scope, filters, identityId: row.id, scrollY: window.scrollY,
+      cardTop: element?.getBoundingClientRect().top ?? null, limit };
+    if (navigationPending.current) return;
+    navigationPending.current = true;
+    void openItemIdentityReview(navigate as any, context)
+      .catch(() => toast.error("تعذر فتح مراجعة الصنف"))
+      .finally(() => { navigationPending.current = false; });
+  };
   const selectedRows = useMemo(
     () =>
       selected && report.data
@@ -758,7 +846,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
           )}
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             {shown.slice(0, limit).map((row, index) => (
-              <Card key={row.id} className="min-w-0 gap-0 space-y-2 rounded-lg border-border p-4 shadow-none">
+              <Card key={row.id} id={reportItemAnchor(row.id)} className="min-w-0 gap-0 space-y-2 rounded-lg border-border p-4 shadow-none">
                 <Button
                   type="button"
                   variant="ghost"
@@ -847,6 +935,7 @@ function ItemsAnalyticsBody({ view, scope }: { view: AnalyticsView; scope: strin
                     </>
                   )}
                 </Button>
+                {view === "consumption" && <ItemIdentityReviewAction item={row} onReview={reviewIdentity} />}
               </Card>
             ))}
           </div>

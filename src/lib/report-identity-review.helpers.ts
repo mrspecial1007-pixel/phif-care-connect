@@ -32,5 +32,7 @@ export function reportReviewRequest(item: any, form: string, count: string, unit
   const size = count.trim() ? Number(count) : NaN;
   if (!itemId || !identity || !baseUnit || ["box", "strip"].includes(baseUnit)
     || (formUnit && formUnit !== baseUnit) || !Number.isSafeInteger(size) || size < 1 || size > 10000) return null;
-  return { identity, unitsPerBox: size, baseUnit, version: 0, reviewItemId: itemId };
+  const storedVersion = reportSettingKey(item.setting?.item_identity || "") === identity
+    && Number.isSafeInteger(item.setting?.version) && item.setting.version > 0 ? item.setting.version : 0;
+  return { identity, unitsPerBox: size, baseUnit, version: storedVersion, reviewItemId: itemId };
 }

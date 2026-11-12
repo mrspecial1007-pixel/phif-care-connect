@@ -17,15 +17,17 @@ export function refreshReportAfterSettingSave(
   client: QueryClient,
   key: QueryKey,
   onError: () => void,
+  afterInvalidation?: () => void,
 ) {
   const start = performance.now();
   const scopeKey = key.slice(0, key.length > 1 ? 2 : 1);
   void client
     .cancelQueries({ queryKey: scopeKey })
     .then(() => client.invalidateQueries({ queryKey: scopeKey, refetchType: "none" }))
-    .then(() =>
-      client.refetchQueries({ queryKey: key, exact: true, type: "active" }, { throwOnError: true }),
-    )
+    .then(() => {
+      afterInvalidation?.();
+      return client.refetchQueries({ queryKey: key, exact: true, type: "active" }, { throwOnError: true });
+    })
     .catch(onError)
     .finally(() =>
       console.info("phif_report_setting_client_timing", {

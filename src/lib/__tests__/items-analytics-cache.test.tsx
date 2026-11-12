@@ -8,7 +8,7 @@ import { refreshReportAfterSettingSave } from "../report-setting-save.helpers";
 
 const auth = vi.hoisted(() => ({ session: {} as any }));
 vi.mock("@/lib/queries", () => ({ useSession: () => auth.session }));
-vi.mock("@tanstack/react-router", () => ({ useSearch: () => ({ month: "all" }), useNavigate: () => vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({ useSearch: () => ({ month: "all" }), useNavigate: () => vi.fn(), useLocation: () => ({}) }));
 vi.mock("@/components/management/ReportBackLink", () => ({ ReportBackLink: () => null }));
 
 const session = (patch: any = {}) => ({ unlocked: true, pharmacy: { id: "tiryaq" },

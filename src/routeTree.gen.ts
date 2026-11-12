@@ -42,6 +42,7 @@ import { Route as ApiPublicGatewayJobsRouteImport } from './routes/api/public/ga
 import { Route as ApiPublicGatewayRegisterRouteImport } from './routes/api/public/gateway/register'
 import { Route as ApiPublicGatewayStatusRouteImport } from './routes/api/public/gateway/status'
 import { Route as ManagementReportsItemsItemIdRouteImport } from './routes/management.reports.items.$itemId'
+import { Route as ManagementReportsItemsIdentityReviewIdentityIdRouteImport } from './routes/management.reports.items.identity-review.$identityId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -216,6 +217,12 @@ const ManagementReportsItemsItemIdRoute =
     path: '/$itemId',
     getParentRoute: () => ManagementReportsItemsRoute,
   } as any)
+const ManagementReportsItemsIdentityReviewIdentityIdRoute =
+  ManagementReportsItemsIdentityReviewIdentityIdRouteImport.update({
+    id: '/identity-review/$identityId',
+    path: '/identity-review/$identityId',
+    getParentRoute: () => ManagementReportsItemsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -251,6 +258,7 @@ export interface FileRoutesByFullPath {
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
   '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
   '/management/reports/items/$itemId': typeof ManagementReportsItemsItemIdRoute
+  '/management/reports/items/identity-review/$identityId': typeof ManagementReportsItemsIdentityReviewIdentityIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -286,6 +294,7 @@ export interface FileRoutesByTo {
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
   '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
   '/management/reports/items/$itemId': typeof ManagementReportsItemsItemIdRoute
+  '/management/reports/items/identity-review/$identityId': typeof ManagementReportsItemsIdentityReviewIdentityIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -322,6 +331,7 @@ export interface FileRoutesById {
   '/api/public/gateway/register': typeof ApiPublicGatewayRegisterRoute
   '/api/public/gateway/status': typeof ApiPublicGatewayStatusRoute
   '/management/reports/items/$itemId': typeof ManagementReportsItemsItemIdRoute
+  '/management/reports/items/identity-review/$identityId': typeof ManagementReportsItemsIdentityReviewIdentityIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -359,6 +369,7 @@ export interface FileRouteTypes {
     | '/api/public/gateway/register'
     | '/api/public/gateway/status'
     | '/management/reports/items/$itemId'
+    | '/management/reports/items/identity-review/$identityId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -394,6 +405,7 @@ export interface FileRouteTypes {
     | '/api/public/gateway/register'
     | '/api/public/gateway/status'
     | '/management/reports/items/$itemId'
+    | '/management/reports/items/identity-review/$identityId'
   id:
     | '__root__'
     | '/'
@@ -429,6 +441,7 @@ export interface FileRouteTypes {
     | '/api/public/gateway/register'
     | '/api/public/gateway/status'
     | '/management/reports/items/$itemId'
+    | '/management/reports/items/identity-review/$identityId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -684,16 +697,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagementReportsItemsItemIdRouteImport
       parentRoute: typeof ManagementReportsItemsRoute
     }
+    '/management/reports/items/identity-review/$identityId': {
+      id: '/management/reports/items/identity-review/$identityId'
+      path: '/identity-review/$identityId'
+      fullPath: '/management/reports/items/identity-review/$identityId'
+      preLoaderRoute: typeof ManagementReportsItemsIdentityReviewIdentityIdRouteImport
+      parentRoute: typeof ManagementReportsItemsRoute
+    }
   }
 }
 
 interface ManagementReportsItemsRouteChildren {
   ManagementReportsItemsItemIdRoute: typeof ManagementReportsItemsItemIdRoute
+  ManagementReportsItemsIdentityReviewIdentityIdRoute: typeof ManagementReportsItemsIdentityReviewIdentityIdRoute
 }
 
 const ManagementReportsItemsRouteChildren: ManagementReportsItemsRouteChildren =
   {
     ManagementReportsItemsItemIdRoute: ManagementReportsItemsItemIdRoute,
+    ManagementReportsItemsIdentityReviewIdentityIdRoute:
+      ManagementReportsItemsIdentityReviewIdentityIdRoute,
   }
 
 const ManagementReportsItemsRouteWithChildren =

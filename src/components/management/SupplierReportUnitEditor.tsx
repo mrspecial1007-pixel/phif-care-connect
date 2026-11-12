@@ -17,11 +17,15 @@ export const SupplierReportUnitEditor = memo(function SupplierReportUnitEditor({
   rows,
   available,
   reportKey = ["items_analytics"],
+  onSavingChange,
+  disabled = false,
 }: {
   item: any;
   rows: AnalyticsRow[];
   available: boolean;
   reportKey?: readonly unknown[];
+  onSavingChange?: (pending: boolean) => void;
+  disabled?: boolean;
 }) {
   const [unit, setUnit] = useState(
     () => item.setting?.supplier_quantity_unit ?? actualUnit(item.form) ?? "",
@@ -38,6 +42,8 @@ export const SupplierReportUnitEditor = memo(function SupplierReportUnitEditor({
     ["box", "strip", actualUnit(item.form)].includes(key),
   );
   const save = useMutation({
+    onMutate: () => onSavingChange?.(true),
+    onSettled: () => onSavingChange?.(false),
     mutationFn: () =>
       reportSettingRequest(() =>
         saveReportSupplierUnit({
@@ -116,7 +122,7 @@ export const SupplierReportUnitEditor = memo(function SupplierReportUnitEditor({
         className="w-full rounded-md border bg-background p-2"
         value={unit}
         onChange={(e) => setUnit(e.target.value)}
-        disabled={save.isPending}
+        disabled={save.isPending || disabled}
       >
         <option value="">بدون اعتماد عام</option>
         {choices.map(([key, label]) => (
@@ -220,7 +226,7 @@ export const SupplierReportUnitEditor = memo(function SupplierReportUnitEditor({
       )}
       <Button
         type="button"
-        disabled={save.isPending || save.isSuccess}
+        disabled={save.isPending || save.isSuccess || disabled}
         onClick={() => {
           if (saveLock.current) return;
           saveLock.current = true;

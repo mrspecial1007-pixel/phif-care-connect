@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { actualUnit, actualSourceUnit, type ActualUnit } from "./actual-units.helpers";
-import { actualReportPackages, reportBoxIssues } from "./report-box-quantity.helpers";
+import { actualReportPackages, reportBoxIssues, summarizeReportBoxes } from "./report-box-quantity.helpers";
 import {
   resolveReportIdentities,
   reportSettingKey,
@@ -86,6 +86,7 @@ export type AnalyticsRow = {
   date: string;
   beneficiary: string | null;
   card: string | null;
+  beneficiariesAvailable?: boolean;
   source: "actual" | "phif";
   quantity: number | null;
   unit: ActualUnit | null;
@@ -122,8 +123,8 @@ const total = (
   rows: AnalyticsRow[],
   key: "revenue" | "cost" | "profit" | "afterDiscount" | "units" | "boxes",
 ) =>
+  key === "boxes" ? summarizeReportBoxes(rows).value :
   rows.every((r) => r[key] != null) && (key !== "units" || new Set(rows.map(r=>r.baseUnit)).size < 2)
-    && (key !== "boxes" || reportBoxIssues(rows).length === 0)
     ? ["units", "boxes"].includes(key)
       ? rows.reduce((n, r) => n + Number(r[key]), 0)
       : roundReport(rows.reduce((n, r) => n + Number(r[key]), 0))
@@ -189,6 +190,7 @@ export function buildItemsAnalytics(input: {
   canManageBoxes?: boolean;
   settingsAvailable?: boolean;
   supplierUnitsAvailable?: boolean;
+  movementRange?: { from: string; to: string };
 }) {
   const invoiceMap = new Map(input.invoices.map((i) => [i.id, i]));
   const visibleSetting = (setting: BoxSetting | undefined) => {
@@ -226,6 +228,7 @@ export function buildItemsAnalytics(input: {
       f = financial.get(item.id);
     const invoice = invoiceMap.get(item.phif_invoice_id);
     if (!invoice || !f) continue;
+    if (input.movementRange && !inWindow(String(invoice.dispensing_date || ""), input.movementRange)) continue;
     const identity = identities.get(item.id)!;
     const term = input.filters.q.toLowerCase().replace(/\s+/g, "");
     if (
@@ -331,6 +334,7 @@ export function buildItemsAnalytics(input: {
       invoiceNumber: invoice.invoice_number,
       date: String(invoice.dispensing_date || ""),
       beneficiary: rights.movements ? invoice.beneficiary_name : null,
+      beneficiariesAvailable: rights.movements,
       card: rights.movements
         ? String(invoice.insurance_card_number ?? "")
             .normalize("NFKC")

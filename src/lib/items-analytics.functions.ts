@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import {
   analyticsSearchSchema,
@@ -7,15 +7,29 @@ import {
 } from "./items-analytics.helpers";
 import { ACTUAL_UNITS } from "./actual-units.helpers";
 import { loadReportSettingScope, timedReportSetting } from "./report-setting-scope.server";
+import { buildPhifAnalyticsPeriod } from "./phif-analytics-period.helpers";
 
 const request = analyticsSearchSchema.extend({
   export: z.boolean().default(false),
   financial: z.boolean().default(false),
 });
 
-export const getItemsAnalytics = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => request.parse(data))
-  .handler(async ({ data }) => timedReportSetting("report_refresh", async (measure) => {
+export const getPhifAnalyticsPeriod = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }).parse(data))
+  .handler(async ({ data }) => {
+    const { loadItemAnalyticsDataset } = await import("./management.functions");
+    let rights!: ReturnType<typeof authorizeAnalyticsRead>;
+    const dataset = await loadItemAnalyticsDataset((context, access) => {
+      rights = authorizeAnalyticsRead(context.session.data, access, { financial: false, export: false, source: "all" });
+    });
+    const { loadReportBoxSettings } = await import("./report-box-settings.server");
+    const { settings, available, supplierUnitsAvailable } = await loadReportBoxSettings(dataset.admin, dataset.session.pharmacy_id);
+    return buildPhifAnalyticsPeriod({ ...dataset, ...rights, pharmacyId: dataset.session.pharmacy_id,
+      settings, settingsAvailable: available, supplierUnitsAvailable,
+      filters: analyticsSearchSchema.parse({ month: data.month }) }, data.month);
+  });
+
+const readItemsAnalytics = createServerOnlyFn(async (data: z.infer<typeof request>) => timedReportSetting("report_refresh", async (measure) => {
     const { loadItemAnalyticsDataset } = await import("./management.functions");
     let rights!: ReturnType<typeof authorizeAnalyticsRead>;
     const dataset = await measure("report_data_read_and_profit", () => loadItemAnalyticsDataset((context, access) => {
@@ -36,6 +50,22 @@ export const getItemsAnalytics = createServerFn({ method: "POST" })
       supplierUnitsAvailable,
     }));
   }));
+
+export const getItemsAnalytics = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => request.parse(data))
+  .handler(({ data }) => readItemsAnalytics(data));
+
+const analyticsExportInput = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  source: z.enum(["all", "actual", "phif"]), identity: z.string().min(1).max(1500) });
+export const exportPhifAnalytics = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => analyticsExportInput.parse(data))
+  .handler(async ({ data }) => {
+    // Export authorization is mandatory here, independent of client flags or cached reads.
+    const report = await readItemsAnalytics(request.parse({ month: data.month, source: data.source,
+      q: "", sort: "consumption_desc", result: "all", mode: "cumulative", financial: false, export: true }));
+    const { phifAnalyticsExportRows } = await import("./phif-analytics.model");
+    return phifAnalyticsExportRows(report, data.source, data.identity);
+  });
 
 const boxInput = z.object({
   identity: z.string().min(5).max(1500),
