@@ -41,7 +41,7 @@ function Sheet({ n, total, pharmacy, monthTitle, children }: { n: number; total:
         <span className="font-bold text-primary">صندوق التأمين الصحي العام — PHIF</span>
         <span>{pharmacy} · {monthTitle}</span>
       </div>
-      <div className="flex-1 pt-4">{children}</div>
+      <div className="min-h-0 flex-1 pt-4">{children}</div>
       <div className="mt-2 flex items-center justify-between border-t pt-2 text-[9px] text-muted-foreground">
         <span>التقرير الشهري للتحليلات الدوائية · العلب الموثقة فقط · بدون تكاليف أو أرباح</span>
         <span className="tabular-nums">صفحة {n} من {total}</span>
@@ -89,7 +89,8 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
     const head = el.querySelector<HTMLElement>("[data-head]");
     const rows = Array.from(el.querySelectorAll<HTMLElement>("tbody tr"));
     if (!area || !head || !rows.length) { setChunks([{ start: 0, rows: [] }]); return; }
-    const avail = area.clientHeight - head.offsetHeight - 12;
+    const title = area.querySelector<HTMLElement>("h2");
+    const avail = area.clientHeight - (title?.offsetHeight ?? 0) - 8 - head.offsetHeight - 12;
     const out: { start: number; rows: any[] }[] = [];
     let start = 0, used = 0;
     rows.forEach((r, i) => {
