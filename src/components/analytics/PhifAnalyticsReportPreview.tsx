@@ -238,7 +238,7 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
               <Sheet key={ci} n={3 + ci} {...sheet}>
                 <H>جدول المواد العلمية{chunks.length > 1 ? ` (${ci + 1}/${chunks.length})` : ""}</H>
                 {!rows.length ? <Na text="لا تتوفر مواد علمية ضمن الفلاتر" /> : (
-                  {table(rows, start)}
+                  table(rows, start)
                 )}
               </Sheet>
             ))}
