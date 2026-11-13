@@ -8,13 +8,12 @@ import { analyticsBoxLabel, type BoxMetric } from "@/lib/phif-analytics.model";
 /**
  * Presentation-only A4 preview of the monthly analytics report.
  * Receives values already computed by PhifAnalyticsPage; it never derives new figures.
- * Pagination is by fixed row counts per page so each sheet is a real A4 portrait page.
+ * The generics table is paginated by measured row heights, so long names wrap instead of being clipped.
  */
 const SUP = "var(--chart-2)";
 const ACT = "var(--chart-1)";
 const PAGE_W = 794; // 210mm @96dpi
-const FIRST_TABLE_ROWS = 22;
-const NEXT_TABLE_ROWS = 30;
+const CONTENT_W = 688; // 210mm minus 14mm side padding on both sides
 const fmt = (v: number | null | undefined, d = 0) => (v == null ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: d }));
 const boxText = (m: BoxMetric) => (m.value == null ? analyticsBoxLabel(m) : fmt(m.value, 3));
 const benText = (v: number | null) => (v == null ? "غير متاح" : fmt(v));
@@ -80,16 +79,30 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
     window.addEventListener("keydown", k);
     return () => { document.body.classList.remove("phif-report-open"); window.removeEventListener("keydown", k); };
   }, [p.open, p.onClose]);
+  const generics: any[] = p.agg?.generics ?? [];
+  const probe = useRef<HTMLDivElement>(null);
+  const [chunks, setChunks] = useState<{ start: number; rows: any[] }[]>([{ start: 0, rows: [] }]);
+  useLayoutEffect(() => {
+    if (!p.open || !mounted) return;
+    const el = probe.current; if (!el) return;
+    const area = el.querySelector<HTMLElement>("[data-area]");
+    const head = el.querySelector<HTMLElement>("[data-head]");
+    const rows = Array.from(el.querySelectorAll<HTMLElement>("tbody tr"));
+    if (!area || !head || !rows.length) { setChunks([{ start: 0, rows: [] }]); return; }
+    const avail = area.clientHeight - head.offsetHeight - 12;
+    const out: { start: number; rows: any[] }[] = [];
+    let start = 0, used = 0;
+    rows.forEach((r, i) => {
+      const h = r.offsetHeight;
+      if (i > start && used + h > avail) { out.push({ start, rows: generics.slice(start, i) }); start = i; used = 0; }
+      used += h;
+    });
+    out.push({ start, rows: generics.slice(start) });
+    setChunks(out);
+  }, [p.open, mounted, generics]);
   if (!p.open || !mounted) return null;
 
   const { agg } = p;
-  const generics: any[] = agg.generics ?? [];
-  const chunks: any[][] = [];
-  for (let i = 0; i < generics.length;) {
-    const size = chunks.length ? NEXT_TABLE_ROWS : FIRST_TABLE_ROWS;
-    chunks.push(generics.slice(i, i + size)); i += size;
-  }
-  if (!chunks.length) chunks.push([]);
   const total = 2 + chunks.length + 1;
   const prepared = new Intl.DateTimeFormat("ar-LY-u-nu-latn", { dateStyle: "long", timeStyle: "short" }).format(new Date());
   const totalOk = agg.total.state === "complete" && agg.total.value > 0;
@@ -112,6 +125,25 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
     ...(!p.invoiceIdsComplete ? ["عدد الفواتير غير معروض لعدم اكتمال معرفات الفواتير؛ يُعتمد عدد بنود الصرف."] : []),
   ];
 
+  const table = (rows: any[], offset: number) => (
+                  <table className="w-full table-fixed border-collapse text-[10px]">
+                    <colgroup><col style={{ width: "4%" }} /><col style={{ width: "28%" }} /><col style={{ width: "11%" }} /><col style={{ width: "11%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} /><col style={{ width: "10%" }} /></colgroup>
+                    <thead data-head><tr className="bg-accent text-right">{["#", "المادة العلمية", "التركيز", "الشكل", "Supplier", "Actual", "الإجمالي", "المستفيدون"].map((h) => <th key={h} className="border px-1.5 py-1.5 font-bold">{h}</th>)}</tr></thead>
+                    <tbody>{rows.map((g, i) => (
+                      <tr key={g.id} className="even:bg-muted/40">
+                        <td className="border px-1.5 py-1 tabular-nums">{offset + i + 1}</td>
+                        <td className="border px-1.5 py-1 break-words font-semibold">{g.name}{!g.identityComplete && <span className="block text-[8px] font-normal text-muted-foreground">تحتاج مراجعة</span>}</td>
+                        <td className="border px-1.5 py-1 break-words">{g.strength || "—"}</td>
+                        <td className="border px-1.5 py-1 break-words">{g.form || "—"}</td>
+                        <td className="border px-1.5 py-1 tabular-nums">{boxText(g.sup)}</td>
+                        <td className="border px-1.5 py-1 tabular-nums">{boxText(g.act)}</td>
+                        <td className="border px-1.5 py-1 font-bold tabular-nums">{boxText(g.total)}</td>
+                        <td className="border px-1.5 py-1 tabular-nums">{benText(g.beneficiaries.count)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+  );
+
   return createPortal(
     <div className="phif-report-root fixed inset-0 z-[60] flex flex-col bg-muted" role="dialog" aria-modal="true" aria-label="معاينة التقرير الشهري" dir="rtl">
       <div className="phif-report-toolbar flex items-center justify-between gap-2 border-b bg-background px-3 py-2">
@@ -120,6 +152,9 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
           <Button size="sm" className="gap-1.5" onClick={() => window.print()}><Printer className="h-4 w-4" />طباعة / PDF</Button>
           <Button size="icon" variant="ghost" aria-label="إغلاق" onClick={p.onClose}><X className="h-4 w-4" /></Button>
         </div>
+      </div>
+      <div ref={probe} aria-hidden className="pointer-events-none fixed top-0 opacity-0" style={{ left: -10000, width: PAGE_W }}>
+        <Sheet n={0} {...sheet}><div data-area className="h-full"><H>جدول المواد العلمية (0/0)</H>{generics.length ? table(generics, 0) : null}</div></Sheet>
       </div>
       <div ref={scroller} className="phif-report-scroll flex-1 overflow-auto py-4">
         <div className="phif-report-pages mx-auto" style={{ width: PAGE_W * scale }}>
@@ -148,9 +183,9 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
                 ))}
               </div>
               <div className="mt-5 grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-4">
-                <div><div className="flex items-baseline justify-between"><H>أعلى 10 مواد علمية صرفًا</H><Key /></div>
+                <div className="min-w-0 overflow-hidden"><div className="flex items-baseline justify-between"><H>أعلى 10 مواد علمية صرفًا</H><Key /></div>
                   {!agg.rankingComplete ? <Na text="الترتيب غير متاح: العبوات أو الهويات العلمية تحتاج مراجعة" /> : !p.top.length ? <Na text="لا تتوفر بيانات صرف" /> : (
-                    <BarChart width={430} height={Math.max(220, p.top.length * 30)} data={p.top} layout="vertical" margin={{ left: 4, right: 4 }}>
+                    <BarChart width={410} height={Math.max(220, p.top.length * 30)} data={p.top} layout="vertical" margin={{ left: 4, right: 4 }}>
                       <CartesianGrid horizontal={false} stroke="var(--border)" />
                       <XAxis type="number" tick={{ fontSize: 9 }} reversed />
                       <YAxis type="category" dataKey="name" width={140} orientation="right" tick={{ fontSize: 9 }} interval={0} />
@@ -159,10 +194,10 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
                     </BarChart>
                   )}
                 </div>
-                <div><H>توزيع المصدر</H>
+                <div className="min-w-0 overflow-hidden"><H>توزيع المصدر</H>
                   {!totalOk ? <Na text={agg.total.state === "complete" ? "لا تتوفر بيانات صرف" : `غير متاح: ${analyticsBoxLabel(agg.total)}`} /> : (
-                    <div className="relative">
-                      <PieChart width={250} height={200}><Pie isAnimationActive={false} data={[{ v: agg.sup.value }, { v: agg.act.value }]} dataKey="v" innerRadius={55} outerRadius={85} paddingAngle={2} stroke="none"><Cell fill={SUP} /><Cell fill={ACT} /></Pie></PieChart>
+                    <div className="relative mx-auto w-[240px]">
+                      <PieChart width={240} height={200}><Pie isAnimationActive={false} data={[{ v: agg.sup.value }, { v: agg.act.value }]} dataKey="v" innerRadius={55} outerRadius={85} paddingAngle={2} stroke="none"><Cell fill={SUP} /><Cell fill={ACT} /></Pie></PieChart>
                       <div className="pointer-events-none absolute inset-x-0 top-0 flex h-[200px] flex-col items-center justify-center"><b className="text-[16px] tabular-nums">{boxText(agg.total)}</b><span className="text-[9px] text-muted-foreground">علبة</span></div>
                       <div className="mt-1 grid grid-cols-2 text-center text-[10px]"><div><b className="tabular-nums">{pct(agg.sup)}</b><p className="text-muted-foreground">Supplier</p></div><div><b className="tabular-nums">{pct(agg.act)}</b><p className="text-muted-foreground">Actual</p></div></div>
                     </div>
@@ -175,7 +210,7 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
               <div className="flex items-baseline justify-between"><H>الحركة اليومية — {p.monthTitle}</H><Key /></div>
               {dailyGaps && <p className="mb-1 text-[10px] text-muted-foreground">الفجوات تمثل بيانات غير متاحة أو غير متوافقة، وليست صفرًا.</p>}
               {!p.daily.length ? <Na text="لا تتوفر بيانات" /> : (
-                <LineChart width={706} height={300} data={p.daily} margin={{ left: 0, right: 8, top: 8 }}>
+                <LineChart width={CONTENT_W} height={300} data={p.daily} margin={{ left: 0, right: 8, top: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="day" interval={0} tick={{ fontSize: 8 }} reversed />
                   <YAxis tick={{ fontSize: 9 }} orientation="right" width={34} />
@@ -183,10 +218,10 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
                   <Line isAnimationActive={false} type="linear" connectNulls={false} dataKey="act" stroke={ACT} strokeWidth={2} dot={false} />
                 </LineChart>
               )}
-              <div className="mt-8"><H>المقارنة الشهرية — آخر 6 أشهر</H>
+              <div className="mt-6"><H>المقارنة الشهرية — آخر 6 أشهر</H>
                 <p className="mb-1 text-[10px] text-muted-foreground">{p.monthly.map((m) => `${m.label}: ${m.status}`).join(" · ")}</p>
                 {!p.comparable ? <Na text="المقارنة غير متاحة: بيانات العبوات غير مكتملة أو غير متوافقة" /> : p.monthly.every((m) => !m.ready) ? <Na text="بيانات المقارنة غير متاحة" /> : (
-                  <BarChart width={706} height={300} data={p.monthly} margin={{ top: 8 }}>
+                  <BarChart width={CONTENT_W} height={300} data={p.monthly} margin={{ top: 8 }}>
                     <CartesianGrid vertical={false} stroke="var(--border)" />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} reversed />
                     <YAxis tick={{ fontSize: 9 }} orientation="right" width={34} />
@@ -198,26 +233,11 @@ export function PhifAnalyticsReportPreview(p: ReportPreviewProps) {
               </div>
             </Sheet>
 
-            {chunks.map((rows, ci) => (
+            {chunks.map(({ rows, start }, ci) => (
               <Sheet key={ci} n={3 + ci} {...sheet}>
                 <H>جدول المواد العلمية{chunks.length > 1 ? ` (${ci + 1}/${chunks.length})` : ""}</H>
                 {!rows.length ? <Na text="لا تتوفر مواد علمية ضمن الفلاتر" /> : (
-                  <table className="w-full table-fixed border-collapse text-[10px]">
-                    <colgroup><col style={{ width: "4%" }} /><col style={{ width: "28%" }} /><col style={{ width: "11%" }} /><col style={{ width: "11%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} /><col style={{ width: "10%" }} /></colgroup>
-                    <thead><tr className="bg-accent text-right">{["#", "المادة العلمية", "التركيز", "الشكل", "Supplier", "Actual", "الإجمالي", "المستفيدون"].map((h) => <th key={h} className="border px-1.5 py-1.5 font-bold">{h}</th>)}</tr></thead>
-                    <tbody>{rows.map((g, i) => (
-                      <tr key={g.id} className="even:bg-muted/40">
-                        <td className="border px-1.5 py-1 tabular-nums">{ci === 0 ? i + 1 : FIRST_TABLE_ROWS + (ci - 1) * NEXT_TABLE_ROWS + i + 1}</td>
-                        <td className="border px-1.5 py-1 break-words font-semibold">{g.name}{!g.identityComplete && <span className="block text-[8px] font-normal text-muted-foreground">تحتاج مراجعة</span>}</td>
-                        <td className="border px-1.5 py-1 break-words">{g.strength || "—"}</td>
-                        <td className="border px-1.5 py-1 break-words">{g.form || "—"}</td>
-                        <td className="border px-1.5 py-1 tabular-nums">{boxText(g.sup)}</td>
-                        <td className="border px-1.5 py-1 tabular-nums">{boxText(g.act)}</td>
-                        <td className="border px-1.5 py-1 font-bold tabular-nums">{boxText(g.total)}</td>
-                        <td className="border px-1.5 py-1 tabular-nums">{benText(g.beneficiaries.count)}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
+                  {table(rows, start)}
                 )}
               </Sheet>
             ))}
