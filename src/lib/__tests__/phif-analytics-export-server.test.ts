@@ -21,7 +21,8 @@ vi.mock("../report-box-settings.server", () => ({
     return { settings: [], available: true, supplierUnitsAvailable: true };
   },
 }));
-import { exportPhifAnalytics, getPhifAnalyticsPeriod } from "../items-analytics.functions";
+import { exportPhifAnalytics, getItemsAnalytics, getPhifAnalyticsPeriod } from "../items-analytics.functions";
+import { aggregatePhifAnalytics, filterAnalyticsMovements } from "../phif-analytics.model";
 
 beforeEach(() => {
   state.allowed = false; state.pharmacy = "tiryaq"; state.calls = [];
@@ -35,6 +36,45 @@ beforeEach(() => {
 });
 const input = () => ({ data: { month: "2026-09", source: "all", identity: "all" } } as any);
 describe("server-authorized Analytics export", () => {
+  it("matches item and invoice reports for both sources without dropping unknown boxes or repeating invoice cards", async () => {
+    const original = structuredClone(state.dataset.items[0]);
+    state.dataset.items.push({ ...original, id: "actual", source_classification: "actual-supplier",
+      metadata: { unit: "TAB", dosage_form: "TABLET", package_quantity: 30 } });
+    state.dataset.rows.push({ item_id: "actual", revenue: 90, purchase_cost: 30, gross_margin: 60 });
+    state.dataset.invoices.push({ id: "next-month", dispensing_date: "2026-10-01", insurance_card_number: "999" });
+    state.dataset.items.push({ ...original, id: "outside", phif_invoice_id: "next-month" });
+    state.dataset.rows.push({ item_id: "outside", revenue: 60, purchase_cost: 30, gross_margin: 30 });
+    const before = JSON.stringify(state.dataset);
+    const period = await getPhifAnalyticsPeriod({ data: { month: "2026-09" } });
+    const month = period.months.at(-1)!;
+    if (month.status !== "success") throw new Error("Expected loaded month");
+    for (const source of ["all", "phif", "actual"] as const) {
+      const report = await getItemsAnalytics({ data: { month: "2026-09", source } });
+      const analytics = aggregatePhifAnalytics(filterAnalyticsMovements(month.movements, source, "all"));
+      expect(analytics).toEqual(aggregatePhifAnalytics(report.movements));
+      expect(analytics.rows).toBe(report.invoices.reduce((sum, invoice) => sum + invoice.itemCount, 0));
+      expect(analytics.invoices).toBe(report.invoices.length);
+      expect(analytics.total.value).toBe(report.summary.boxes);
+      expect(analytics.beneficiaries.count).toBe(report.summary.beneficiaries);
+    }
+    expect(month.movements.map(row => row.id).sort()).toEqual(["actual", "item"]);
+    expect(aggregatePhifAnalytics(month.movements)).toMatchObject({ rows: 2, invoices: 1,
+      beneficiaries: { count: 1 }, total: { value: null, state: "unknown" } });
+    expect(month.movements.every(row => row.card === "000123")).toBe(true);
+    expect(JSON.stringify(state.dataset)).toBe(before);
+  });
+  it("reads newly available invoice items through the same endpoint without requiring pricing or box settings", async () => {
+    const read = () => getPhifAnalyticsPeriod({ data: { month: "2026-09" } });
+    await read();
+    state.dataset.invoices.push({ id: "new-invoice", dispensing_date: "2026-09-30", insurance_card_number: "000124" });
+    state.dataset.items.push({ ...state.dataset.items[0], id: "new-item", phif_invoice_id: "new-invoice" });
+    state.dataset.rows.push({ item_id: "new-item", revenue: 60, purchase_cost: null, gross_margin: null });
+    const month = (await read()).months.at(-1)!;
+    if (month.status !== "success") throw new Error("Expected loaded month");
+    expect(aggregatePhifAnalytics(month.movements)).toMatchObject({ rows: 2, invoices: 2,
+      beneficiaries: { count: 2 }, total: { value: null, state: "unknown" } });
+    expect(state.calls).toEqual(["authorized-data-read", "settings:tiryaq", "authorized-data-read", "settings:tiryaq"]);
+  });
   it("loads the six-month period once using the verified pharmacy and returns no financial fields", async () => {
     const result = await getPhifAnalyticsPeriod({ data: { month: "2026-09", pharmacyId: "forged" } } as any);
     expect(state.calls).toEqual(["authorized-data-read", "settings:tiryaq"]);
