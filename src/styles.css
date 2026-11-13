@@ -169,3 +169,19 @@
   visibility: hidden !important;
   pointer-events: none !important;
 }
+
+/* PHIF Analytics monthly report: real A4 sheets, printed independently of the preview overlay. */
+.phif-a4 { width: 210mm; height: 297mm; padding: 14mm 14mm 10mm; overflow: hidden; box-shadow: 0 2px 10px oklch(0 0 0 / 0.12); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body.phif-report-open { overflow: hidden; }
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+  body.phif-report-open > *:not(.phif-report-root) { display: none !important; }
+  body.phif-report-open { overflow: visible !important; background: var(--card); }
+  body.phif-report-open .phif-report-root { position: static !important; display: block !important; background: none !important; }
+  body.phif-report-open .phif-report-toolbar { display: none !important; }
+  body.phif-report-open .phif-report-scroll { overflow: visible !important; padding: 0 !important; }
+  body.phif-report-open .phif-report-pages, body.phif-report-open .phif-report-scale { width: auto !important; transform: none !important; margin: 0 !important; }
+  body.phif-report-open .phif-report-scale > * + * { margin-top: 0 !important; }
+  body.phif-report-open .phif-a4 { box-shadow: none; break-after: page; page-break-after: always; }
+  body.phif-report-open .phif-a4:last-child { break-after: auto; page-break-after: auto; }
+}

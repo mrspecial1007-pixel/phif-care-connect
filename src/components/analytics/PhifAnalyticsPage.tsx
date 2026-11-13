@@ -16,6 +16,7 @@ type Source = "all" | "actual" | "phif";
 import { aggregatePhifAnalytics as aggregate, analyticsBoxLabel, dailyPhifAnalytics, filterAnalyticsMovements, type AnalyticsMovement as Mv, type BoxMetric } from "@/lib/phif-analytics.model";
 import { analyticsMonths, analyticsComparison, analyticsPeriodQueryKey, validAnalyticsSelection } from "@/lib/phif-analytics-period.helpers";
 import { toast } from "sonner";
+import { PhifAnalyticsReportPreview } from "@/components/analytics/PhifAnalyticsReportPreview";
 const boxText = (m: BoxMetric) => m.value == null ? analyticsBoxLabel(m) : fmt(m.value, 3);
 const beneficiaryText = (v: number | null) => v == null ? "غير متاح" : fmt(v);
 
@@ -51,6 +52,7 @@ export function PhifAnalyticsPage() {
   const [open, setOpen] = useState<string | null>(null);
   const month = `${year}-${mon}`;
   const [exporting, setExporting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const exportLock = useRef(false);
   const months = useMemo(() => analyticsMonths(month), [month]);
   const period = useQuery({
@@ -237,6 +239,7 @@ export function PhifAnalyticsPage() {
         </Panel>
         <Panel title="التقارير والتصدير" className="print:hidden">
           <div className="space-y-2">
+            <Button className="w-full justify-start gap-2" disabled={!hasData || !!current.error} onClick={() => setPreviewOpen(true)}><FileText className="h-4 w-4" />معاينة التقرير الشهري (A4)</Button>
             <Button className="w-full justify-start gap-2" variant="outline" disabled={!hasData} onClick={() => window.print()}><FileText className="h-4 w-4" />تصدير PDF / طباعة</Button>
             <Button className="w-full justify-start gap-2" variant="outline" disabled={!hasData || !current.data?.canExport || exporting} onClick={exportExcel}><FileSpreadsheet className="h-4 w-4" />{exporting ? "جار إنشاء الملف" : "تصدير Excel"}</Button>
             <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><Printer className="h-3 w-3" />التصدير يطابق الفلاتر الحالية · بدون تكاليف أو أرباح</p>
@@ -244,6 +247,12 @@ export function PhifAnalyticsPage() {
         </Panel>
       </div>
       </>
+
+      <PhifAnalyticsReportPreview open={previewOpen && hasData && !current.error} onClose={() => setPreviewOpen(false)}
+        pharmacy={(session.data as any)?.pharmacy?.name ?? "الصيدلية الحالية"} monthTitle={new Intl.DateTimeFormat("ar-LY-u-nu-latn", { month: "long", year: "numeric" }).format(new Date(`${month}-15`))}
+        sourceLabel={source === "all" ? "الكل" : source === "phif" ? "PHIF Supplier" : "PHIF Actual"}
+        genericLabel={generic === "all" ? "جميع المواد" : (allGenerics.find(g => g.id === generic) ? `${allGenerics.find(g => g.id === generic)!.name} ${allGenerics.find(g => g.id === generic)!.strength}` : "—")}
+        agg={agg} invoiceIdsComplete={filterMv(current.data).every(r => !!r.invoiceId)} top={top} daily={daily} monthly={monthly} comparable={comparable} insights={insights} />
 
       <Sheet open={!!selected} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent side="bottom" dir="rtl" className="max-h-[80vh] overflow-y-auto">
