@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { loadReportSettingScope } from "../report-setting-scope.server";
 import {
@@ -6,6 +6,10 @@ import {
   refreshReportAfterSettingSave,
 } from "../report-setting-save.helpers";
 import { analyticsSearchSchema, buildItemsAnalytics } from "../items-analytics.helpers";
+import { reportIngredient, reportSettingKey, resolveReportIdentities, scientificReportIdentity } from "../report-medication-evidence.helpers";
+
+const evidence = vi.hoisted(() => ({ dataset: {} as any }));
+vi.mock("../management.functions", () => ({ loadItemAnalyticsDataset: async () => evidence.dataset }));
 
 const identity = JSON.stringify(["atorvastatin", "40mg", "tablet"]);
 const item = (id: string, patch: any = {}) => ({
@@ -72,6 +76,54 @@ function database(items: any[], stocks: any[] = [], settings: any[] = []) {
 }
 
 describe("report setting save performance and safety", () => {
+  it("normalizes parentheses whitespace without conflating composition, dose or form", () => {
+    const name = "INSULIN(HUMAN RECOMBINANT RAPID ACTING ANALOGUE)";
+    expect(reportIngredient(name)).toBe(reportIngredient(" Insulin ( HUMAN RECOMBINANT RAPID ACTING ANALOGUE ) "));
+    expect(reportIngredient(name)).not.toBe(reportIngredient("INSULIN(HUMAN RECOMBINANT LONG ACTING ANALOGUE)"));
+    const pen = scientificReportIdentity({ active_ingredient: name, strength: "100IU" }, "pen");
+    expect(pen.key).not.toBe(scientificReportIdentity({ active_ingredient: name, strength: "200IU" }, "pen").key);
+    expect(pen.key).not.toBe(scientificReportIdentity({ active_ingredient: name, strength: "100IU" }, "vial").key);
+    expect(reportSettingKey(JSON.stringify([name.toLowerCase(), "100iu", "pen"]))).toBe(pen.key);
+  });
+
+  it("reads the same linked Actual form evidence as the report instead of accepting a conflicting generic form", async () => {
+    const supplier = item("supplier", { metadata: {}, brand: "shared" });
+    const actual = item("actual", { metadata: {}, brand: "shared", source_classification: "actual-supplier" });
+    const stocks = [{ id: "s", source_stock_id: "stock", pharmacy_id: "tiryaq", is_current: true,
+      active_ingredient: "ATORVASTATIN", strength: "40MG", dosage_unit: "TAB" }];
+    const rows = [{ item_id: "actual", invoice_dosage_form: "CAP" }];
+    evidence.dataset = { session: { pharmacy_id: "tiryaq" }, rows, stocks, referenceForms: [] };
+    const { db } = database([supplier, actual], stocks);
+    const report = resolveReportIdentities([supplier, actual], rows, stocks);
+    const target = report.get("supplier")!.key;
+    expect((await loadReportSettingScope(db, "tiryaq", target)).items.map(i => i.id)).toEqual(["supplier", "actual"]);
+    await expect(loadReportSettingScope(db, "tiryaq", identity)).rejects.toThrow("الشكل الدوائي");
+    evidence.dataset.session.pharmacy_id = "other";
+    await expect(loadReportSettingScope(db, "tiryaq", target)).rejects.toThrow("تغيرت الصيدلية");
+  });
+
+  it("reuses a pen definition across months and names without inferring a dispensing unit", async () => {
+    const rawName = "INSULIN(HUMAN RECOMBINANT RAPID ACTING ANALOGUE)";
+    const items = [item("oct", { active_ingredient: rawName, strength: "100IU", metadata: {} }),
+      item("nov", { active_ingredient: "INSULIN (HUMAN RECOMBINANT RAPID ACTING ANALOGUE)", strength: "100IU", metadata: {} })];
+    const target = scientificReportIdentity(items[0], "pen").key;
+    const settings = [{ id: "saved", pharmacy_id: "tiryaq", item_identity: target, units_per_box: 1,
+      base_unit: "pen" as const, supplier_quantity_unit: null, version: 1 }];
+    const { db } = database(items, [], settings);
+    const before = JSON.stringify({ items, settings });
+    expect((await loadReportSettingScope(db, "tiryaq", target)).items).toHaveLength(2);
+    const rights = { items: true, movements: true, revenue: true, cost: true, profit: true };
+    for (const month of ["2026-10", "2026-11"]) {
+      const report = buildItemsAnalytics({ items, settings, pharmacyId: "tiryaq",
+        rows: items.map(i => ({ item_id: i.id, revenue: 60, purchase_cost: 24, gross_margin: 36 })), stocks: [],
+        invoices: items.map((i, n) => ({ id: i.phif_invoice_id, dispensing_date: `2026-${n ? "11" : "10"}-01` })),
+        access: { phif: rights, actual: rights }, filters: analyticsSearchSchema.parse({ month }) });
+      expect(report.items).toHaveLength(1);
+      expect(report.items[0].setting?.units_per_box).toBe(1);
+      expect(report.items[0].boxes).toBeNull();
+    }
+    expect(JSON.stringify({ items, settings })).toBe(before);
+  });
   it("verifies current scientific scope without loading patient invoices or calculating profit", async () => {
     const { db, calls } = database([
       item("own"),

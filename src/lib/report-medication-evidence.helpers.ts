@@ -10,6 +10,11 @@ const text = (v: unknown) =>
   String(v ?? "")
     .normalize("NFKC")
     .trim();
+/** Formatting only: retain all words, parentheses, components and their order. */
+export function reportIngredient(value: unknown) {
+  return normalizeActiveIngredient(text(value))
+    .replace(/\s*\(\s*/g, " (").replace(/\s*\)\s*/g, ") ").trim();
+}
 export function reportStrength(value: unknown) {
   const raw = text(value).toLowerCase().replace(/\s+/g, "").replace(/[µμ]g/g, "mcg");
   const chain = /^(\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)*)\s*(mg|mcg|g)$/.exec(raw);
@@ -31,7 +36,7 @@ export function reportForm(value: unknown) {
     : actualUnit(raw) || normalizeDosageForm(raw);
 }
 export function scientificReportIdentity(item: any, formHint?: unknown) {
-  const ingredient = normalizeActiveIngredient(text(item.active_ingredient));
+  const ingredient = reportIngredient(item.active_ingredient);
   const strength = reportStrength(item.strength);
   const proof = supplierQuantityEvidence(item);
   const quantityForm = ["TAB", "CAP", "PEN", "VIAL", "AMP", "EYE_DROPS"].includes(proof.unit || "")
@@ -128,7 +133,7 @@ export function resolveReportIdentities(
   const scientificForms = new Map<string, Set<string>>();
   const scientificKey = (i: any) =>
     JSON.stringify([
-      normalizeActiveIngredient(text(i.active_ingredient)),
+      reportIngredient(i.active_ingredient),
       reportStrength(i.strength),
     ]);
   const savedForms = new Map<string, Set<string>>();
@@ -159,7 +164,7 @@ export function resolveReportIdentities(
     addScientific(ref, reportForm(ref.dosage_form || ref.dosage_unit));
   const productKey = (i: any) =>
     JSON.stringify([
-      normalizeActiveIngredient(text(i.active_ingredient)),
+      reportIngredient(i.active_ingredient),
       reportStrength(i.strength),
       text(i.brand).toLowerCase().replace(/\s+/g, " "),
     ]);

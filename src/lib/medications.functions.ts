@@ -16,10 +16,24 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { buildMedicationIdentity, normalizeBrandName } from "@/lib/medication-normalize";
 
-async function ctx() {
+async function ctx(manageDirectory = false, privateRecords = false) {
   const { requirePharmacySession } = await import("@/lib/pharmacy-session.server");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { pharmacy_id } = await requirePharmacySession();
+  const { pharmacy_id, session } = await requirePharmacySession();
+  const actor = session.data;
+  if (manageDirectory && (!actor.user_id || actor.user_role !== "admin"))
+    throw new Error("Forbidden: directory manager required");
+  if (privateRecords && (!actor.user_id || !["admin", "employee"].includes(actor.user_role || "")))
+    throw new Error("Forbidden: verified directory user required");
+  // Legacy pharmacy sessions may browse the shared catalog, never private mappings.
+  // A disabled or reassigned identified user cannot fall back to legacy access.
+  if (actor.user_id || actor.user_role === "admin" || actor.user_role === "employee") {
+    if (!actor.user_id) throw new Error("Forbidden: verified directory user required");
+    const { data: manager, error } = await supabaseAdmin.from("pharmacy_users")
+      .select("id").eq("id", actor.user_id).eq("pharmacy_id", pharmacy_id)
+      .eq("role", actor.user_role!).eq("is_active", true).maybeSingle();
+    if (error || !manager) throw new Error("Forbidden: current directory access unavailable");
+  }
   return { pharmacy_id, admin: supabaseAdmin as any };
 }
 
@@ -65,7 +79,7 @@ const medicationInput = z.object({
 export const createMedication = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => medicationInput.parse(d))
   .handler(async ({ data }) => {
-    const { admin } = await ctx();
+    const { admin } = await ctx(true);
     const identity = buildMedicationIdentity(data);
     const row = {
       ...identity,
@@ -128,7 +142,7 @@ const productInput = z.object({
 export const createCommercialProduct = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => productInput.parse(d))
   .handler(async ({ data }) => {
-    const { admin } = await ctx();
+    const { admin } = await ctx(true);
     const { data: row, error } = await admin
       .from("commercial_products")
       .insert({
@@ -174,7 +188,22 @@ export const createProductMedicationMapping = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { pharmacy_id, admin } = await ctx();
+    const { pharmacy_id, admin } = await ctx(true);
+    // Catalog identities/products are shared; ownership applies to the relationship.
+    for (const [table, id] of [["medications", data.medication_id], ["commercial_products", data.product_id]]) {
+      let query = admin.from(table).select("id").eq("id", id);
+      if (table === "commercial_products") query = query.eq("is_active", true);
+      const { data: target, error } = await query.maybeSingle();
+      if (error || !target) throw new NotFound();
+    }
+    const { data: existing, error: lookupError } = await admin.from("product_medication_mappings")
+      .select("*").eq("product_id", data.product_id).eq("medication_id", data.medication_id)
+      .is("effective_to", null).maybeSingle();
+    if (lookupError) throw new Error(lookupError.message);
+    if (existing) {
+      if (existing.created_by_pharmacy_id !== pharmacy_id) throw new NotFound();
+      throw new Error("Active mapping already exists; review it before creating a replacement");
+    }
     const { data: row, error } = await admin
       .from("product_medication_mappings")
       .insert({
@@ -195,11 +224,12 @@ export const createProductMedicationMapping = createServerFn({ method: "POST" })
 export const closeProductMedicationMapping = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    const { admin } = await ctx();
+    const { pharmacy_id, admin } = await ctx(true);
     const { data: row, error } = await admin
       .from("product_medication_mappings")
       .update({ effective_to: new Date().toISOString() })
       .eq("id", data.id)
+      .eq("created_by_pharmacy_id", pharmacy_id)
       .is("effective_to", null)
       .select("*")
       .maybeSingle();
@@ -213,11 +243,12 @@ export const listProductMappings = createServerFn({ method: "POST" })
     z.object({ product_id: z.string().uuid(), active_only: z.boolean().default(true) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { admin } = await ctx();
+    const { pharmacy_id, admin } = await ctx(false, true);
     let q = admin
       .from("product_medication_mappings")
       .select("*")
       .eq("product_id", data.product_id)
+      .eq("created_by_pharmacy_id", pharmacy_id)
       .order("effective_from", { ascending: false });
     if (data.active_only) q = q.is("effective_to", null);
     const { data: rows, error } = await q;
@@ -340,7 +371,7 @@ export const addPrescriptionItem = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { pharmacy_id, admin } = await ctx();
+    const { pharmacy_id, admin } = await ctx(Boolean(data.medication_id));
     const { data: rx, error: e0 } = await admin
       .from("prescriptions")
       .select("id")
@@ -374,7 +405,7 @@ export const setPrescriptionItemMedication = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), medication_id: z.string().uuid().nullable() }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { pharmacy_id, admin } = await ctx();
+    const { pharmacy_id, admin } = await ctx(true);
     const { data: row, error } = await admin
       .from("prescription_items")
       .update({ medication_id: data.medication_id })

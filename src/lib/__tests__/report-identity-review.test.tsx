@@ -9,6 +9,9 @@ import { reportReviewIdentity, reportReviewRequest, REPORT_REVIEW_FORMS } from "
 import { loadReportSettingScope } from "../report-setting-scope.server";
 import { analyticsSearchSchema, authorizeAnalyticsRead, buildItemsAnalytics, scientificReportIdentity } from "../items-analytics.helpers";
 
+const evidence = vi.hoisted(() => ({ dataset: {} as any }));
+vi.mock("../management.functions", () => ({ loadItemAnalyticsDataset: async () => evidence.dataset }));
+
 vi.mock("@/components/ui/sheet", () => {
   const Wrapper = ({ children }: any) => <div>{children}</div>;
   return { Sheet: Wrapper, SheetContent: Wrapper, SheetHeader: Wrapper, SheetTitle: Wrapper, SheetDescription: Wrapper };
@@ -28,6 +31,8 @@ const definition = (patch: any = {}) => ({ id: "setting", pharmacy_id: pharmacyI
 const rights = { items: true, movements: true, revenue: true, cost: true, profit: true };
 
 function database(items: any[], settings: any[] = [], stocks: any[] = []) {
+  evidence.dataset = { session: { pharmacy_id: pharmacyId }, rows: [],
+    stocks: stocks.filter(s => s.pharmacy_id === pharmacyId && s.is_current), referenceForms: [] };
   const calls: { table: string; filters: [string, any][] }[] = [];
   return { calls, db: { from(table: string) {
     const call = { table, filters: [] as [string, any][] }; calls.push(call);
@@ -215,6 +220,18 @@ describe("manual Supplier identity review through existing report settings", () 
     expect(html).toContain("وحدة محتوى العلبة");
     expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/);
     expect(html).not.toContain("حفظ توثيق الوحدة");
+  });
+
+  it("allows explicit review of an inferred complete identity before its first definition is saved", () => {
+    const client = new QueryClient();
+    const html = renderToStaticMarkup(<QueryClientProvider client={client}>
+      <BoxEditor item={{ id: identity, ingredient: "Amlodipine + Valsartan", strength: "10MG/160MG", form: "tablet", identityComplete: true }}
+        rows={[{ id: "a", source: "phif" } as any]} unitsAvailable reportKey={["items_analytics"]} onClose={() => {}} />
+    </QueryClientProvider>);
+    client.clear();
+    expect(html).toContain("مراجعة الهوية والشكل الدوائي");
+    expect(reportReviewRequest({ id: identity }, "tablet", "30", "tablet", "a"))
+      .toMatchObject({ identity, reviewItemId: "a", version: 0 });
   });
 
   it("keeps admin-only server verification, version protection and the existing audited RPC", () => {

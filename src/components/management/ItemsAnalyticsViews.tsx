@@ -245,7 +245,8 @@ export function BoxEditor({
   onSaved?: (setting: { item_identity: string }) => void;
   returnToReport?: boolean;
 }) {
-  const reviewing = item.identityComplete === false;
+  const [manualReview, setManualReview] = useState(false);
+  const reviewing = item.identityComplete === false || manualReview;
   const [form, setForm] = useState(item.form || "");
   const [count, setCount] = useState(String(item.setting?.units_per_box ?? ""));
   const [unit, setUnit] = useState<ActualUnit | "">(
@@ -292,6 +293,10 @@ export function BoxEditor({
             {item.ingredient} · {item.strength} · {item.form}
           </SheetDescription>
         </SheetHeader>
+        {!reviewing && reviewItemId && !item.setting && (
+          <Button type="button" variant="outline" className="mt-3" disabled={save.isPending || unitSaving}
+            onClick={() => setManualReview(true)}>مراجعة الهوية والشكل الدوائي</Button>
+        )}
         <form
           className="mt-4 space-y-3"
           onSubmit={(e) => {

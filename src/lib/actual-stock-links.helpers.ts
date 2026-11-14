@@ -1,4 +1,4 @@
-import { scientificReportIdentity, reportForm, reportStrength } from "./report-medication-evidence.helpers";
+import { supplierQuantityEvidence, reportForm, reportStrength } from "./report-medication-evidence.helpers";
 import { supplierInvoiceForm } from "./phif-supplier-quick-cost.helpers";
 import { normalizeActiveIngredient } from "./medication-normalize";
 
@@ -32,9 +32,20 @@ function sourceSignatureMatches(item: any, signature: string) {
   catch { return false; }
 }
 const sourceBase = (item: any) => JSON.stringify([normalizeActiveIngredient(String(item.active_ingredient || "")),reportStrength(item.strength),text(item.brand)]);
+// Persisted Actual keys predate report-only parentheses normalization. Keep this
+// wire format stable: changing report display keys must never rewrite link keys.
+function actualScientificIdentity(item: any, formHint?: unknown) {
+  const ingredient = normalizeActiveIngredient(String(item.active_ingredient ?? "").normalize("NFKC").trim());
+  const strength = reportStrength(item.strength);
+  const proof = supplierQuantityEvidence(item);
+  const quantityForm = ["TAB", "CAP", "PEN", "VIAL", "AMP", "EYE_DROPS"].includes(proof.unit || "") ? proof.unit : "";
+  const form = reportForm(formHint) || reportForm(supplierInvoiceForm(item)) || reportForm(quantityForm);
+  return { form, key: JSON.stringify([ingredient, strength, form,
+    ...(!ingredient || !strength || !form ? ["unresolved", item.id] : [])]) };
+}
 export function actualLinkIdentity(item: any, target: ActualStockLink["target"]) {
   if (item?.source_classification !== "actual-supplier" || !item.brand) return null;
-  const identity = scientificReportIdentity(item, reportForm(supplierInvoiceForm(item)) || reportForm(target.dosage_unit));
+  const identity = actualScientificIdentity(item, reportForm(supplierInvoiceForm(item)) || reportForm(target.dosage_unit));
   if (!identity.form || identity.key.includes('"unresolved"')) return null;
   // Keep the dispensed brand: a manually confirmed alias is not a generic-wide substitution.
   return JSON.stringify([JSON.parse(identity.key),text(item.brand)]);
@@ -42,7 +53,7 @@ export function actualLinkIdentity(item: any, target: ActualStockLink["target"])
 export function actualLinkTargetKey(target: ActualStockLink["target"]) {
   const count = (v: unknown) => v == null ? null : Number.isFinite(Number(v)) ? Number(v) : text(v);
   return JSON.stringify([target.brand_product_id || target.source_stock_id || target.id, text(target.brand_name),
-    scientificReportIdentity({ active_ingredient: "target", strength: target.strength },target.dosage_unit).key,
+    actualScientificIdentity({ active_ingredient: "target", strength: target.strength },target.dosage_unit).key,
     count(target.package_quantity), count(target.strips_quantity)]);
 }
 export function actualLinkGroups(links: ActualStockLink[]) {

@@ -4,13 +4,13 @@ import {
   resolveReportIdentities,
   scientificReportIdentity,
   reportStrength,
+  reportIngredient,
 } from "./report-medication-evidence.helpers";
-import { normalizeActiveIngredient } from "./medication-normalize";
 import { reportReviewIdentity } from "./report-identity-review.helpers";
 import type { ActualUnit } from "./actual-units.helpers";
 type SettingMeasure = <R>(phase: string, fn: () => R) => Promise<Awaited<R>>;
 
-/** Fresh operational evidence only. Saving a reporting setting never needs profit calculations. */
+/** Use operational evidence first; linked Actual forms reuse the report dataset when needed. */
 export async function loadReportSettingScope(
   db: any,
   pharmacyId: string,
@@ -18,7 +18,9 @@ export async function loadReportSettingScope(
   measure: SettingMeasure = (_phase, fn) => Promise.resolve(fn()),
   review?: { itemId: string; baseUnit: ActualUnit },
 ) {
-  const key = JSON.parse(identity);
+  let key: unknown;
+  try { key = JSON.parse(identity); }
+  catch { throw new Error("صيغة هوية الصنف غير صالحة؛ أعد تحميل التقرير"); }
   if (
     !Array.isArray(key) ||
     key.length !== 3 ||
@@ -46,7 +48,7 @@ export async function loadReportSettingScope(
   const candidates = await measure("identity_normalization", () =>
     rows.filter(
       (i) =>
-        normalizeActiveIngredient(String(i.active_ingredient || "").normalize("NFKC")) === key[0] &&
+        reportIngredient(i.active_ingredient) === key[0] &&
         reportStrength(i.strength) === key[1],
     ),
   );
@@ -57,12 +59,13 @@ export async function loadReportSettingScope(
   if (reviewItem && scientificReportIdentity(reviewItem).form
     && scientificReportIdentity(reviewItem).form !== expected.form)
     throw new Error("لا يمكن استبدال شكل دوائي صريح في الفاتورة بتعريف مختلف");
-  let identities = new Map(candidates.map((i) => [i.id, scientificReportIdentity(i)]));
+  let identities = resolveReportIdentities(candidates, [], []);
   let definitions: Parameters<typeof resolveReportIdentities>[4];
   let stocks: any[] = [], references: any[] = [];
+  let finance: any[] = [];
   // Missing forms need the same pharmacy-scoped stock/reference evidence as the report.
   // Resolve once per scientific scope, not once per invoice or exception.
-  if (review || candidates.some((i) => !identities.get(i.id)?.form)) {
+  if (review || candidates.some((i) => !scientificReportIdentity(i).form)) {
     const { loadReportBoxSettings } = await import("./report-box-settings.server");
     const { settings } = await measure("definition_database_read", () =>
       loadReportBoxSettings(db, pharmacyId),
@@ -81,8 +84,20 @@ export async function loadReportSettingScope(
     references = await measure("reference_database_read", () =>
       readReportFormReferences(db, pharmacyId),
     );
+    // Actual's linked stock/form can be scientific evidence in the displayed report.
+    // Do not substitute the stock's generic form when that same report used a link.
+    if (candidates.some(i => i.source_classification === "actual-supplier"
+      && !scientificReportIdentity(i).form)) {
+      const { loadItemAnalyticsDataset } = await import("./management.functions");
+      const dataset = await measure("linked_identity_evidence", () => loadItemAnalyticsDataset());
+      if (dataset.session.pharmacy_id !== pharmacyId)
+        throw new Error("تغيرت الصيدلية؛ أعد تحميل الصفحة");
+      finance = dataset.rows;
+      stocks = dataset.stocks;
+      references = dataset.referenceForms;
+    }
     identities = await measure("identity_resolution", () =>
-      resolveReportIdentities(candidates, [], stocks, references, definitions),
+      resolveReportIdentities(candidates, finance, stocks, references, definitions),
     );
   }
   if (review) {
@@ -91,7 +106,7 @@ export async function loadReportSettingScope(
     const proposed = { pharmacyId, settings: [...(definitions?.settings || []), {
       pharmacy_id: pharmacyId, item_identity: identity, base_unit: review.baseUnit,
     }] };
-    const reviewed = resolveReportIdentities(candidates, [], stocks, references, proposed);
+    const reviewed = resolveReportIdentities(candidates, finance, stocks, references, proposed);
     const checked = reviewed.get(review.itemId);
     if (!checked || checked.key !== identity || checked.reviewReason)
       throw new Error(`تعذر اعتماد الشكل: ${checked?.reviewReason || "تعارض مع بيانات الصنف المسجلة"}`);
@@ -99,24 +114,13 @@ export async function loadReportSettingScope(
       && reviewed.get(i.id)?.key === identity && !reviewed.get(i.id)?.reviewReason);
     return { id: identity, form: expected.form, items };
   }
-  let items = candidates.filter((i) => identities.get(i.id)?.key === identity);
-  if (!items.length && candidates.some((i) => !identities.get(i.id)?.form)) {
-    // Preserve identities that require legacy/manual Actual evidence. This rare
-    // fallback retains the old checks rather than guessing a missing form.
-    const { loadItemAnalyticsDataset } = await import("./management.functions");
-    const dataset = await loadItemAnalyticsDataset();
-    if (dataset.session.pharmacy_id !== pharmacyId)
-      throw new Error("تغيرت الصيدلية؛ أعد تحميل الصفحة");
-    const verified = resolveReportIdentities(
-      dataset.items,
-      dataset.rows,
-      dataset.stocks,
-      dataset.referenceForms,
-      definitions,
-    );
-    items = dataset.items.filter((i) => verified.get(i.id)?.key === identity);
+  const items = candidates.filter((i) => identities.get(i.id)?.key === identity
+    && !identities.get(i.id)?.reviewReason);
+  if (!items.length) {
+    if (!candidates.length) throw new Error("لا يوجد بند مطابق للمادة العلمية والتركيز في هذه الصيدلية؛ حدّث التقرير وراجع الهوية");
+    const reasons = [...new Set(candidates.map(i => identities.get(i.id)?.reviewReason).filter(Boolean))];
+    throw new Error(`مراجعة الهوية مطلوبة: ${reasons.join("؛ ") || "الشكل الدوائي المطلوب لا يطابق الأدلة المسجلة"}`);
   }
-  if (!items.length) throw new Error("هوية الصنف أو الشكل الدوائي تحتاج مراجعة");
   return { id: identity, form: expected.form, items };
 }
 
