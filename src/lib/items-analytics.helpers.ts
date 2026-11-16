@@ -177,6 +177,7 @@ export function resultMatches(
 
 /** Consumes the existing engine's results; does not calculate Actual purchase prices. */
 export function buildItemsAnalytics(input: {
+  identityEvidence?: ReturnType<typeof import("./report-medication-evidence.helpers").createReportIdentityEvidence>;
   pharmacyId?: string;
   items: any[];
   invoices: any[];
@@ -205,7 +206,7 @@ export function buildItemsAnalytics(input: {
     const key = reportSettingKey(setting.item_identity);
     if (key) settingGroups.set(key, [...(settingGroups.get(key) || []), setting]);
   }
-  const identities = resolveReportIdentities(
+  const identities = input.identityEvidence?.resolveBatch(input.items, input.rows) ?? resolveReportIdentities(
     input.items,
     input.rows,
     input.stocks,

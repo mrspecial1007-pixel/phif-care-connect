@@ -11,6 +11,7 @@ import { getManagementAuditReport } from "@/lib/management.functions";
 import { ActualStockLinks } from "@/components/management/ActualStockLinkEditor";
 import { ActualUnitEditor } from "@/components/management/ActualUnitEditor";
 import { ActualUnitAccessNotice } from "@/components/management/ActualUnitAccessNotice";
+import { DefinitionAuditPanel } from "@/components/management/DefinitionAuditPanel";
 import { ACTUAL_UNIT_REASONS } from "@/lib/actual-units.helpers";
 
 export const Route = createFileRoute("/management/audit")({
@@ -279,6 +280,7 @@ function ManagementAuditPage() {
           )}
         </>
       )}
+      <DefinitionAuditPanel />
       {linkItems && data?.can_manage_links && <ActualStockLinks itemIds={linkItems} onClose={() => setLinkItems(null)} />}
       {unitItem && data && <ActualUnitEditor itemId={unitItem} access={data.unit_access} onClose={() => setUnitItem(null)} />}
     </div>

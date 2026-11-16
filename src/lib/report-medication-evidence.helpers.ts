@@ -13,7 +13,9 @@ const text = (v: unknown) =>
 /** Formatting only: retain all words, parentheses, components and their order. */
 export function reportIngredient(value: unknown) {
   return normalizeActiveIngredient(text(value))
-    .replace(/\s*\(\s*/g, " (").replace(/\s*\)\s*/g, ") ").trim();
+    .replace(/\s*\(\s*/g, " (")
+    .replace(/\s*\)\s*/g, ") ")
+    .trim();
 }
 export function reportStrength(value: unknown) {
   const raw = text(value).toLowerCase().replace(/\s+/g, "").replace(/[µμ]g/g, "mcg");
@@ -120,22 +122,29 @@ export const REPORT_IDENTITY_REASONS = {
 } as const;
 
 /** Resolve form without using reporting pack sizes as dispensing-unit evidence. */
-export function resolveReportIdentities(
-  items: any[],
-  rows: any[],
+export function createReportIdentityEvidence(
   stocks: any[],
   references: any[] = [],
   definitions?: ReportDefinitionScope,
+  maxEvidenceBytes = Infinity,
 ) {
-  const finance = new Map(rows.map((r) => [r.item_id, r]));
   const stockById = new Map(stocks.map((s) => [s.source_stock_id, s]));
   const forms = new Map<string, Set<string>>();
   const scientificForms = new Map<string, Set<string>>();
+  let evidenceBytes = 0;
+  const addForm = (index: Map<string, Set<string>>, key: string, form: string) => {
+    const existing = index.get(key);
+    if (existing?.has(form)) return;
+    // Conservative logical allocation accounting, not a measurement of V8 heap.
+    const allocation = (existing ? 0 : 192 + key.length * 2) + 64 + form.length * 2;
+    if (evidenceBytes + allocation > maxEvidenceBytes) throw new Error("budget");
+    evidenceBytes += allocation;
+    const set = existing || new Set<string>();
+    set.add(form);
+    index.set(key, set);
+  };
   const scientificKey = (i: any) =>
-    JSON.stringify([
-      reportIngredient(i.active_ingredient),
-      reportStrength(i.strength),
-    ]);
+    JSON.stringify([reportIngredient(i.active_ingredient), reportStrength(i.strength)]);
   const savedForms = new Map<string, Set<string>>();
   const invalidSaved = new Set<string>();
   for (const setting of definitions?.settings || []) {
@@ -155,10 +164,7 @@ export function resolveReportIdentities(
   }
   const addScientific = (item: any, form: string) => {
     if (!form || !item.active_ingredient || !item.strength) return;
-    const key = scientificKey(item),
-      set = scientificForms.get(key) || new Set<string>();
-    set.add(form);
-    scientificForms.set(key, set);
+    addForm(scientificForms, scientificKey(item), form);
   };
   for (const ref of [...references, ...stocks])
     addScientific(ref, reportForm(ref.dosage_form || ref.dosage_unit));
@@ -168,75 +174,101 @@ export function resolveReportIdentities(
       reportStrength(i.strength),
       text(i.brand).toLowerCase().replace(/\s+/g, " "),
     ]);
-  const direct = new Map<string, string>();
-  for (const item of items) {
-    const f = finance.get(item.id);
-    const stock =
-      item.source_classification === "actual-supplier" ? stockById.get(f?.matched_stock_id) : null;
-    const form = scientificReportIdentity(
-      item,
-      reportForm(supplierInvoiceForm(item)) ||
-        reportForm(stock?.dosage_unit) ||
-        (item.source_classification === "actual-supplier"
-          ? reportForm(f?.invoice_dosage_form) || reportForm(f?.invoice_quantity_unit)
-          : null),
-    ).form;
-    direct.set(item.id, form);
-    addScientific(item, form);
-    if (form && item.brand) {
-      const key = productKey(item),
-        set = forms.get(key) || new Set<string>();
-      set.add(form);
-      forms.set(key, set);
+  const directForms = (items: any[], rows: any[]) => {
+    const finance = new Map(rows.map((r) => [r.item_id, r]));
+    const direct = new Map<string, string>();
+    for (const item of items) {
+      const f = finance.get(item.id);
+      const stock =
+        item.source_classification === "actual-supplier"
+          ? stockById.get(f?.matched_stock_id)
+          : null;
+      const form = scientificReportIdentity(
+        item,
+        reportForm(supplierInvoiceForm(item)) ||
+          reportForm(stock?.dosage_unit) ||
+          (item.source_classification === "actual-supplier"
+            ? reportForm(f?.invoice_dosage_form) || reportForm(f?.invoice_quantity_unit)
+            : null),
+      ).form;
+      direct.set(item.id, form);
     }
-  }
-  return new Map(
-    items.map((item) => {
-      const known = forms.get(productKey(item));
-      const scientific = scientificForms.get(scientificKey(item));
-      let form =
-        direct.get(item.id) ||
-        (known?.size === 1 ? [...known][0] : "") ||
-        (scientific?.size === 1 ? [...scientific][0] : "");
-      let issue: keyof typeof REPORT_IDENTITY_REASONS | null = null;
-      const itemPharmacy = item.pharmacy_id ?? item.invoice?.pharmacy_id;
-      const useDefinition =
-        item.source_classification === "phif-supplier" &&
-        definitions?.pharmacyId &&
-        (!itemPharmacy || itemPharmacy === definitions.pharmacyId);
-      // Never feed saved Supplier forms back into the shared evidence maps or Actual.
-      if (useDefinition && !direct.get(item.id)) {
-        const key = scientificKey(item),
-          saved = savedForms.get(key);
-        if (invalidSaved.has(key)) {
-          form = "";
-          issue = "invalid_saved_definition";
-        } else if (saved?.size === 1) {
-          const approved = [...saved][0];
-          const evidence = known?.size ? known : scientific;
-          if (evidence?.size && (evidence.size !== 1 || !evidence.has(approved))) {
-            form = "";
-            issue = "conflicting_form_evidence";
-          } else form = approved;
-        } else if (saved && saved.size > 1 && known?.size !== 1) {
-          form = "";
-          issue = "conflicting_saved_forms";
-        }
+    return direct;
+  };
+  const addBatch = (items: any[], rows: any[]) => {
+    const direct = directForms(items, rows);
+    for (const item of items) {
+      const form = direct.get(item.id)!;
+      addScientific(item, form);
+      if (form && item.brand) {
+        addForm(forms, productKey(item), form);
       }
-      const identity = scientificReportIdentity(item, form);
-      issue = !normalizeActiveIngredient(text(item.active_ingredient))
-        ? "missing_ingredient"
-        : !reportStrength(item.strength)
-          ? "missing_strength"
-          : !identity.form
-            ? issue || "missing_form"
-            : null;
-      return [
-        item.id,
-        { ...identity, reviewReason: issue ? REPORT_IDENTITY_REASONS[issue] : null },
-      ];
-    }),
-  );
+    }
+  };
+  const resolveBatch = (items: any[], rows: any[]) => {
+    const direct = directForms(items, rows);
+    return new Map(
+      items.map((item) => {
+        const known = forms.get(productKey(item));
+        const scientific = scientificForms.get(scientificKey(item));
+        let form =
+          direct.get(item.id) ||
+          (known?.size === 1 ? [...known][0] : "") ||
+          (scientific?.size === 1 ? [...scientific][0] : "");
+        let issue: keyof typeof REPORT_IDENTITY_REASONS | null = null;
+        const itemPharmacy = item.pharmacy_id ?? item.invoice?.pharmacy_id;
+        const useDefinition =
+          item.source_classification === "phif-supplier" &&
+          definitions?.pharmacyId &&
+          (!itemPharmacy || itemPharmacy === definitions.pharmacyId);
+        // Never feed saved Supplier forms back into the shared evidence maps or Actual.
+        if (useDefinition && !direct.get(item.id)) {
+          const key = scientificKey(item),
+            saved = savedForms.get(key);
+          if (invalidSaved.has(key)) {
+            form = "";
+            issue = "invalid_saved_definition";
+          } else if (saved?.size === 1) {
+            const approved = [...saved][0];
+            const evidence = known?.size ? known : scientific;
+            if (evidence?.size && (evidence.size !== 1 || !evidence.has(approved))) {
+              form = "";
+              issue = "conflicting_form_evidence";
+            } else form = approved;
+          } else if (saved && saved.size > 1 && known?.size !== 1) {
+            form = "";
+            issue = "conflicting_saved_forms";
+          }
+        }
+        const identity = scientificReportIdentity(item, form);
+        issue = !normalizeActiveIngredient(text(item.active_ingredient))
+          ? "missing_ingredient"
+          : !reportStrength(item.strength)
+            ? "missing_strength"
+            : !identity.form
+              ? issue || "missing_form"
+              : null;
+        return [
+          item.id,
+          { ...identity, reviewReason: issue ? REPORT_IDENTITY_REASONS[issue] : null },
+        ];
+      }),
+    );
+  };
+  return { addBatch, resolveBatch };
+}
+
+/** Compatibility API: reports keep the same full-history evidence and results. */
+export function resolveReportIdentities(
+  items: any[],
+  rows: any[],
+  stocks: any[],
+  references: any[] = [],
+  definitions?: ReportDefinitionScope,
+) {
+  const evidence = createReportIdentityEvidence(stocks, references, definitions);
+  evidence.addBatch(items, rows);
+  return evidence.resolveBatch(items, rows);
 }
 
 /** Read legacy keys through normalization, without rewriting or discarding settings. */
