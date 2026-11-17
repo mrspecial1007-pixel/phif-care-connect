@@ -11,7 +11,8 @@ describe("manual audit UI", () => {
     state.user = { id: "u", role: "admin" };
     const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}><DefinitionAuditPanel /></QueryClientProvider>);
     expect(html).toContain('dir="rtl"'); expect(html).toContain("بدء فحص شامل");
-    expect(html).toContain("لم يُشغّل فحص"); expect(state.run).not.toHaveBeenCalled();
+    expect(html).toContain("جارٍ استعادة نتائج هذا المستخدم والصيدلية"); expect(state.run).not.toHaveBeenCalled();
+    expect(html).toContain("مسح النتائج المحفوظة");
   });
   it.each([null, { id: "u", role: "employee" }, { role: "admin" }])("does not render results for an unverified manager %s", user => {
     state.user = user;
