@@ -13,6 +13,7 @@ export type CachedAuditFinding = Omit<AuditFinding, "id" | "identity" | "records
 export type CachedAuditReport = Omit<AuditReport, "findings" | "pharmacyId" | "evidenceFingerprint" | "runId" | "previousRun"> & {
   findings: CachedAuditFinding[];
   cached: true;
+  evidenceFingerprint?: string | null;
 };
 export type AuditScope = { pharmacyId: string; userId: string };
 export type StoredAuditResult = { result: CachedAuditReport; savedAt: string };
@@ -69,6 +70,7 @@ function safeReport(report: AuditReport): CachedAuditReport {
     findingsTruncated: report.findingsTruncated,
     findings: report.findings.map(safeFinding),
     cached: true,
+    evidenceFingerprint: /^[a-f0-9]{64}$/.test(report.evidenceFingerprint || "") ? report.evidenceFingerprint : null,
   };
   if (new TextEncoder().encode(JSON.stringify(safe)).byteLength > MAX_STORAGE_BYTES)
     throw new Error("نتائج التدقيق المختصرة أكبر من مساحة التخزين المحلي المسموحة");

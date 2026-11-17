@@ -10,6 +10,7 @@ import { definitionAuditStore, type CachedAuditReport } from "@/lib/definition-a
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { DefinitionAuditExportButton } from "./DefinitionAuditExportButton";
 
 const categories = { error: "خطأ مؤكد", review: "يحتاج مراجعة", unverified: "تعذر التحقق" };
 const severities = { high: "عالية", medium: "متوسطة", low: "منخفضة" };
@@ -26,6 +27,7 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [code, setCode] = useState("");
@@ -74,7 +76,7 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
     && (!code || f.code === code) && (!severity || f.severity === severity) && (!source || f.source === source)
     && (!month || findingMonths(f).includes(month)));
   const clearSaved = async () => {
-    if (audit.isPending) return;
+    if (audit.isPending || exporting) return;
     setClearing(true);
     try {
       await definitionAuditStore.clear({ pharmacyId, userId });
@@ -94,8 +96,9 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="text-lg font-semibold">تدقيق تعريفات الأصناف والفواتير</h2>
       <div className="flex flex-wrap gap-2">
-        <Button disabled={audit.isPending || restoring || clearing} onClick={() => { setLimit(40); audit.mutate(); }}><ScanSearch className="size-4" />{audit.isPending ? "جارٍ فحص كامل التاريخ..." : lastComplete ? "إعادة الفحص" : "بدء فحص شامل"}</Button>
-        <Button variant="outline" disabled={audit.isPending || clearing || restoring} onClick={clearSaved}>{clearing ? "جارٍ المسح..." : "مسح النتائج المحفوظة"}</Button>
+        <Button disabled={audit.isPending || restoring || clearing || exporting} onClick={() => { setLimit(40); audit.mutate(); }}><ScanSearch className="size-4" />{audit.isPending ? "جارٍ فحص كامل التاريخ..." : lastComplete ? "إعادة الفحص" : "بدء فحص شامل"}</Button>
+        <Button variant="outline" disabled={audit.isPending || clearing || restoring || exporting} onClick={clearSaved}>{clearing ? "جارٍ المسح..." : "مسح النتائج المحفوظة"}</Button>
+        <DefinitionAuditExportButton report={lastComplete} disabled={audit.isPending || clearing || restoring} refresh={() => audit.mutateAsync()} onBusy={setExporting} />
       </div>
     </div>
     {restoring && <p role="status" className="text-sm text-muted-foreground">جارٍ استعادة نتائج هذا المستخدم والصيدلية...</p>}

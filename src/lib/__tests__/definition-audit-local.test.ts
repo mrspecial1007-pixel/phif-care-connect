@@ -32,6 +32,18 @@ const report = (patch: Partial<AuditReport> = {}): AuditReport => ({
 afterEach(async () => { await Promise.all(stores.splice(0).map(instance => instance.close())); });
 
 describe("local definition audit results", () => {
+  it("preserves only a valid source digest for complete export after reopening, without adding identifiers", async () => {
+    const factory = new IDBFactory();
+    const db = store(factory);
+    await db.save(scope(), report({ evidenceFingerprint: "a".repeat(64) }));
+    await db.close();
+    const restored = await store(factory).load(scope());
+    expect(restored?.result.evidenceFingerprint).toBe("a".repeat(64));
+    expect(restored?.result.findings[0].identity).toBeNull();
+    expect(restored?.result.findings[0].itemIds).toEqual([]);
+    await store(factory).save(scope(), report({ evidenceFingerprint: "not-a-safe-digest" }));
+    expect((await store(factory).load(scope()))?.result.evidenceFingerprint).toBeNull();
+  });
   it("restores the last completed summary after closing and reopening IndexedDB without invoice or patient details", async () => {
     const factory = new IDBFactory();
     const first = store(factory);
