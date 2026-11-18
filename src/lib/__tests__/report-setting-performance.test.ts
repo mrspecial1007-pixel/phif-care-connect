@@ -182,7 +182,8 @@ describe("report setting save performance and safety", () => {
     const source = readFileSync("src/lib/items-analytics.functions.ts", "utf8");
     expect(source).toContain('user.user_role !== "admin"');
     expect(source).toContain("p_expected_version: data.version");
-    expect(source).toContain("relevant.get(exception.invoiceId) !== 1");
+    expect(source).toContain("return saveSupplierUnit(supabaseAdmin, context, data)");
+    expect(readFileSync("src/lib/report-supplier-unit-save.server.ts", "utf8")).toContain("relevant.get(exception.invoiceId) !== 1");
     expect(source).toContain("database_rpc_roundtrip");
   });
 

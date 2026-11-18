@@ -1,5 +1,22 @@
 import { actualUnit, type ActualUnit } from "./actual-units.helpers";
 import { supplierQuantityEvidence } from "./report-medication-evidence.helpers";
+import type { AnalyticsRow, BoxSetting } from "./items-analytics.helpers";
+
+/** Shared by the individual editor and bulk readiness validation. */
+export function previewSupplierUnitRows(rows: AnalyticsRow[], setting: BoxSetting, unit: string | null,
+  exceptions: Record<string, string>) {
+  return rows.filter(r => r.source === "phif").map(r => {
+    const choice = exceptions[r.invoiceId];
+    const chosen = choice === "unknown" || r.unitIssue === "conflict" ? null
+      : r.unitProvenance === "source" && r.unit ? r.unit : actualUnit(choice || unit);
+    const conflict = choice && choice !== "unknown" && r.unitProvenance === "source" && r.unit !== actualUnit(choice);
+    const boxes = !conflict && chosen && r.quantity != null
+      ? chosen === r.unit && r.units != null ? r.units / setting.units_per_box
+        : supplierBoxPreview(r.quantity, chosen, setting.base_unit, setting.units_per_box, r.packageQuantity, r.stripsPerPackage)
+      : null;
+    return { row: r, chosen, boxes };
+  });
+}
 
 export type SupplierUnitSetting = {
   supplier_quantity_unit?: ActualUnit | null;

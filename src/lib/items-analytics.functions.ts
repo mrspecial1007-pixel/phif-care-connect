@@ -8,6 +8,7 @@ import {
 import { ACTUAL_UNITS } from "./actual-units.helpers";
 import { loadReportSettingScope, timedReportSetting } from "./report-setting-scope.server";
 import { buildPhifAnalyticsPeriod } from "./phif-analytics-period.helpers";
+import { supplierUnitInput } from "./report-supplier-unit.model";
 
 const request = analyticsSearchSchema.extend({
   export: z.boolean().default(false),
@@ -157,81 +158,12 @@ export const saveReportBoxSetting = createServerFn({ method: "POST" })
     }),
   );
 
-const supplierUnitInput = z.object({
-  identity: z.string().min(5).max(1500),
-  unit: z
-    .enum(
-      Object.keys(ACTUAL_UNITS) as [keyof typeof ACTUAL_UNITS, ...(keyof typeof ACTUAL_UNITS)[]],
-    )
-    .nullable(),
-  exceptions: z
-    .array(z.object({ invoiceId: z.string().uuid(), unit: z.string().max(20) }))
-    .max(200),
-  version: z.number().int().min(1),
-});
 export const saveReportSupplierUnit = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => supplierUnitInput.parse(data))
-  .handler(async ({ data }) =>
-    timedReportSetting("supplier_unit", async (measure) => {
-      const { requireTiryaqPermission } = await import("./user-management.functions");
-      const context = await requireTiryaqPermission("users_manage");
-      const user = context.session.data;
-      const actorId = user.user_id;
-      if (!actorId || user.user_role !== "admin")
-        throw new Error("توثيق وحدة PHIF Supplier متاح للمدير فقط");
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const item = await loadReportSettingScope(
-        supabaseAdmin,
-        context.pharmacy_id,
-        data.identity,
-        measure,
-      );
-      const { loadReportBoxSettings } = await import("./report-box-settings.server");
-      const stored = await measure("settings_read", () =>
-        loadReportBoxSettings(supabaseAdmin, context.pharmacy_id),
-      );
-      if (!stored.supplierUnitsAvailable)
-        throw new Error("يلزم تطبيق ترحيل توثيق وحدات PHIF Supplier أولًا");
-      const { reportSettingKey } = await import("./report-medication-evidence.helpers");
-      const aliases = stored.settings.filter((s) => reportSettingKey(s.item_identity) === item.id);
-      if (!aliases.length) throw new Error("احفظ حجم علبة PHIF Supplier أولًا");
-      if (aliases.length !== 1)
-        throw new Error("توجد إعدادات قديمة متعددة للصنف؛ يلزم مراجعتها دون استبدال أي إعداد بصمت");
-      const { actualUnit } = await import("./actual-units.helpers");
-      if (data.unit && !["box", "strip", actualUnit(item.form)].includes(data.unit))
-        throw new Error("وحدة الصرف تتعارض مع الشكل الدوائي");
-      const relevant = new Map<string, number>();
-      for (const row of item.items.filter((i) => i.source_classification === "phif-supplier"))
-        relevant.set(row.phif_invoice_id, (relevant.get(row.phif_invoice_id) || 0) + 1);
-      const exceptions: Record<string, string> = {};
-      for (const exception of data.exceptions) {
-        if (
-          relevant.get(exception.invoiceId) !== 1 ||
-          (exception.unit !== "unknown" &&
-            (!actualUnit(exception.unit) ||
-              !["box", "strip", actualUnit(item.form)].includes(actualUnit(exception.unit)))) ||
-          exceptions[exception.invoiceId]
-        )
-          throw new Error("استثناء الفاتورة غير متوافق أو مكرر");
-        exceptions[exception.invoiceId] =
-          exception.unit === "unknown" ? "unknown" : actualUnit(exception.unit)!;
-      }
-      const { data: saved, error } = await measure("database_rpc_roundtrip", () =>
-        supabaseAdmin.rpc("set_phif_report_supplier_unit", {
-          p_pharmacy_id: context.pharmacy_id,
-          p_actor_id: actorId,
-          p_identity: aliases[0].item_identity,
-          // The RPC accepts SQL NULL to clear the unit; generated argument types omit nullability.
-          p_unit: data.unit as string,
-          p_exceptions: exceptions,
-          p_expected_version: data.version,
-        }),
-      );
-      if (error)
-        throw new Error("تعذر حفظ توثيق الوحدة؛ تحقق من الترحيل وحدّث الصفحة قبل إعادة المحاولة");
-      const confirmed = settingReceipt.safeParse(saved);
-      if (!confirmed.success)
-        throw new Error("لم يؤكد الخادم حفظ توثيق الوحدة");
-      return confirmed.data;
-    }),
-  );
+  .handler(async ({ data }) => {
+    const { requireTiryaqPermission } = await import("./user-management.functions");
+    const context = await requireTiryaqPermission("users_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { saveSupplierUnit } = await import("./report-supplier-unit-save.server");
+    return saveSupplierUnit(supabaseAdmin, context, data);
+  });

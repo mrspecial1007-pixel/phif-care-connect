@@ -4,7 +4,7 @@ import { Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ACTUAL_UNITS, actualUnit } from "@/lib/actual-units.helpers";
 import { saveReportSupplierUnit } from "@/lib/items-analytics.functions";
-import { supplierBoxPreview } from "@/lib/report-supplier-units.helpers";
+import { previewSupplierUnitRows } from "@/lib/report-supplier-units.helpers";
 import type { AnalyticsRow } from "@/lib/items-analytics.helpers";
 import {
   reportSettingRequest,
@@ -67,34 +67,7 @@ export const SupplierReportUnitEditor = memo(function SupplierReportUnitEditor({
   const preview = useMemo(() => {
     if (!item.setting) return [];
     const start = performance.now();
-    const result = sourceRows.map((r) => {
-      const choice = exceptions[r.invoiceId];
-      const chosen =
-        choice === "unknown" || r.unitIssue === "conflict"
-          ? null
-          : r.unitProvenance === "source" && r.unit
-            ? r.unit
-            : actualUnit(choice || unit);
-      const conflict =
-        choice &&
-        choice !== "unknown" &&
-        r.unitProvenance === "source" &&
-        r.unit !== actualUnit(choice);
-      const boxes =
-        !conflict && chosen && r.quantity != null
-          ? chosen === r.unit && r.units != null
-            ? r.units / item.setting.units_per_box
-            : supplierBoxPreview(
-                r.quantity,
-                chosen,
-                item.setting.base_unit,
-                item.setting.units_per_box,
-                r.packageQuantity,
-                r.stripsPerPackage,
-              )
-          : null;
-      return { row: r, chosen, boxes };
-    });
+    const result = previewSupplierUnitRows(sourceRows, item.setting, unit, exceptions);
     console.info("phif_report_setting_client_timing", {
       phase: "conversion_preview",
       ms: Math.round(performance.now() - start),

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { DefinitionAuditExportButton } from "./DefinitionAuditExportButton";
+import { DefinitionAuditBulkButton } from "./DefinitionAuditBulkButton";
 
 const categories = { error: "خطأ مؤكد", review: "يحتاج مراجعة", unverified: "تعذر التحقق" };
 const severities = { high: "عالية", medium: "متوسطة", low: "منخفضة" };
@@ -28,6 +29,8 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
   const [restoring, setRestoring] = useState(true);
   const [clearing, setClearing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [needsRescan, setNeedsRescan] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [code, setCode] = useState("");
@@ -41,6 +44,7 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
     gcTime: 0,
     onSuccess: async report => {
       if (report.coverage !== "observed_stable") return;
+      setNeedsRescan(false);
       setLastComplete(report);
       try {
         const saved = await definitionAuditStore.save({ pharmacyId, userId }, report);
@@ -76,7 +80,7 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
     && (!code || f.code === code) && (!severity || f.severity === severity) && (!source || f.source === source)
     && (!month || findingMonths(f).includes(month)));
   const clearSaved = async () => {
-    if (audit.isPending || exporting) return;
+    if (audit.isPending || exporting || bulkBusy) return;
     setClearing(true);
     try {
       await definitionAuditStore.clear({ pharmacyId, userId });
@@ -96,9 +100,10 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="text-lg font-semibold">تدقيق تعريفات الأصناف والفواتير</h2>
       <div className="flex flex-wrap gap-2">
-        <Button disabled={audit.isPending || restoring || clearing || exporting} onClick={() => { setLimit(40); audit.mutate(); }}><ScanSearch className="size-4" />{audit.isPending ? "جارٍ فحص كامل التاريخ..." : lastComplete ? "إعادة الفحص" : "بدء فحص شامل"}</Button>
-        <Button variant="outline" disabled={audit.isPending || clearing || restoring || exporting} onClick={clearSaved}>{clearing ? "جارٍ المسح..." : "مسح النتائج المحفوظة"}</Button>
-        <DefinitionAuditExportButton report={lastComplete} disabled={audit.isPending || clearing || restoring} refresh={() => audit.mutateAsync()} onBusy={setExporting} />
+        <Button disabled={audit.isPending || restoring || clearing || exporting || bulkBusy} onClick={() => { setLimit(40); audit.mutate(); }}><ScanSearch className="size-4" />{audit.isPending ? "جارٍ فحص كامل التاريخ..." : lastComplete ? "إعادة الفحص" : "بدء فحص شامل"}</Button>
+        <Button variant="outline" disabled={audit.isPending || clearing || restoring || exporting || bulkBusy} onClick={clearSaved}>{clearing ? "جارٍ المسح..." : "مسح النتائج المحفوظة"}</Button>
+        <DefinitionAuditExportButton report={lastComplete} disabled={audit.isPending || clearing || restoring || bulkBusy} refresh={() => audit.mutateAsync()} onBusy={setExporting} />
+        <DefinitionAuditBulkButton disabled={audit.isPending || clearing || restoring || exporting} onBusy={setBulkBusy} onChanged={() => setNeedsRescan(true)} />
       </div>
     </div>
     {restoring && <p role="status" className="text-sm text-muted-foreground">جارٍ استعادة نتائج هذا المستخدم والصيدلية...</p>}
@@ -108,6 +113,7 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
     {attemptIncomplete && result && <p role="alert" className="text-sm text-amber-800">لم تكتمل إعادة الفحص؛ احتُفظ بآخر نتيجة مكتملة ولم تُستبدل.</p>}
     {audit.isError && result && <p role="alert" className="text-sm text-amber-800">فشلت إعادة الفحص؛ ما زالت آخر نتيجة مكتملة معروضة.</p>}
     {storageError && <p role="alert" className="text-sm text-amber-800">{storageError}</p>}
+    {needsRescan && <p role="status" className="text-sm text-amber-800">نُفذت محاولة توثيق؛ نتائج التدقيق المعروضة قديمة. اضغط إعادة الفحص لتحديثها.</p>}
     {result && <>
       <p className="text-xs text-muted-foreground">آخر فحص مكتمل: {new Date(result.finishedAt).toLocaleString("ar-LY")}</p>
       {savedAt && <p role="status" className="rounded-md bg-amber-50 p-2 text-xs text-amber-900">النتائج محفوظة محليًا على هذا الجهاز، وقد لا تعكس تغييرات حدثت بعد وقت الفحص.</p>}

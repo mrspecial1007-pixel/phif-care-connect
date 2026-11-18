@@ -17,6 +17,7 @@ export async function loadReportSettingScope(
   identity: string,
   measure: SettingMeasure = (_phase, fn) => Promise.resolve(fn()),
   review?: { itemId: string; baseUnit: ActualUnit },
+  options: { includeQuantity?: boolean } = {},
 ) {
   let key: unknown;
   try { key = JSON.parse(identity); }
@@ -37,7 +38,7 @@ export async function loadReportSettingScope(
       db
         .from("phif_invoice_items")
         .select(
-          "id,phif_invoice_id,active_ingredient,strength,brand,source_classification,metadata,phif_financial_fields,invoice:phif_invoices!inner(pharmacy_id)",
+          (options.includeQuantity ? "quantity," : "") + "id,phif_invoice_id,active_ingredient,strength,brand,source_classification,metadata,phif_financial_fields,invoice:phif_invoices!inner(pharmacy_id)",
           { count: "exact" },
         )
         .eq("invoice.pharmacy_id", pharmacyId)
