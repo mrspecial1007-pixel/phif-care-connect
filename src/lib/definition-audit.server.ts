@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { emptyAuditSnapshot } from "./definition-audit.helpers";
 import { createStreamingAudit } from "./definition-audit.streaming";
 import type { AuditFinding } from "./definition-audit.helpers";
+import { auditFailureMessages, classifyAuditFailure, type AuditFailureCode } from "./definition-audit-errors";
 
 export async function requireDefinitionAuditAdmin(db: any, context: any) {
   const actor = context.session.data;
@@ -46,7 +47,9 @@ async function readSource(db: any, pharmacyId: string, source: AuditSource, reta
     const page = await db.from(table).select(fields, { count: "exact" })
       .eq(source === "items" ? "phif_invoices.pharmacy_id" : "pharmacy_id", pharmacyId)
       .order("id").range(from, from + 499);
-    if (page.error) throw new Error("تعذر تحميل بيانات التقرير كاملة");
+    if (page.error) throw Object.assign(new Error("تعذر تحميل بيانات التقرير كاملة"), {
+      databaseCode: /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(String(page.error.code || "")) ? String(page.error.code) : undefined,
+    });
     if (typeof page.count !== "number") throw new Error("Missing completeness count");
     const total = page.count;
     if (expected !== null && expected !== total) throw new Error("تغيرت بيانات التقرير أثناء القراءة؛ أعد المحاولة");
@@ -104,30 +107,61 @@ export async function readDefinitionSnapshot(db: any, pharmacyId: string, retain
 
 export async function runDefinitionAudit(db: any, pharmacyId: string) {
   const startedAt = new Date().toISOString();
+  const runId = randomUUID();
+  let stage = "support_read";
+  let failure: { code: AuditFailureCode; stage: string; reference: string } | undefined;
+  // Correlation and phase timings only; never log rows, identities, tokens or raw database errors.
+  const log = (event: string, details: Record<string, string | number> = {}) => {
+    console.info("definition_audit", { runId, event, stage, elapsedMs: Date.now() - Date.parse(startedAt), ...details });
+  };
+  const fail = (error: unknown, source?: AuditSource) => {
+    const code = classifyAuditFailure(error);
+    failure ||= { code, stage, reference: runId };
+    const databaseCode = error && typeof error === "object" && "databaseCode" in error ? error.databaseCode : undefined;
+    log("failed", { code, ...(source ? { source } : {}), ...(typeof databaseCode === "string" ? { databaseCode } : {}) });
+    return auditFailureMessages[code];
+  };
+  log("started");
   const support = emptyAuditSnapshot();
   const budget = { bytes: 0 };
   type Read = { count: number; digest?: string; reason?: string };
   const before = new Map<AuditSource, Read>(), after = new Map<AuditSource, Read>();
   const read = async (source: AuditSource, retain: boolean, destination: Map<AuditSource, Read>, visit?: (rows: any[]) => void) => {
+    const readStarted = Date.now();
+    log("reading", { source });
     try {
       const result = await readSource(db, pharmacyId, source, retain, budget, visit);
       if (retain) support[source] = result.rows;
       destination.set(source, result);
+      log("read", { source, count: result.count, durationMs: Date.now() - readStarted });
     } catch (error) {
-      destination.set(source, { count: 0, reason: error instanceof Error ? error.message : "تعذر إكمال القراءة" });
+      destination.set(source, { count: 0, reason: fail(error, source) });
     }
   };
   const supporting = (Object.keys(sources) as AuditSource[]).filter(s => s !== "items");
   for (const source of supporting) await read(source, true, before);
   let result: ReturnType<ReturnType<typeof createStreamingAudit>["finish"]> | undefined;
-  if (![...before.values()].some(r => r.reason)) {
-    const audit = createStreamingAudit(support, pharmacyId);
-    await read("items", false, before, rows => audit.addEvidence(rows));
-    if (!before.get("items")?.reason) {
-      await read("items", false, after, rows => audit.inspectBatch(rows));
-      for (const source of supporting) await read(source, false, after);
-      if (![...after.values()].some(r => r.reason)) result = audit.finish();
+  try {
+    if (![...before.values()].some(r => r.reason)) {
+      stage = "initialize";
+      log("processing");
+      const audit = createStreamingAudit(support, pharmacyId);
+      stage = "identity_evidence";
+      await read("items", false, before, rows => audit.addEvidence(rows));
+      if (!before.get("items")?.reason) {
+        stage = "inspect_items";
+        await read("items", false, after, rows => audit.inspectBatch(rows));
+        stage = "verify_sources";
+        for (const source of supporting) await read(source, false, after);
+        if (![...after.values()].some(r => r.reason)) {
+          stage = "finalize";
+          log("processing");
+          result = audit.finish();
+        }
+      }
     }
+  } catch (error) {
+    fail(error);
   }
   const manifest = (Object.keys(sources) as AuditSource[]).map(source => {
     const first = before.get(source), second = after.get(source);
@@ -136,7 +170,9 @@ export async function runDefinitionAudit(db: any, pharmacyId: string) {
       status: !first || !second || first.reason || second.reason ? "failed" : first.digest !== second.digest ? "changed" : "observed_stable" };
   });
   const complete = manifest.every(m => m.status === "observed_stable") && !!result && !result.orphanItems;
-  return { runId: randomUUID(), schemaVersion: 1, ruleVersion: "definitions-2", pharmacyId, startedAt, finishedAt: new Date().toISOString(),
+  log("finished", { coverage: complete ? "observed_stable" : "incomplete" });
+  return { runId, schemaVersion: 1, ruleVersion: "definitions-2", pharmacyId, startedAt, finishedAt: new Date().toISOString(),
+    ...(failure ? { failure } : {}),
     evidenceFingerprint: complete ? createHash("sha256").update(JSON.stringify([...before].map(([s, r]) => [s, r.digest]))).digest("hex") : null,
     coverage: complete ? "observed_stable" as const : "incomplete" as const,
     consistency: "unverified_snapshot" as const, previousRun: null,

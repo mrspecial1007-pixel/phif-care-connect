@@ -7,6 +7,7 @@ import { useSession } from "@/lib/queries";
 import { runDefinitionAuditReport } from "@/lib/definition-audit.functions";
 import type { runDefinitionAudit } from "@/lib/definition-audit.server";
 import { definitionAuditStore, type CachedAuditReport } from "@/lib/definition-audit.local";
+import { auditFailureMessages, auditRequestErrorMessage } from "@/lib/definition-audit-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -109,13 +110,17 @@ export function DefinitionAuditBody({ pharmacyId, userId }: { pharmacyId: string
     {restoring && <p role="status" className="text-sm text-muted-foreground">جارٍ استعادة نتائج هذا المستخدم والصيدلية...</p>}
     {!result && !restoring && !audit.isPending && !audit.isError && <p className="text-sm text-muted-foreground">لا توجد نتائج فحص محفوظة لهذا المستخدم والصيدلية.</p>}
     {audit.isPending && <p role="status" className="text-sm">قراءة الفواتير والتعريفات والروابط والتحقق من اكتمال المصادر...</p>}
-    {audit.error && <p role="alert" className="text-sm text-destructive">{audit.error.message}</p>}
-    {attemptIncomplete && result && <p role="alert" className="text-sm text-amber-800">لم تكتمل إعادة الفحص؛ احتُفظ بآخر نتيجة مكتملة ولم تُستبدل.</p>}
-    {audit.isError && result && <p role="alert" className="text-sm text-amber-800">فشلت إعادة الفحص؛ ما زالت آخر نتيجة مكتملة معروضة.</p>}
+    {audit.error && <p role="alert" className="text-sm text-destructive">{auditRequestErrorMessage(audit.error)}</p>}
+    {attemptIncomplete && <div role="alert" className="space-y-1 text-sm text-amber-800">
+      <p>{lastComplete ? "لم تكتمل إعادة الفحص؛ احتُفظ بآخر نتيجة مكتملة ولم تُستبدل." : "لم يكتمل الفحص؛ لا توجد نتيجة مكتملة لهذه المحاولة."}</p>
+      {audit.data?.failure && <p>{auditFailureMessages[audit.data.failure.code] || auditFailureMessages.processing}</p>}
+      <p className="break-all text-xs">مرجع المحاولة: <bdi>{audit.data?.runId}</bdi></p>
+    </div>}
+    {audit.isError && lastComplete && <p role="alert" className="text-sm text-amber-800">فشلت إعادة الفحص؛ ما زالت آخر نتيجة مكتملة معروضة.</p>}
     {storageError && <p role="alert" className="text-sm text-amber-800">{storageError}</p>}
     {needsRescan && <p role="status" className="text-sm text-amber-800">نُفذت محاولة توثيق؛ نتائج التدقيق المعروضة قديمة. اضغط إعادة الفحص لتحديثها.</p>}
     {result && <>
-      <p className="text-xs text-muted-foreground">آخر فحص مكتمل: {new Date(result.finishedAt).toLocaleString("ar-LY")}</p>
+      <p className="text-xs text-muted-foreground">{result.coverage === "observed_stable" ? "آخر فحص مكتمل" : "آخر محاولة غير مكتملة"}: {new Date(result.finishedAt).toLocaleString("ar-LY")}</p>
       {savedAt && <p role="status" className="rounded-md bg-amber-50 p-2 text-xs text-amber-900">النتائج محفوظة محليًا على هذا الجهاز، وقد لا تعكس تغييرات حدثت بعد وقت الفحص.</p>}
       {restoredOnly && <p className="text-xs text-muted-foreground">النسخة المحلية تحتوي الملخص وعينات المراجعة فقط؛ أرقام الفواتير ومعرفات البنود والتفاصيل غير محفوظة.</p>}
       <p role="status" className="text-sm text-amber-800">{result.coverage === "incomplete" ? "الفحص غير مكتمل؛ لم تُعلن نتائج قواعد التدقيق. " : "اكتملت القراءات دون تغيّر مرصود. "}{result.notice}</p>
