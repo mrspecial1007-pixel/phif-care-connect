@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ReportsItemTrackingPage } from "@/components/management/ReportsViews";
+import { ReportsItemTrackingPage } from "@/components/management/DispensingTrackingPage";
+import { trackingInput } from "@/lib/dispensing-tracking.model";
 
 export const Route = createFileRoute("/management/reports/item-tracking")({
   component: ReportsItemTrackingPage,
-  head: () => ({ meta: [{ title: "تتبع صنف — PHIF Tracker" }, { name: "description", content: "تتبع حركة صنف ومستخدميه ومخزونه" }, { property: "og:title", content: "تتبع صنف — PHIF Tracker" }, { property: "og:description", content: "حركة الصنف ومستخدميه ومخزونه" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
+  validateSearch: (search: Record<string, unknown>) => trackingInput.parse(search),
+  head: () => ({ meta: [{ title: "تتبع الصرف - PHIF Tracker" }, { name: "description", content: "تتبع الصرف التاريخي حسب الهوية العلمية والمنتج التجاري" }, { property: "og:title", content: "تتبع الصرف - PHIF Tracker" }, { property: "og:description", content: "حركات الصرف والشركات والفواتير عبر التاريخ المحفوظ" }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
 });

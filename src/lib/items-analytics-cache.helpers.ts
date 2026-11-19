@@ -29,6 +29,9 @@ export function itemsAnalyticsScope(session: ReportSession | undefined) {
 /** Retained reports must not survive logout, failed session verification or a permission change. */
 export function bindItemsAnalyticsSessionCache(client: QueryClient) {
   return client.getQueryCache().subscribe(event => {
+    if (event.type === "updated" && event.action.type === "invalidate" && event.query.queryKey[0] === "items_analytics") {
+      void client.invalidateQueries({ queryKey: ["report_item_tracking"], refetchType: "none" });
+    }
     if (event.type !== "updated" || event.query.queryKey.length !== 1 ||
         event.query.queryKey[0] !== "session") return;
     const state = event.query.state;
@@ -37,7 +40,7 @@ export function bindItemsAnalyticsSessionCache(client: QueryClient) {
       ? itemsAnalyticsScope(state.data as ReportSession)
       : null;
     client.removeQueries({
-      predicate: query => ["items_analytics", "phif_analytics", "phif_orders", "phif_orders_access"].includes(String(query.queryKey[0])) && query.queryKey[1] !== scope,
+      predicate: query => ["items_analytics", "phif_analytics", "phif_orders", "phif_orders_access", "report_item_tracking"].includes(String(query.queryKey[0])) && query.queryKey[1] !== scope,
     });
   });
 }

@@ -342,7 +342,7 @@ function profitForItem(item: any, invoice: any, stocks: any[]) {
   };
 }
 
-async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { dateFrom: string; dateTo: string; source?: "all" | "actual" | "phif" }, access?: FinanceAccess) {
+async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { dateFrom?: string; dateTo?: string; source?: "all" | "actual" | "phif" }, access?: FinanceAccess) {
   const dataset = await loadReportDataset(supabaseAdmin, pharmacyId, data.dateFrom, data.dateTo);
   const stocks = await loadStockWithCosts(supabaseAdmin, pharmacyId);
   const invoiceById = new Map(dataset.invoices.map((invoice) => [invoice.id, invoice]));
@@ -406,7 +406,7 @@ async function loadProfitRows(supabaseAdmin: any, pharmacyId: string, data: { da
 }
 
 /** Server-side input for item analytics; never return this raw dataset from an API. */
-export async function loadItemAnalyticsDataset(authorize?: (context: any, access: FinanceAccess) => void) {
+export async function loadItemAnalyticsDataset(authorize?: (context: any, access: FinanceAccess) => void, options: { includeUndated?: boolean } = {}) {
   const { requirePharmacySession } = await import("./pharmacy-session.server");
   const { TIRYAQ_PHARMACY_NAME } = await import("./pharmacy-isolation");
   const session = await requirePharmacySession();
@@ -420,7 +420,9 @@ export async function loadItemAnalyticsDataset(authorize?: (context: any, access
   if (!access.actual.items && !access.phif.items) throw new Error("لا تملك صلاحية عرض الأصناف");
   authorize?.(session, access);
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const dataset = await loadProfitRows(supabaseAdmin, session.pharmacy_id, { dateFrom: "1900-01-01", dateTo: "9999-12-31", source: "all" });
+  // Historical tracking must retain undated invoices; existing report callers keep their date scope.
+  const range = options.includeUndated ? {} : { dateFrom: "1900-01-01", dateTo: "9999-12-31" };
+  const dataset = await loadProfitRows(supabaseAdmin, session.pharmacy_id, { ...range, source: "all" });
   const { readReportFormReferences } = await import("./report-medication-evidence.server");
   const referenceForms = await readReportFormReferences(supabaseAdmin, session.pharmacy_id);
   return { ...dataset, referenceForms, session, access, admin: supabaseAdmin };
