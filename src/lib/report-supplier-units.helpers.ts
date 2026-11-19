@@ -2,6 +2,11 @@ import { actualUnit, type ActualUnit } from "./actual-units.helpers";
 import { supplierQuantityEvidence } from "./report-medication-evidence.helpers";
 import type { AnalyticsRow, BoxSetting } from "./items-analytics.helpers";
 
+/** A suggestion is not approval; both editors require an explicit save. */
+export function proposedSupplierUnit(setting: SupplierUnitSetting | null | undefined, form: unknown) {
+  return setting?.supplier_quantity_unit ?? actualUnit(form) ?? "";
+}
+
 /** Shared by the individual editor and bulk readiness validation. */
 export function previewSupplierUnitRows(rows: AnalyticsRow[], setting: BoxSetting, unit: string | null,
   exceptions: Record<string, string>) {

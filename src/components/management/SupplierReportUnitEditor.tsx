@@ -4,7 +4,7 @@ import { Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ACTUAL_UNITS, actualUnit } from "@/lib/actual-units.helpers";
 import { saveReportSupplierUnit } from "@/lib/items-analytics.functions";
-import { previewSupplierUnitRows } from "@/lib/report-supplier-units.helpers";
+import { previewSupplierUnitRows, proposedSupplierUnit } from "@/lib/report-supplier-units.helpers";
 import type { AnalyticsRow } from "@/lib/items-analytics.helpers";
 import {
   reportSettingRequest,
@@ -28,7 +28,7 @@ export const SupplierReportUnitEditor = memo(function SupplierReportUnitEditor({
   disabled?: boolean;
 }) {
   const [unit, setUnit] = useState(
-    () => item.setting?.supplier_quantity_unit ?? actualUnit(item.form) ?? "",
+    () => proposedSupplierUnit(item.setting, item.form),
   );
   const [exceptions, setExceptions] = useState<Record<string, string>>(
     item.setting?.supplier_unit_exceptions || {},

@@ -4,8 +4,8 @@ import { readDefinitionSnapshot } from "./definition-audit.server";
 import { inspectDefinitions, prepareAuditBatch, type AuditSnapshot } from "./definition-audit.helpers";
 import { buildItemsAnalytics, analyticsSearchSchema, type AnalyticsRow } from "./items-analytics.helpers";
 import { reportSettingKey, resolveReportIdentities } from "./report-medication-evidence.helpers";
-import { actualUnit } from "./actual-units.helpers";
-import { previewSupplierUnitRows } from "./report-supplier-units.helpers";
+import { actualUnit, type ActualUnit } from "./actual-units.helpers";
+import { previewSupplierUnitRows, proposedSupplierUnit } from "./report-supplier-units.helpers";
 import { supplierSettingReceipt } from "./report-supplier-unit.model";
 import { requireSupplierUnitManager, saveSupplierUnit } from "./report-supplier-unit-save.server";
 
@@ -43,9 +43,12 @@ function candidateReason(setting: any, identity: string, rows: AnalyticsRow[]) {
   if (setting.units_per_box > 10000) return "حجم العبوة يتجاوز الحدود المعتمدة في الحفظ الفردي";
   const form = actualUnit(JSON.parse(identity)[2]);
   if (!form || setting.base_unit !== form || ["box", "strip"].includes(setting.base_unit)) return "وحدة العبوة لا تطابق الشكل الدوائي الموثق";
-  if (!setting.supplier_quantity_unit) return "وحدة Supplier غير محفوظة؛ القيمة الافتراضية في النافذة ليست توثيقًا";
+  if (!setting.supplier_quantity_unit) return "اختر وحدة Supplier وراجعها قبل الاعتماد";
   if (!["box", "strip", form].includes(setting.supplier_quantity_unit)) return "وحدة Supplier تتعارض مع الشكل الدوائي";
-  if (Object.keys(setting.supplier_unit_exceptions || {}).length) return "توجد استثناءات فواتير؛ يلزم توثيق فردي والتحقق من توافقها مع RPC";
+  for (const [invoiceId, unit] of Object.entries(setting.supplier_unit_exceptions || {})) {
+    if (rows.filter(r => r.invoiceId === invoiceId).length !== 1 || !["box", "strip", form].includes(String(unit)))
+      return "استثناء فاتورة غير مرتبط بشكل منفرد أو وحدته غير محسومة";
+  }
   if (!rows.length) return "لا توجد بنود Supplier مرتبطة بهذه الهوية بشكل مؤكد";
   const preview = previewSupplierUnitRows(rows, setting, setting.supplier_quantity_unit, setting.supplier_unit_exceptions || {});
   if (preview.some(p => p.row.unitIssue || p.row.boxIssue || p.boxes == null || !Number.isFinite(p.boxes) || p.boxes < 0))
@@ -77,7 +80,8 @@ export function planBulkSupplierUnits(raw: AuditSnapshot, context: any) {
     const key = JSON.stringify([f.source, f.identity || [...f.records].sort()]);
     groups.set(key, [...(groups.get(key) || []), f]);
   }
-  const ready: { identity: string; name: string; size: number; baseUnit: string; unit: string; itemCount: number; token: string }[] = [];
+  const ready: { identity: string; name: string; size: number; baseUnit: string; unit: string; savedUnit: string | null;
+    options: { unit: ActualUnit; boxes: number }[]; exceptionCount: number; itemCount: number; token: string }[] = [];
   const excluded: { name: string; reason: string }[] = [];
   for (const group of groups.values()) {
     const first = group[0], identity = first.identity;
@@ -88,10 +92,27 @@ export function planBulkSupplierUnits(raw: AuditSnapshot, context: any) {
     // Include every matching historical item, not just the finding's affected subset.
     const related = raw.items.filter(i => i.source_classification === "phif-supplier" && identities.get(i.id)?.key === identity);
     if (!reason && (!related.length || group.some(f => f.code === "identity_review"))) reason = "الهوية تحتاج مراجعة أو لا ترتبط ببند Supplier";
-    if (!reason) reason = candidateReason(setting, identity!, supplierRows(related, setting, context.pharmacy_id));
+    const proposed = !reason && setting && identity ? proposedSupplierUnit(setting, JSON.parse(identity)[2]) : "";
+    const options: { unit: ActualUnit; boxes: number }[] = [];
+    let conversionReason: string | null = null;
+    if (!reason) {
+      for (const unit of [actualUnit(JSON.parse(identity!)[2]), "box", "strip"] as (ActualUnit | null)[]) {
+        if (!unit) continue;
+        // Apply the reviewed proposal in memory only, using the report's real conversion rules.
+        const prospective = { ...setting, supplier_quantity_unit: unit };
+        const rows = supplierRows(related, prospective, context.pharmacy_id);
+        const failure = candidateReason(prospective, identity!, rows);
+        if (failure) { conversionReason = failure; continue; }
+        const converted = previewSupplierUnitRows(rows, prospective, unit, prospective.supplier_unit_exceptions || {});
+        options.push({ unit, boxes: converted.reduce((sum, p) => sum + p.boxes!, 0) });
+      }
+      if (!options.length) reason = conversionReason || "لا تتوفر بيانات كافية لتحويل موثوق";
+    }
     if (reason) { excluded.push({ name: first.name, reason }); continue; }
     ready.push({ identity: identity!, name: first.name, size: setting.units_per_box, baseUnit: setting.base_unit,
-      unit: setting.supplier_quantity_unit, itemCount: related.length, token: signBulkTicket({
+      unit: proposed, savedUnit: setting.supplier_quantity_unit ?? null, options,
+      exceptionCount: Object.keys(setting.supplier_unit_exceptions || {}).length,
+      itemCount: related.length, token: signBulkTicket({
         pharmacyId: context.pharmacy_id, userId: context.session.data.user_id, identity: identity!, settingId: setting.id,
         version: setting.version, setting: settingDigest(setting), evidence: evidenceDigest(related), expires: Date.now() + 30 * 60_000,
       }) });
@@ -114,11 +135,12 @@ export async function previewBulkSupplierUnits(db: any, context: any) {
   return result;
 }
 
-export async function executeBulkSupplierUnit(db: any, context: any, token: string) {
+export async function executeBulkSupplierUnit(db: any, context: any, token: string, reviewedUnit: ActualUnit) {
   await requireSupplierUnitManager(db, context);
   const ticket = readBulkTicket(token, context);
   const { expires, ...operation } = ticket;
-  const key = digest(operation);
+  if (!actualUnit(reviewedUnit) || actualUnit(reviewedUnit) !== reviewedUnit) throw new Error("وحدة المراجعة غير صالحة");
+  const key = digest({ ...operation, reviewedUnit });
   const previous = await db.from("user_operation_log").select("id").eq("pharmacy_id", context.pharmacy_id)
     .eq("user_id", context.session.data.user_id).eq("action", "supplier_unit_bulk_result")
     .eq("entity_id", ticket.settingId).contains("metadata", { operation: key, status: "confirmed" }).limit(1);
@@ -126,29 +148,31 @@ export async function executeBulkSupplierUnit(db: any, context: any, token: stri
   if (previous.data?.length) return { status: "already_confirmed" as const, message: "سبق تنفيذ هذه الموافقة؛ لم يتكرر الحفظ" };
   const log = async (action: string, status: string) => {
     const response = await db.from("user_operation_log").insert({ pharmacy_id: context.pharmacy_id, user_id: context.session.data.user_id,
-      action, entity: "phif_report_box_settings", entity_id: ticket.settingId, metadata: { operation: key, status, version: ticket.version } });
+      action, entity: "phif_report_box_settings", entity_id: ticket.settingId, metadata: { operation: key, status, version: ticket.version, reviewed_unit: reviewedUnit } });
     if (response.error) throw new Error("تعذر تسجيل نتيجة العملية؛ تحقق قبل إعادة المحاولة");
   };
   let attempted = false;
   try {
-    // No client-supplied unit or size is accepted. Re-read and preserve the stored values.
+    // The manager may edit the quantity unit, but cannot replace the signed definition or box size.
     const settingRead = await db.from("phif_report_box_settings").select("*").eq("pharmacy_id", context.pharmacy_id).eq("id", ticket.settingId).maybeSingle();
     const setting = settingRead.data;
     if (settingRead.error || !setting || setting.pharmacy_id !== context.pharmacy_id || settingDigest(setting) !== ticket.setting) throw new Error("تغير التعريف منذ المعاينة؛ لم يُستبدل أي تعديل أحدث");
-    const saved = await saveSupplierUnit(db, context, { identity: ticket.identity, unit: setting.supplier_quantity_unit,
-      exceptions: [], version: ticket.version }, async (scope, current) => {
+    const saved = await saveSupplierUnit(db, context, { identity: ticket.identity, unit: reviewedUnit,
+      exceptions: Object.entries(setting.supplier_unit_exceptions || {}).map(([invoiceId, unit]) => ({ invoiceId, unit })),
+      version: ticket.version }, async (scope, current) => {
       const items = scope.items.filter(i => i.source_classification === "phif-supplier");
       if (settingDigest(current) !== ticket.setting || evidenceDigest(items) !== ticket.evidence) throw new Error("تغيرت بيانات الصنف منذ المعاينة؛ أعد الفحص");
-      const reason = candidateReason(current, scope.id, supplierRows(items, current, context.pharmacy_id));
+      const prospective = { ...current, supplier_quantity_unit: reviewedUnit };
+      const reason = candidateReason(prospective, scope.id, supplierRows(items, prospective, context.pharmacy_id));
       if (reason) throw new Error(reason);
       await log("supplier_unit_bulk_attempt", "started"); attempted = true;
     });
-    if (saved.supplier_quantity_unit !== setting.supplier_quantity_unit || saved.units_per_box !== setting.units_per_box
+    if (saved.supplier_quantity_unit !== reviewedUnit || saved.units_per_box !== setting.units_per_box
       || saved.base_unit !== setting.base_unit || ![ticket.version, ticket.version + 1].includes(saved.version)
-      || Object.keys(saved.supplier_unit_exceptions || {}).length)
+      || digest(saved.supplier_unit_exceptions || {}) !== digest(setting.supplier_unit_exceptions || {}))
       throw new Error("استجابة الحفظ لا تطابق القيم المعتمدة؛ توقف وتحقق من السجل");
     await log("supplier_unit_bulk_result", "confirmed");
-    return { status: "confirmed" as const, message: "أكدت دالة الحفظ القيم الموجودة؛ يلزم إعادة التدقيق" };
+    return { status: "confirmed" as const, message: "حُفظت الوحدة التي راجعها المدير؛ يلزم إعادة التدقيق" };
   } catch (error) {
     try { await log("supplier_unit_bulk_result", attempted ? "uncertain" : "failed"); }
     catch { return { status: "uncertain" as const, message: "تعذر تأكيد العملية وتسجيل نتيجتها؛ توقف وتحقق قبل إعادة المحاولة" }; }

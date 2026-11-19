@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyAuditSnapshot, type AuditSnapshot } from "../definition-audit.helpers";
 import { planBulkSupplierUnits, previewBulkSupplierUnits, executeBulkSupplierUnit, readBulkTicket } from "../definition-audit-bulk.server";
 import { scientificReportIdentity } from "../report-medication-evidence.helpers";
-import { previewSupplierUnitRows, supplierBoxPreview } from "../report-supplier-units.helpers";
+import { previewSupplierUnitRows, proposedSupplierUnit, supplierBoxPreview } from "../report-supplier-units.helpers";
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const context = (role = "admin", pharmacy = "own", userId = uuid(99)) => ({ pharmacy_id: pharmacy, session: { data: { user_id: userId, user_role: role } } });
@@ -48,8 +48,10 @@ function database(raw: AuditSnapshot, options: { disabled?: boolean; partial?: b
     expect(name).toBe("set_phif_report_supplier_unit"); calls.push({ name, args });
     const setting = raw.settings.find(s => s.pharmacy_id === args.p_pharmacy_id && s.item_identity === args.p_identity);
     if (options.rpcFail || !setting || setting.version !== args.p_expected_version) return { error: { message: "conflict" }, data: null };
-    // The existing RPC returns the current row for identical values, without duplicate decisions.
-    expect(args.p_unit).toBe(setting.supplier_quantity_unit); expect(args.p_exceptions).toEqual(setting.supplier_unit_exceptions);
+    expect(args.p_exceptions).toEqual(setting.supplier_unit_exceptions);
+    if (args.p_unit !== setting.supplier_quantity_unit) {
+      setting.supplier_quantity_unit = args.p_unit; setting.version++;
+    }
     return { data: structuredClone(setting), error: null };
   } };
   return db;
@@ -70,30 +72,86 @@ describe("manual bulk Supplier confirmation", () => {
     const raw = fixture(), db = database(raw), before = structuredClone(raw);
     const plan = await previewBulkSupplierUnits(db, context());
     const token = plan.ready[0].token;
-    expect(await executeBulkSupplierUnit(db, context(), token)).toMatchObject({ status: "confirmed" });
+    expect(await executeBulkSupplierUnit(db, context(), token, "pen")).toMatchObject({ status: "confirmed" });
     expect(db.calls).toHaveLength(1);
     expect(db.calls[0].args).toMatchObject({ p_pharmacy_id: "own", p_actor_id: uuid(99), p_expected_version: 1, p_unit: "pen" });
     expect(db.logs.map(l => l.metadata.status)).toEqual(["started", "confirmed"]);
-    expect(await executeBulkSupplierUnit(db, context(), token)).toMatchObject({ status: "already_confirmed" });
+    expect(await executeBulkSupplierUnit(db, context(), token, "pen")).toMatchObject({ status: "already_confirmed" });
     const newPreview = await previewBulkSupplierUnits(db, context());
-    expect(await executeBulkSupplierUnit(db, context(), newPreview.ready[0].token)).toMatchObject({ status: "already_confirmed" });
+    expect(await executeBulkSupplierUnit(db, context(), newPreview.ready[0].token, "pen")).toMatchObject({ status: "already_confirmed" });
     expect(db.calls).toHaveLength(1); expect(raw).toEqual(before);
   });
-  it("never promotes the editor's form-derived default or size 1 into a saved quantity unit", () => {
+  it("offers the individual editor's suggestion without saving or treating it as approval", () => {
     const raw = fixture(1); raw.settings[0].supplier_quantity_unit = null;
     const plan = planBulkSupplierUnits(raw, context());
-    expect(plan.ready).toEqual([]); expect(plan.excluded[0].reason).toContain("الافتراضية");
+    expect(plan.ready).toHaveLength(1); expect(plan.ready[0]).toMatchObject({ unit: "pen", savedUnit: null });
+    expect(raw.settings[0].supplier_quantity_unit).toBeNull();
   });
-  it.each(["missing", "invalid-size", "conflicting", "unknown-quantity", "unknown-unit", "exceptions", "form", "strip", "unresolved", "actual"])("excludes %s rather than guessing or changing evidence", type => {
+  it("documents BECLOMETHASONE DIPROPIONATE 250 MCG with the exact unsaved individual-editor proposal", async () => {
+    const raw = fixture(1);
+    Object.assign(raw.items[0], { active_ingredient: "BECLOMETHASONE DIPROPIONATE", strength: "250 MCG", metadata: { dosage_form: "inhaler" } });
+    Object.assign(raw.settings[0], { item_identity: scientificReportIdentity(raw.items[0]).key, base_unit: "inhaler", supplier_quantity_unit: null });
+    const db = database(raw), before = structuredClone(raw), plan = await previewBulkSupplierUnits(db, context());
+    expect(plan.excluded).toEqual([]);
+    expect(plan.ready[0]).toMatchObject({ unit: proposedSupplierUnit(raw.settings[0], "inhaler"), savedUnit: null,
+      size: 1, baseUnit: "inhaler", options: [{ unit: "inhaler", boxes: 2 }] });
+    expect(raw).toEqual(before); expect(db.calls).toHaveLength(0);
+    const ticket = plan.ready[0].token;
+    expect(await executeBulkSupplierUnit(db, context(), ticket, "inhaler")).toMatchObject({ status: "confirmed" });
+    expect(raw.settings[0]).toMatchObject({ supplier_quantity_unit: "inhaler", units_per_box: 1, base_unit: "inhaler", version: 2 });
+    expect(db.calls[0].args).toMatchObject({ p_unit: "inhaler", p_expected_version: 1, p_identity: before.settings[0].item_identity });
+    expect(raw.items).toEqual(before.items); expect(raw.invoices).toEqual(before.invoices);
+    expect(await executeBulkSupplierUnit(db, context(), ticket, "inhaler")).toMatchObject({ status: "already_confirmed" });
+    expect(db.calls).toHaveLength(1);
+    expect(await executeBulkSupplierUnit(db, context(), ticket, "box")).toMatchObject({ status: "failed" });
+    expect(db.calls).toHaveLength(1);
+  });
+  it("preserves saved-unit priority but permits a reviewed edit after validating actual conversions", async () => {
+    const raw = fixture(1);
+    Object.assign(raw.items[0], { active_ingredient: "TEST (MEDICINE)", strength: "5MG",
+      metadata: { dosage_form: "tablet", package_quantity: 30, strips_quantity: 3 } });
+    Object.assign(raw.settings[0], { item_identity: scientificReportIdentity(raw.items[0]).key.replace("test (", "test("),
+      units_per_box: 30, base_unit: "tablet", supplier_quantity_unit: "tablet" });
+    const db = database(raw), plan = await previewBulkSupplierUnits(db, context());
+    expect(plan.ready[0].unit).toBe("tablet");
+    expect(plan.ready[0].options).toEqual(expect.arrayContaining([{ unit: "box", boxes: 2 }]));
+    expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token, "box")).toMatchObject({ status: "confirmed" });
+    expect(db.calls[0].args.p_unit).toBe("box");
+    expect(raw.settings[0].units_per_box).toBe(30);
+  });
+  it("rejects an edited conflicting unit or undocumented conversion before writing", async () => {
+    const raw = fixture(1); raw.settings[0].supplier_quantity_unit = null;
+    const db = database(raw), plan = await previewBulkSupplierUnits(db, context());
+    for (const unit of ["vial", "strip", "box"] as const)
+      expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token, unit)).toMatchObject({ status: "failed" });
+    expect(db.calls).toEqual([]); expect(raw.settings[0].supplier_quantity_unit).toBeNull();
+  });
+  it("preserves valid invoice exceptions instead of excluding them solely for being exceptions", async () => {
+    const raw = fixture(1);
+    raw.settings[0].supplier_quantity_unit = null;
+    raw.settings[0].supplier_unit_exceptions = { [raw.items[0].phif_invoice_id]: "pen" };
+    const db = database(raw), plan = await previewBulkSupplierUnits(db, context());
+    expect(plan.ready[0].exceptionCount).toBe(1);
+    expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token, "pen")).toMatchObject({ status: "confirmed" });
+    expect(db.calls[0].args.p_exceptions).toEqual(raw.settings[0].supplier_unit_exceptions);
+  });
+  it("offers all 46 missing-unit proposals without auto-approving or writing any", async () => {
+    const raw = fixture(46);
+    raw.settings.forEach(s => s.supplier_quantity_unit = null);
+    const db = database(raw), plan = await previewBulkSupplierUnits(db, context());
+    expect(plan.ready).toHaveLength(46); expect(plan.excluded).toEqual([]);
+    expect(db.calls).toEqual([]); expect(db.logs).toEqual([]);
+    expect(plan.ready.every(row => row.savedUnit === null && row.unit === "pen")).toBe(true);
+  });
+  it.each(["missing", "invalid-size", "conflicting", "unknown-quantity", "unknown-unit", "exceptions", "form", "unresolved", "actual"])("excludes %s rather than guessing or changing evidence", type => {
     const raw = fixture(1);
     if (type === "missing") raw.settings = [];
     if (type === "invalid-size") raw.settings[0].units_per_box = 0;
     if (type === "conflicting") raw.settings.push({ ...raw.settings[0], id: uuid(9), units_per_box: 5 });
     if (type === "unknown-quantity") raw.items[0].quantity = null;
     if (type === "unknown-unit") raw.items[0].metadata.quantity_unit = "unrecognized";
-    if (type === "exceptions") raw.settings[0].supplier_unit_exceptions = { [raw.items[0].phif_invoice_id]: "pen" };
+    if (type === "exceptions") raw.settings[0].supplier_unit_exceptions = { [uuid(999)]: "pen" };
     if (type === "form") raw.settings[0].base_unit = "vial";
-    if (type === "strip") raw.settings[0].supplier_quantity_unit = "strip";
     if (type === "unresolved") { raw.settings = []; raw.items[0].metadata = {}; }
     if (type === "actual") raw.items[0].source_classification = "actual-supplier";
     const plan = planBulkSupplierUnits(raw, context());
@@ -113,13 +171,13 @@ describe("manual bulk Supplier confirmation", () => {
     const raw = fixture(), db = database(raw), plan = await previewBulkSupplierUnits(db, context()), token = plan.ready[0].token;
     for (const c of [context("employee"), context("admin", "foreign"), context("admin", "own", uuid(98))]) {
       await expect(previewBulkSupplierUnits(db, c)).rejects.toThrow();
-      await expect(executeBulkSupplierUnit(db, c, token)).rejects.toThrow();
+      await expect(executeBulkSupplierUnit(db, c, token, "pen")).rejects.toThrow();
     }
     await expect(previewBulkSupplierUnits(database(raw, { disabled: true }), context())).rejects.toThrow();
-    await expect(executeBulkSupplierUnit(database(raw, { disabled: true }), context(), token)).rejects.toThrow();
+    await expect(executeBulkSupplierUnit(database(raw, { disabled: true }), context(), token, "pen")).rejects.toThrow();
     expect(() => readBulkTicket(token, context("admin", "foreign"))).toThrow("الصيدلية");
     expect(() => readBulkTicket(token, context("admin", "own", uuid(98)))).toThrow("المستخدم");
-    await expect(executeBulkSupplierUnit(db, context(), token + "x")).rejects.toThrow();
+    await expect(executeBulkSupplierUnit(db, context(), token + "x", "pen")).rejects.toThrow();
     const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 31 * 60_000);
     expect(() => readBulkTicket(token, context())).toThrow("انتهت"); now.mockRestore();
     expect(db.calls).toEqual([]);
@@ -131,7 +189,7 @@ describe("manual bulk Supplier confirmation", () => {
       if (change === "size") raw.settings[0].units_per_box++;
       if (change === "quantity") raw.items[0].quantity++;
       if (change === "new-item") raw.items.push({ ...raw.items[0], id: uuid(555) });
-      expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token)).toMatchObject({ status: "failed" });
+      expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token, "pen")).toMatchObject({ status: "failed" });
       expect(db.calls).toEqual([]);
     }
   });
@@ -143,13 +201,13 @@ describe("manual bulk Supplier confirmation", () => {
   it("reports uncertainty after RPC failure or a lost outcome log, without claiming success or retrying automatically", async () => {
     for (const options of [{ rpcFail: true }, { logFail: "supplier_unit_bulk_result" }]) {
       const raw = fixture(1), db = database(raw, options), plan = await previewBulkSupplierUnits(db, context());
-      expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token)).toMatchObject({ status: "uncertain" });
+      expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token, "pen")).toMatchObject({ status: "uncertain" });
       expect(db.calls).toHaveLength(1);
     }
   });
   it("does not start the RPC if the initial operation log is unavailable", async () => {
     const raw = fixture(1), db = database(raw, { logFail: "supplier_unit_bulk_attempt" }), plan = await previewBulkSupplierUnits(db, context());
-    expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token)).toMatchObject({ status: "failed" });
+    expect(await executeBulkSupplierUnit(db, context(), plan.ready[0].token, "pen")).toMatchObject({ status: "failed" });
     expect(db.calls).toEqual([]);
   });
   it("uses the same individual conversion preview, including fractional boxes and explicit conflicts", () => {

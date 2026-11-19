@@ -65,7 +65,7 @@ describe("PHIF Supplier unit editor defaults are unsaved UI suggestions", () => 
     expect(render("tablet")).toContain('value="">بدون اعتماد عام</option>');
     const source = readFileSync("src/components/management/SupplierReportUnitEditor.tsx", "utf8");
     expect(source).toContain(
-      '() => item.setting?.supplier_quantity_unit ?? actualUnit(item.form) ?? ""',
+      '() => proposedSupplierUnit(item.setting, item.form)',
     );
     expect(source).toContain("if (saveLock.current) return");
     expect(source).not.toContain("useEffect");
