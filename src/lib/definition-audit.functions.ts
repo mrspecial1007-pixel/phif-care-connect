@@ -15,8 +15,11 @@ export const exportDefinitionAuditReview = createServerFn({ method: "POST" })
 export const runDefinitionAuditReport = createServerFn({ method: "POST" })
   .inputValidator((value: unknown) => z.object({}).strict().parse(value))
   .handler(async () => {
+    const { getRequest } = await import("@tanstack/react-start/server");
+    const requestSignal = getRequest().signal;
     const { requirePharmacySession } = await import("./pharmacy-session.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { requireDefinitionAuditAdmin, runDefinitionAudit } = await import("./definition-audit.server");
-    return runAuthorizedDefinitionAudit(requirePharmacySession, supabaseAdmin, requireDefinitionAuditAdmin, runDefinitionAudit);
+    return runAuthorizedDefinitionAudit(requirePharmacySession, supabaseAdmin, requireDefinitionAuditAdmin,
+      (db, pharmacyId) => runDefinitionAudit(db, pharmacyId, requestSignal));
   });

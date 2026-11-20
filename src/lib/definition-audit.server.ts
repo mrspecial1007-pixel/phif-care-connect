@@ -3,6 +3,7 @@ import { emptyAuditSnapshot } from "./definition-audit.helpers";
 import { createStreamingAudit } from "./definition-audit.streaming";
 import type { AuditFinding } from "./definition-audit.helpers";
 import { auditFailureMessages, classifyAuditFailure, type AuditFailureCode } from "./definition-audit-errors";
+import { createAuditItemsDiagnostics, type AuditItemsDiagnostics } from "./definition-audit-diagnostics.server";
 
 export async function requireDefinitionAuditAdmin(db: any, context: any) {
   const actor = context.session.data;
@@ -36,17 +37,20 @@ export function summarizeAuditFindings(findings: AuditFinding[]) {
 const canonical = (v: any): any => Array.isArray(v) ? v.map(canonical) : v && typeof v === "object"
   ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical(v[k])])) : v;
 
-async function readSource(db: any, pharmacyId: string, source: AuditSource, retain: boolean, budget: { bytes: number }, visit?: (rows: any[]) => void) {
+async function readSource(db: any, pharmacyId: string, source: AuditSource, retain: boolean, budget: { bytes: number }, visit?: (rows: any[]) => void, diagnostics?: AuditItemsDiagnostics) {
   const [table, fields] = sources[source];
   const rows: any[] = [];
   const seen = new Set<string>();
   const hash = createHash("sha256");
   let expected: number | null = null;
   let from = 0;
+  let pageNumber = 0;
   for (;;) {
+    diagnostics?.queryStarted(++pageNumber, from);
     const page = await db.from(table).select(fields, { count: "exact" })
       .eq(source === "items" ? "phif_invoices.pharmacy_id" : "pharmacy_id", pharmacyId)
       .order("id").range(from, from + 499);
+    diagnostics?.queryFinished(Array.isArray(page.data) ? page.data.length : null, !!page.error);
     if (page.error) throw Object.assign(new Error("تعذر تحميل بيانات التقرير كاملة"), {
       databaseCode: /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(String(page.error.code || "")) ? String(page.error.code) : undefined,
     });
@@ -57,6 +61,7 @@ async function readSource(db: any, pharmacyId: string, source: AuditSource, reta
     const data = page.data || [];
     if (!data.length) {
       if (from < total) throw new Error("بيانات التقرير غير مكتملة");
+      diagnostics?.recordsChecked();
       break;
     }
     for (const row of data) {
@@ -73,7 +78,10 @@ async function readSource(db: any, pharmacyId: string, source: AuditSource, reta
       }
       if (retain) rows.push(row);
     }
+    diagnostics?.recordsChecked();
+    diagnostics?.evidenceStarted();
     visit?.(data);
+    diagnostics?.evidenceFinished();
     from += data.length;
     if (from > total) throw new Error("تغيرت بيانات التقرير أثناء القراءة؛ أعد المحاولة");
     if (from >= total) break;
@@ -105,7 +113,7 @@ export async function readDefinitionSnapshot(db: any, pharmacyId: string, retain
   return { snapshot, manifest };
 }
 
-export async function runDefinitionAudit(db: any, pharmacyId: string) {
+export async function runDefinitionAudit(db: any, pharmacyId: string, requestSignal?: AbortSignal) {
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
   let stage = "support_read";
@@ -126,15 +134,16 @@ export async function runDefinitionAudit(db: any, pharmacyId: string) {
   const budget = { bytes: 0 };
   type Read = { count: number; digest?: string; reason?: string };
   const before = new Map<AuditSource, Read>(), after = new Map<AuditSource, Read>();
-  const read = async (source: AuditSource, retain: boolean, destination: Map<AuditSource, Read>, visit?: (rows: any[]) => void) => {
+  const read = async (source: AuditSource, retain: boolean, destination: Map<AuditSource, Read>, visit?: (rows: any[]) => void, diagnostics?: AuditItemsDiagnostics) => {
     const readStarted = Date.now();
     log("reading", { source });
     try {
-      const result = await readSource(db, pharmacyId, source, retain, budget, visit);
+      const result = await readSource(db, pharmacyId, source, retain, budget, visit, diagnostics);
       if (retain) support[source] = result.rows;
       destination.set(source, result);
       log("read", { source, count: result.count, durationMs: Date.now() - readStarted });
     } catch (error) {
+      diagnostics?.failed(error);
       destination.set(source, { count: 0, reason: fail(error, source) });
     }
   };
@@ -147,7 +156,11 @@ export async function runDefinitionAudit(db: any, pharmacyId: string) {
       log("processing");
       const audit = createStreamingAudit(support, pharmacyId);
       stage = "identity_evidence";
-      await read("items", false, before, rows => audit.addEvidence(rows));
+      const diagnostics = createAuditItemsDiagnostics(runId, startedAt, requestSignal);
+      try {
+        await read("items", false, before, rows => audit.addEvidence(rows), diagnostics);
+        diagnostics?.finished(!before.get("items")?.reason);
+      } finally { diagnostics?.dispose(); }
       if (!before.get("items")?.reason) {
         stage = "inspect_items";
         await read("items", false, after, rows => audit.inspectBatch(rows));
