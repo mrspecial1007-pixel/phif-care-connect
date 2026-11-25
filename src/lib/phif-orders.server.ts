@@ -1,15 +1,12 @@
 import type { PhifOrdersReport } from "./phif-orders.helpers";
 import { z } from "zod";
+import { ordersLineSchema } from "./phif-orders-snapshot.helpers";
 import { requestPhifBridgeRead, PhifBridgeRequestError } from "./phif-bridge-request.server";
 
 const sourceReport = z.object({
   orders: z.array(z.object({
     id: z.string().regex(/^\d+$/), number: z.string().min(1), createdAt: z.string().datetime().nullable(),
-    status: z.string(), detailError: z.string().nullable(), lines: z.array(z.object({
-      id: z.string().regex(/^\d+$/), medicine: z.string().min(1), supplier: z.string().nullable(), batch: z.string().nullable(),
-      approval: z.string(), approvedQuantity: z.number().finite().nonnegative().nullable(), quantityMissing: z.boolean(),
-      status: z.enum(["waiting", "received", "not_approved", "review"]), approvedAt: z.null(), receivedAt: z.string().datetime().nullable(),
-    })),
+    status: z.string(), detailError: z.string().nullable(), lines: z.array(ordersLineSchema),
   })),
   totalOrders: z.number().int().nonnegative(), pages: z.number().int().positive(),
   excludedZero: z.number().int().nonnegative(), complete: z.boolean(), fetchedAt: z.string().datetime(),
@@ -51,7 +48,10 @@ export async function readPhifOrders(db: any, pharmacyId: string, fetchImpl = fe
       lines: (order.lines || []).map((line: any) => ({ id: String(line.id), medicine: String(line.medicine),
         supplier: line.supplier ?? null, batch: line.batch ?? null, approval: String(line.approval ?? ""),
         approvedQuantity: line.approvedQuantity ?? null, quantityMissing: line.quantityMissing === true,
-        status: line.status, approvedAt: null, receivedAt: line.receivedAt })),
+        status: line.status, approvedAt: line.approvedAt, receivedAt: line.receivedAt,
+        batchId: line.batchId, requestedQuantity: line.requestedQuantity,
+        supplierQuantity: line.supplierQuantity, receivedQuantity: line.receivedQuantity,
+        fulfillmentStage: line.fulfillmentStage, deliveredAt: line.deliveredAt })),
     })),
     totalOrders: payload.totalOrders, pages: payload.pages, excludedZero: payload.excludedZero,
     // This is the Tracker read timestamp, not an approval/receipt date from PHIF.

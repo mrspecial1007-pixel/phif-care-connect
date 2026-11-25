@@ -1,13 +1,19 @@
 import { z } from "zod";
 
-const line = z.object({
+export const ordersLineSchema = z.object({
   id: z.string().regex(/^\d+$/), medicine: z.string().min(1), supplier: z.string().nullable(), batch: z.string().nullable(),
   approval: z.string(), approvedQuantity: z.number().finite().nonnegative().nullable(), quantityMissing: z.boolean(),
-  status: z.enum(["waiting", "received", "not_approved", "review"]), approvedAt: z.null(), receivedAt: z.string().datetime().nullable(),
+  status: z.enum(["waiting", "received", "not_approved", "review"]), approvedAt: z.string().datetime({ offset: true }).nullable(), receivedAt: z.string().datetime().nullable(),
+  batchId: z.string().regex(/^\d+$/).nullable().optional(),
+  requestedQuantity: z.number().finite().nonnegative().nullable().optional(),
+  supplierQuantity: z.number().finite().nonnegative().nullable().optional(),
+  receivedQuantity: z.number().finite().nonnegative().nullable().optional(),
+  fulfillmentStage: z.enum(["received", "ready", "in_delivery", "not_approved", "review"]).optional(),
+  deliveredAt: z.string().datetime({ offset: true }).nullable().optional(),
 });
 export const ordersReportSchema = z.object({
   orders: z.array(z.object({ id: z.string().regex(/^\d+$/), number: z.string().min(1), createdAt: z.string().datetime().nullable(),
-    status: z.string(), detailError: z.string().nullable(), lines: z.array(line),
+    status: z.string(), detailError: z.string().nullable(), lines: z.array(ordersLineSchema),
   })).max(50000),
   totalOrders: z.number().int().nonnegative(), pages: z.number().int().positive(), excludedZero: z.number().int().nonnegative(),
   complete: z.boolean(), fetchedAt: z.string().datetime(), pharmacy: z.string().min(1),

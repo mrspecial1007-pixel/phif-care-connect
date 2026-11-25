@@ -11,7 +11,10 @@ export type OrderState = keyof typeof ORDER_STATES;
 export type OrderLine = {
   id: string; medicine: string; batch: string | null; supplier: string | null;
   approval: string; approvedQuantity: number | null; quantityMissing: boolean;
-  status: OrderState; approvedAt: null; receivedAt: string | null; receipt?: OrderReceiptRecord;
+  status: OrderState; approvedAt: string | null; receivedAt: string | null; receipt?: OrderReceiptRecord;
+  batchId?: string | null; requestedQuantity?: number | null; supplierQuantity?: number | null;
+  receivedQuantity?: number | null; deliveredAt?: string | null;
+  fulfillmentStage?: "received" | "ready" | "in_delivery" | "not_approved" | "review";
 };
 export type PhifOrder = {
   id: string; number: string; createdAt: string | null; status: string;
