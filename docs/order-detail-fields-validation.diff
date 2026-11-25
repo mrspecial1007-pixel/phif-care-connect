@@ -1,0 +1,48 @@
+diff --git a/supabase/rollback/20261125010000_restore_order_detail_validation.sql b/supabase/migrations/20261125010000_allow_order_detail_fields.sql
+index 1390e07..f2fed29 100644
+--- a/supabase/rollback/20261125010000_restore_order_detail_validation.sql
++++ b/supabase/migrations/20261125010000_allow_order_detail_fields.sql
+@@ -1,4 +1,4 @@
+--- Previous deployed function definition. Run only under the documented rollback plan.
++-- Extend only line JSON validation. Existing rows and EXECUTE grants are untouched.
+ BEGIN;
+ CREATE OR REPLACE FUNCTION public.complete_phif_orders_sync(p_pharmacy_id uuid,p_actor_id uuid,p_operation_id uuid,p_expected_version integer,p_report jsonb)
+ RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+@@ -26,7 +26,8 @@ BEGIN
+       OR (jsonb_typeof(o->'createdAt') IS DISTINCT FROM 'string' AND jsonb_typeof(o->'createdAt') IS DISTINCT FROM 'null')
+       OR jsonb_typeof(o->'lines') IS DISTINCT FROM 'array') THEN RAISE EXCEPTION 'Invalid order fields'; END IF;
+   IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_report->'orders') o CROSS JOIN LATERAL jsonb_array_elements(o->'lines') l
+-    WHERE l-ARRAY['id','medicine','supplier','batch','approval','approvedQuantity','quantityMissing','status','approvedAt','receivedAt']<>'{}'::jsonb
++    WHERE l-ARRAY['id','medicine','supplier','batch','approval','approvedQuantity','quantityMissing','status','approvedAt','receivedAt',
++      'batchId','requestedQuantity','supplierQuantity','receivedQuantity','fulfillmentStage','deliveredAt']<>'{}'::jsonb
+       OR jsonb_typeof(l->'id') IS DISTINCT FROM 'string' OR jsonb_typeof(l->'medicine') IS DISTINCT FROM 'string'
+       OR jsonb_typeof(l->'approval') IS DISTINCT FROM 'string' OR jsonb_typeof(l->'status') IS DISTINCT FROM 'string'
+       OR (jsonb_typeof(l->'supplier') IS DISTINCT FROM 'string' AND jsonb_typeof(l->'supplier') IS DISTINCT FROM 'null')
+@@ -35,7 +36,26 @@ BEGIN
+       OR jsonb_typeof(l->'quantityMissing') IS DISTINCT FROM 'boolean'
+       OR (jsonb_typeof(l->'approvedQuantity') IS DISTINCT FROM 'null' AND
+         (jsonb_typeof(l->'approvedQuantity') IS DISTINCT FROM 'number' OR (l->>'approvedQuantity')::numeric<=0))
+-      OR l->>'approvedAt' IS NOT NULL) THEN RAISE EXCEPTION 'Invalid order line fields'; END IF;
++      OR EXISTS (
++        SELECT 1 FROM (VALUES (l->'approvedAt'), (l->'deliveredAt')) AS dates(value)
++        WHERE value IS NOT NULL AND value <> 'null'::jsonb
++          AND NOT CASE WHEN jsonb_typeof(value)='string'
++            AND (value #>> '{}') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
++            THEN isfinite((value #>> '{}')::timestamptz) ELSE false END)
++      OR EXISTS (
++        SELECT 1 FROM (VALUES (l->'requestedQuantity'), (l->'supplierQuantity'), (l->'receivedQuantity')) AS quantities(value)
++        WHERE value IS NOT NULL AND value <> 'null'::jsonb
++          AND NOT CASE WHEN jsonb_typeof(value)='number'
++            THEN (value #>> '{}')::numeric >= 0 ELSE false END)
++      OR (l ? 'batchId' AND l->'batchId' <> 'null'::jsonb AND
++        (jsonb_typeof(l->'batchId') IS DISTINCT FROM 'string' OR l->>'batchId' !~ '^[0-9]+$'))
++      OR (l ? 'fulfillmentStage' AND
++        (jsonb_typeof(l->'fulfillmentStage') IS DISTINCT FROM 'string'
++          OR l->>'fulfillmentStage' NOT IN ('received','ready','in_delivery','not_approved','review')
++          OR l->>'status' IS DISTINCT FROM CASE
++            WHEN l->>'fulfillmentStage' IN ('ready','in_delivery') THEN 'waiting'
++            ELSE l->>'fulfillmentStage' END))
++      ) THEN RAISE EXCEPTION 'Invalid order line fields'; END IF;
+   fetched := (p_report->>'fetchedAt')::timestamptz;
+   IF fetched IS NULL OR fetched<op.started_at-interval '5 seconds' OR fetched>clock_timestamp()+interval '5 seconds'
+     OR fetched<previous.fetched_at THEN RAISE EXCEPTION 'Stale order read'; END IF;
