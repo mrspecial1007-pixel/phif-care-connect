@@ -80,3 +80,22 @@ export async function saveAuthorizedOrderReceiptDate(input: unknown) {
   const context = await requireTiryaqPermission("inventory_read");
   return persistOrderReceiptDate(supabaseAdmin, context, input);
 }
+
+export async function listHiddenOrderLines() {
+  noStore();
+  const context = await requireTiryaqPermission("inventory_read");
+  const { data, error } = await (supabaseAdmin as any).from("phif_order_line_hidden").select("order_id,line_id,batch").eq("pharmacy_id", context.pharmacy_id);
+  if (error) throw new Error("تعذر تحميل الأصناف المخفية");
+  return (data || []).map((r: any) => `${r.order_id}:${r.line_id}:${r.batch}`) as string[];
+}
+
+export async function setHiddenOrderLine(input: { orderId: string; lineId: string; batch: string; hidden: boolean }) {
+  noStore();
+  const context = await requireTiryaqPermission("inventory_read");
+  const db = supabaseAdmin as any, key = { pharmacy_id: context.pharmacy_id, order_id: input.orderId, line_id: input.lineId, batch: input.batch };
+  const { error } = input.hidden
+    ? await db.from("phif_order_line_hidden").upsert({ ...key, hidden_by: context.session?.data?.user_id || null })
+    : await db.from("phif_order_line_hidden").delete().match(key);
+  if (error) throw new Error("تعذر حفظ حالة الإخفاء");
+  return { ok: true };
+}

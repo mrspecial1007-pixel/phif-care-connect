@@ -1526,6 +1526,55 @@ export type Database = {
           },
         ]
       }
+      phif_order_line_hidden: {
+        Row: {
+          batch: string
+          hidden_at: string
+          hidden_by: string | null
+          line_id: string
+          order_id: string
+          pharmacy_id: string
+        }
+        Insert: {
+          batch?: string
+          hidden_at?: string
+          hidden_by?: string | null
+          line_id: string
+          order_id: string
+          pharmacy_id: string
+        }
+        Update: {
+          batch?: string
+          hidden_at?: string
+          hidden_by?: string | null
+          line_id?: string
+          order_id?: string
+          pharmacy_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phif_order_line_hidden_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_line_hidden_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phif_order_line_hidden_pharmacy_id_fkey"
+            columns: ["pharmacy_id"]
+            isOneToOne: false
+            referencedRelation: "v_pharmacies_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       phif_order_receipt_sync: {
         Row: {
           fetched_at: string

@@ -30,3 +30,15 @@ export const setPhifOrderReceiptDate = createServerFn({ method: "POST" })
     const { saveAuthorizedOrderReceiptDate } = await import("./phif-orders-service.server");
     return saveAuthorizedOrderReceiptDate(data);
   });
+
+export const getHiddenOrderLines = createServerFn({ method: "POST" }).handler(async () => {
+  const { listHiddenOrderLines } = await import("./phif-orders-service.server");
+  return listHiddenOrderLines();
+});
+
+export const setOrderLineHidden = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ orderId: z.string().max(64), lineId: z.string().max(64), batch: z.string().max(200), hidden: z.boolean() }).parse(data))
+  .handler(async ({ data }) => {
+    const { setHiddenOrderLine } = await import("./phif-orders-service.server");
+    return setHiddenOrderLine(data);
+  });

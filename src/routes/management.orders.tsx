@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { EyeOff, Eye } from "lucide-react";
+import { getHiddenOrderLines, setOrderLineHidden } from "@/lib/phif-orders.functions";
 import { createFileRoute } from "@tanstack/react-router";
 import { AlertCircle, CalendarDays, CheckCircle2, Clock3, Loader2, Package, RefreshCw, Search, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,7 +74,19 @@ function OrdersBody({ scope }: { scope: string }) {
   const [limit, setLimit] = useState(40);
   const report = useStoredPhifOrders(scope);
   const change = (patch: Partial<OrdersFilters>) => { setFilters(value => ({ ...value, ...patch })); setLimit(40); };
-  const view = useMemo(() => report.data ? ordersView(report.data, filters) : null, [report.data, filters]);
+  const qc = useQueryClient(), hiddenKey = ["phif_order_hidden", scope];
+  const hiddenQ = useQuery({ queryKey: hiddenKey, queryFn: () => getHiddenOrderLines(), staleTime: 30000 });
+  const hidden = useMemo(() => new Set(hiddenQ.data || []), [hiddenQ.data]);
+  const [showHidden, setShowHidden] = useState(false), [open, setOpen] = useState<string | null>(null), [busy, setBusy] = useState<string | null>(null);
+  const lineKey = (orderId: string, lineId: string, batch: string | null) => `${orderId}:${lineId}:${batch || ""}`;
+  const visibleData = useMemo(() => report.data ? { ...report.data, orders: report.data.orders.map(o => ({ ...o,
+    lines: o.lines.filter(l => hidden.has(lineKey(o.id, l.id, l.batch)) === showHidden) })) } : null, [report.data, hidden, showHidden]);
+  const view = useMemo(() => visibleData ? ordersView(visibleData, filters) : null, [visibleData, filters]);
+  async function toggleHidden(orderId: string, lineId: string, batch: string | null, value: boolean) {
+    const k = lineKey(orderId, lineId, batch); setBusy(k);
+    try { await setOrderLineHidden({ data: { orderId, lineId, batch: batch || "", hidden: value } }); await qc.invalidateQueries({ queryKey: hiddenKey }); }
+    finally { setBusy(null); }
+  }
   const suppliers = useMemo(() => [...new Set(report.data?.orders.flatMap(order => order.lines.map(line => line.supplier).filter((s): s is string => Boolean(s))) || [])]
     .sort((a, b) => a.localeCompare(b, "ar")), [report.data]);
   return <div dir="rtl" className="min-w-0 space-y-3">
@@ -129,6 +144,10 @@ function OrdersBody({ scope }: { scope: string }) {
         <SelectTrigger aria-label="المورد" className={`min-w-0 ${filters.tab !== "items" ? "col-span-2" : ""}`}><SelectValue /></SelectTrigger>
         <SelectContent className="max-w-[calc(100vw-2rem)]"><SelectItem value="all">جميع الموردين</SelectItem>{suppliers.map(s => <SelectItem className="whitespace-normal break-words" key={s} value={s}>{s}</SelectItem>)}</SelectContent>
       </Select>
+      <Button type="button" variant={showHidden ? "default" : "outline"} size="sm" className="col-span-2" aria-pressed={showHidden}
+        onClick={() => { setShowHidden(v => !v); setLimit(40); }}>
+        <EyeOff className="size-4" />{showHidden ? `عرض المخفية (${hidden.size}) — اضغط للرجوع` : `المخفية (${hidden.size})`}
+      </Button>
     </div>
     {report.isLoading && <p role="status" className="flex items-center justify-center gap-2 py-10"><Loader2 className="size-4 animate-spin" />جارٍ فتح النسخة المحفوظة بأمان</p>}
     {report.error && <p role="alert" className="border-y border-red-200 py-3 text-sm text-red-800">
@@ -181,24 +200,39 @@ function OrdersBody({ scope }: { scope: string }) {
             {Object.entries(ORDER_STAGES).map(([status, label]) => <span key={status}>{label}: {order.stageCounts[status as keyof typeof ORDER_STAGES]}</span>)}
           </div>}
         </article>)}
-      </div> : <div className="grid min-w-0 gap-3 md:grid-cols-2">
+      </div> : <div className="grid min-w-0 gap-2 md:grid-cols-2">
         {view.rows.slice(0, limit).map(row => {
           const StatusIcon = row.status === "received" ? CheckCircle2 : row.status === "waiting" ? Clock3 : Package;
-          return <article key={`${row.orderId}:${row.id}`} className="min-w-0 space-y-2 rounded-lg border bg-card p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <bdi className="break-all font-semibold">{row.orderNumber}</bdi>
-              <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 ${statusStyle[row.stage]}`}><StatusIcon className="size-3" />{ORDER_STAGES[row.stage]}</span>
-            </div>
-            <h2 dir="auto" className="break-words text-base font-bold leading-6">{row.medicine}</h2>
-            <p className="break-words text-xs text-muted-foreground">{row.supplier || "المورد غير مسجل"}</p>
-            <div className="grid grid-cols-2 gap-2 border-y py-2 text-xs">
-              <div>الكمية المطلوبة<strong className="mt-1 block text-xl">{row.requestedQuantity == null ? "غير موثقة" : row.requestedQuantity.toLocaleString("en-US")}</strong></div>
-              <div>الكمية المحددة من المورد<strong className="mt-1 block text-xl">{supplierQuantity(row)?.toLocaleString("en-US") ?? "غير موثقة"}</strong></div>
-              <div>التشغيلة<bdi className="mt-1 block break-all font-semibold">{row.batch || "غير مسجلة"}</bdi></div>
-            </div>
-            <OrderLineTiming row={row} />
-            {row.status === "received" && !row.receivedAt && report.canManageReceipts && <OrderReceiptDateEditor record={row.receipt} medicine={row.medicine}
-              enabled={Boolean(report.receipts?.ready)} onSaved={report.receiptSaved} />}
+          const k = lineKey(row.orderId, row.id, row.batch), expanded = open === k;
+          const qty = supplierQuantity(row) ?? row.requestedQuantity;
+          return <article key={`${row.orderId}:${row.id}`} className="min-w-0 rounded-lg border bg-card px-3 py-2">
+            <button type="button" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : k)} className="block w-full min-w-0 space-y-1 text-right">
+              <div className="flex items-start justify-between gap-2">
+                <h2 dir="auto" className="min-w-0 break-words text-sm font-bold leading-5">{row.medicine}</h2>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] ${statusStyle[row.stage]}`}><StatusIcon className="size-3" />{ORDER_STAGES[row.stage]}</span>
+              </div>
+              <p className="truncate text-xs text-muted-foreground">{row.supplier || "المورد غير مسجل"}</p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                <span>الكمية: <strong className="tabular-nums">{qty == null ? "—" : qty.toLocaleString("en-US")}</strong></span>
+                <span>تشغيلة: <bdi className="font-semibold">{row.batch || "—"}</bdi></span>
+                <span>طلب: <bdi>{row.orderNumber}</bdi></span>
+                <span className="ms-auto font-semibold">{row.duration.days == null ? "—" : `${row.duration.days.toLocaleString("ar-LY")} يوم`}</span>
+              </div>
+            </button>
+            {expanded && <div className="mt-2 space-y-2 border-t pt-2">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>الكمية المطلوبة<strong className="block">{row.requestedQuantity == null ? "غير موثقة" : row.requestedQuantity.toLocaleString("en-US")}</strong></div>
+                <div>الكمية المحددة من المورد<strong className="block">{supplierQuantity(row)?.toLocaleString("en-US") ?? "غير موثقة"}</strong></div>
+                <div className="col-span-2 break-words">المورد: {row.supplier || "غير مسجل"}</div>
+              </div>
+              <OrderLineTiming row={row} />
+              {row.status === "received" && !row.receivedAt && report.canManageReceipts && <OrderReceiptDateEditor record={row.receipt} medicine={row.medicine}
+                enabled={Boolean(report.receipts?.ready)} onSaved={report.receiptSaved} />}
+              <Button type="button" variant="outline" size="sm" className="w-full" disabled={busy === k}
+                onClick={() => void toggleHidden(row.orderId, row.id, row.batch, !showHidden)}>
+                {showHidden ? <><Eye className="size-4" />إعادة الإظهار</> : <><EyeOff className="size-4" />إخفاء من المتابعة</>}
+              </Button>
+            </div>}
           </article>;
         })}
       </div>}
