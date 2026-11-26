@@ -13,7 +13,7 @@ import { confirmedReceiptDate } from "@/lib/phif-order-receipts.helpers";
 import { useSession } from "@/lib/queries";
 import { itemsAnalyticsScope } from "@/lib/items-analytics-cache.helpers";
 import { useStoredPhifOrders } from "@/lib/use-stored-phif-orders";
-import { ORDER_DATE_BASES, ORDER_PERIODS, ORDER_STATES, ORDER_TABS, defaultOrdersFilters, ordersPeriodFilters, ordersStatisticFilters, ordersView, type OrdersFilters } from "@/lib/phif-orders.helpers";
+import { ORDER_DATE_BASES, ORDER_PERIODS, ORDER_STAGES, defaultOperationalOrdersFilters, supplierQuantity, ordersPeriodFilters, ordersView, type OrdersFilters } from "@/lib/phif-orders.helpers";
 
 export const Route = createFileRoute("/management/orders")({
   component: OrdersPage,
@@ -22,12 +22,26 @@ export const Route = createFileRoute("/management/orders")({
 const dateLabel = (value: string | null) => value
   ? new Date(value).toLocaleDateString("ar-LY", { timeZone: "Africa/Tripoli" }) : "التاريخ غير متاح";
 const statusStyle = { received: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  waiting: "border-amber-200 bg-amber-50 text-amber-900", not_approved: "border-zinc-200 bg-zinc-50 text-zinc-700",
+  ready: "border-blue-300 bg-blue-100 text-blue-900", in_delivery: "border-sky-200 bg-sky-50 text-sky-800",
+  not_approved: "border-amber-200 bg-amber-50 text-amber-900",
   review: "border-red-200 bg-red-50 text-red-800" };
 
 export function OrderLineTiming({ row }: {
-  row: Pick<ReturnType<typeof ordersView>["rows"][number], "createdAt" | "status" | "receivedAt" | "receipt" | "duration">;
+  row: Pick<ReturnType<typeof ordersView>["rows"][number], "createdAt" | "status" | "receivedAt" | "receipt" | "duration">
+    & Partial<Pick<ReturnType<typeof ordersView>["rows"][number], "stage" | "approvedAt" | "deliveredAt">>;
 }) {
+  if (row.stage) {
+    const actual = row.stage === "received" ? row.receivedAt || confirmedReceiptDate(row) : null;
+    return <div dir="rtl" className="min-w-0 space-y-2 text-xs leading-5">
+      <p>إنشاء الطلبية: {dateLabel(row.createdAt)}</p>
+      <p>موافقة المورد: {dateLabel(row.approvedAt || null)}</p>
+      <p>تسليم المورد: {dateLabel(row.deliveredAt || null)}</p>
+      {row.stage === "received" && <p className="text-emerald-800">تأكيد استلام الصيدلية: {dateLabel(actual)}</p>}
+      <p className="text-muted-foreground">{row.duration.label}</p>
+      {row.duration.days !== null ? <p className="font-semibold"><bdi className="text-2xl tabular-nums">{row.duration.days}</bdi> يومًا</p>
+        : <p className="text-muted-foreground">المدة غير متاحة؛ يلزم تاريخ موافقة وتواريخ متسقة مع المرحلة.</p>}
+    </div>;
+  }
   const received = row.status === "received", actual = received ? confirmedReceiptDate(row) : null;
   const days = !received || actual ? row.duration.days : null;
   return <div dir="rtl" className="min-w-0 space-y-2">
@@ -53,7 +67,7 @@ export function OrdersPage() {
   return <OrdersBody key={itemsAnalyticsScope(session.data)} scope={itemsAnalyticsScope(session.data)!} />;
 }
 function OrdersBody({ scope }: { scope: string }) {
-  const [filters, setFilters] = useState<OrdersFilters>(defaultOrdersFilters);
+  const [filters, setFilters] = useState<OrdersFilters>(defaultOperationalOrdersFilters);
   const [limit, setLimit] = useState(40);
   const report = useStoredPhifOrders(scope);
   const change = (patch: Partial<OrdersFilters>) => { setFilters(value => ({ ...value, ...patch })); setLimit(40); };
@@ -107,12 +121,12 @@ function OrdersBody({ scope }: { scope: string }) {
       <Input aria-label="رقم الطلب أو الدواء أو التشغيلة" placeholder="رقم الطلب أو الدواء أو التشغيلة" className="pr-9" value={filters.query} onChange={e => change({ query: e.target.value })} />
     </div>
     <div className="grid min-w-0 grid-cols-2 gap-2">
-      {filters.tab === "approved" && <Select value={filters.status} onValueChange={status => change({ status: status as OrdersFilters["status"] })}>
+      {filters.tab === "items" && <Select value={filters.stage} onValueChange={stage => change({ stage: stage as OrdersFilters["stage"] })}>
         <SelectTrigger aria-label="حالة الصنف" className="min-w-0"><SelectValue /></SelectTrigger>
-        <SelectContent><SelectItem value="all">جميع الأصناف المعتمدة</SelectItem>{(["waiting", "received"] as const).map(value => <SelectItem key={value} value={value}>{ORDER_STATES[value]}</SelectItem>)}</SelectContent>
+        <SelectContent><SelectItem value="all">جميع الأصناف</SelectItem>{Object.entries(ORDER_STAGES).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
       </Select>}
       <Select value={filters.supplier} onValueChange={supplier => change({ supplier })}>
-        <SelectTrigger aria-label="المورد" className={`min-w-0 ${filters.tab !== "approved" ? "col-span-2" : ""}`}><SelectValue /></SelectTrigger>
+        <SelectTrigger aria-label="المورد" className={`min-w-0 ${filters.tab !== "items" ? "col-span-2" : ""}`}><SelectValue /></SelectTrigger>
         <SelectContent className="max-w-[calc(100vw-2rem)]"><SelectItem value="all">جميع الموردين</SelectItem>{suppliers.map(s => <SelectItem className="whitespace-normal break-words" key={s} value={s}>{s}</SelectItem>)}</SelectContent>
       </Select>
     </div>
@@ -130,23 +144,29 @@ function OrdersBody({ scope }: { scope: string }) {
       <div aria-label="إحصائيات الفترة والبحث والمورد" className="grid grid-cols-2 gap-2 py-1 sm:grid-cols-4">
         {([
           { key: "orders", label: "عدد الطلبات", count: view.orderCount, icon: Truck },
-          { key: "received", label: "أصناف مستلمة", count: view.counts.received, icon: CheckCircle2 },
-          { key: "waiting", label: "معتمدة بانتظار الاستلام", count: view.counts.waiting, icon: Clock3 },
-          { key: "not_approved", label: "بانتظار موافقة المورد", count: view.counts.not_approved, icon: Package },
+          { key: "ready", label: "جاهزة للاستلام", count: view.stageCounts.ready, icon: Package },
+          { key: "in_delivery", label: "قيد التوصيل", count: view.stageCounts.in_delivery, icon: Truck },
+          { key: "not_approved", label: "قيد الانتظار", count: view.stageCounts.not_approved, icon: Clock3 },
+          { key: "received", label: "أصناف مستلمة", count: view.stageCounts.received, icon: CheckCircle2 },
         ] as const).map(({ key, label, count, icon: Icon }) => {
-          const selected = key === "orders" || key === "not_approved" ? filters.tab === key
-            : filters.tab === "approved" && filters.status === key;
+          const selected = key === "orders" ? filters.tab === key : filters.tab === "items" && filters.stage === key;
           return <button type="button" key={key} aria-pressed={selected}
-            onClick={() => change(ordersStatisticFilters(key))}
+            onClick={() => change(key === "orders" ? { tab: "orders" } : { tab: "items", stage: key })}
             className={`min-w-0 space-y-1 rounded-lg border p-3 text-right text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ring ${selected ? "border-primary bg-primary/5" : "bg-card hover:bg-muted/50"}`}>
             <span className="flex items-start gap-1.5"><Icon className="size-4 shrink-0" />{label}</span><strong className="block text-xl">{count}</strong>
           </button>;
         })}
       </div>
+      <div className="grid grid-cols-1 gap-2 border-y py-3 text-sm sm:grid-cols-2">
+        {(["completed", "ongoing"] as const).map(kind => <p key={kind}>
+          {kind === "completed" ? "متوسط مدة الاستلام الفعلية" : "متوسط مدة الانتظار الحالية"}: {view.averages[kind].days === null ? "غير متاح" : `${Math.round(view.averages[kind].days!)} يومًا`}
+          <span className="block text-xs text-muted-foreground">من موافقة المورد؛ {view.averages[kind].count} تشغيلة بتواريخ صالحة، دون كمية مورد صفر.</span>
+        </p>)}
+      </div>
       <Tabs dir="rtl" value={filters.tab} onValueChange={tab => change({ tab: tab as OrdersFilters["tab"], status: "all" })}>
-        <TabsList aria-label="مجموعات متابعة الطلبات" className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
-          {Object.entries(ORDER_TABS).map(([value, label]) => <TabsTrigger key={value} value={value} className="min-w-0 whitespace-normal px-2 py-2 text-xs leading-5">
-            {label}{value === "review" && view.counts.review > 0 ? ` (${view.counts.review})` : ""}
+        <TabsList aria-label="مجموعات متابعة الطلبات" className="grid h-auto w-full grid-cols-2 gap-1">
+          {Object.entries({ items: "الأصناف حسب المرحلة", orders: "الطلبات" }).map(([value, label]) => <TabsTrigger key={value} value={value} className="min-w-0 whitespace-normal px-2 py-2 text-xs leading-5">
+            {label}
           </TabsTrigger>)}
         </TabsList>
       <TabsContent value={filters.tab} className="space-y-3">
@@ -158,7 +178,7 @@ function OrdersBody({ scope }: { scope: string }) {
           <h2 className="break-all text-sm font-bold"><bdi>{order.number}</bdi></h2>
           <p className="text-xs text-muted-foreground">إنشاء: {dateLabel(order.createdAt)}</p>
           {order.detailError ? <p className="text-xs text-red-800">{order.detailError}</p> : <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-            {Object.entries(ORDER_STATES).map(([status, label]) => <span key={status}>{label}: {order.counts[status as keyof typeof ORDER_STATES]}</span>)}
+            {Object.entries(ORDER_STAGES).map(([status, label]) => <span key={status}>{label}: {order.stageCounts[status as keyof typeof ORDER_STAGES]}</span>)}
           </div>}
         </article>)}
       </div> : <div className="grid min-w-0 gap-3 md:grid-cols-2">
@@ -167,16 +187,17 @@ function OrdersBody({ scope }: { scope: string }) {
           return <article key={`${row.orderId}:${row.id}`} className="min-w-0 space-y-2 rounded-lg border bg-card p-3">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <bdi className="break-all font-semibold">{row.orderNumber}</bdi>
-              <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 ${statusStyle[row.status]}`}><StatusIcon className="size-3" />{ORDER_STATES[row.status]}</span>
+              <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 ${statusStyle[row.stage]}`}><StatusIcon className="size-3" />{ORDER_STAGES[row.stage]}</span>
             </div>
             <h2 dir="auto" className="break-words text-base font-bold leading-6">{row.medicine}</h2>
             <p className="break-words text-xs text-muted-foreground">{row.supplier || "المورد غير مسجل"}</p>
             <div className="grid grid-cols-2 gap-2 border-y py-2 text-xs">
-              <div>الكمية المعتمدة<strong className="mt-1 block text-xl">{row.approvedQuantity == null ? "غير موثقة" : row.approvedQuantity.toLocaleString("en-US")}</strong></div>
+              <div>الكمية المطلوبة<strong className="mt-1 block text-xl">{row.requestedQuantity == null ? "غير موثقة" : row.requestedQuantity.toLocaleString("en-US")}</strong></div>
+              <div>الكمية المحددة من المورد<strong className="mt-1 block text-xl">{supplierQuantity(row)?.toLocaleString("en-US") ?? "غير موثقة"}</strong></div>
               <div>التشغيلة<bdi className="mt-1 block break-all font-semibold">{row.batch || "غير مسجلة"}</bdi></div>
             </div>
             <OrderLineTiming row={row} />
-            {row.status === "received" && report.canManageReceipts && <OrderReceiptDateEditor record={row.receipt} medicine={row.medicine}
+            {row.status === "received" && !row.receivedAt && report.canManageReceipts && <OrderReceiptDateEditor record={row.receipt} medicine={row.medicine}
               enabled={Boolean(report.receipts?.ready)} onSaved={report.receiptSaved} />}
           </article>;
         })}
@@ -184,12 +205,12 @@ function OrdersBody({ scope }: { scope: string }) {
       {(filters.tab === "orders" ? view.orders.length : view.rows.length) > limit && <Button variant="outline" className="w-full" onClick={() => setLimit(value => value + 40)}>عرض المزيد</Button>}
       {!(filters.tab === "orders" ? view.orders.length : view.rows.length) && report.data.complete && !view.periodError && <p className="py-8 text-center text-sm text-muted-foreground">{filters.tab === "orders" ? "لا توجد طلبات مطابقة للفلاتر" : "لا توجد أصناف مطابقة للفلاتر"}</p>}
       {view.orders.filter(o => !o.detailError && !o.lines.length).length > 0 && <details className="border-y py-2 text-xs text-muted-foreground">
-        <summary>طلبات بلا أصناف ظاهرة بعد استبعاد الكميات المعتمدة صفرًا</summary>
+        <summary>طلبات بلا تفاصيل أصناف محفوظة (قد تكون قيد الانتظار أو استُبعدت كمياتها الصفرية من المصدر)</summary>
         {view.orders.filter(o => !o.detailError && !o.lines.length).map(o => <p className="pt-1" key={o.id}><bdi>{o.number}</bdi> · {dateLabel(o.createdAt)} · {o.status}</p>)}
       </details>}
       </TabsContent>
       </Tabs>
-      <p className="text-xs leading-5 text-muted-foreground">استُبعد {report.data.excludedZero} بندًا بكمية معتمدة صفر من قراءة المصدر لكل التاريخ، قبل تطبيق الفلاتر. المدة لغير المستلم من إنشاء الطلب حتى اليوم، وللمستلم حتى تاريخ الاستلام الفعلي فقط إن توفر؛ وليست مدة منذ موافقة المورد.</p>
+      <p className="text-xs leading-5 text-muted-foreground">استُبعد {report.data.excludedZero} بندًا بكمية معتمدة صفر من قراءة المصدر لكل التاريخ. لا تظهر كمية المورد صفر في قائمة الجاهزة. المدد فروق أيام تقويمية بتوقيت ليبيا منذ موافقة المورد؛ لا تُحسب دون تواريخ صالحة، ولا يُعد تسليم المورد استلامًا للصيدلية.</p>
     </>}
   </div>;
 }

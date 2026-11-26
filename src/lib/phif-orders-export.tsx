@@ -1,12 +1,12 @@
 import React from "react";
-import { ORDER_DATE_BASES, ORDER_PERIODS, ORDER_STATES, ORDER_TABS, orderCreatedDate, ordersExportRows, ordersView, type OrdersFilters, type PhifOrdersReport } from "./phif-orders.helpers";
+import { ORDER_DATE_BASES, ORDER_PERIODS, ORDER_STATES, ORDER_STAGES, ORDER_TABS, orderCreatedDate, ordersExportRows, ordersView, type OrdersFilters, type PhifOrdersReport } from "./phif-orders.helpers";
 
 export const orderDateLabel = (value: string | null) => orderCreatedDate(value) || "غير متاح";
 export function ordersPeriodLabel(filters: OrdersFilters) {
   return `${ORDER_PERIODS[filters.period]}${filters.period === "all" ? "" : ` (${filters.dateFrom} - ${filters.dateTo})`}؛ حسب ${ORDER_DATE_BASES[filters.dateBasis || "creation"]}`;
 }
 export function ordersFilterLabel(filters: OrdersFilters) {
-  return `${ORDER_TABS[filters.tab]}${filters.tab === "approved" && filters.status !== "all" ? `: ${ORDER_STATES[filters.status]}` : ""} | ${filters.supplier === "all" ? "جميع الموردين" : filters.supplier}${filters.query ? ` | بحث: ${filters.query}` : ""}`;
+  return `${ORDER_TABS[filters.tab]}${filters.tab === "items" ? `: ${filters.stage && filters.stage !== "all" ? ORDER_STAGES[filters.stage] : "جميع الأصناف"}` : filters.tab === "approved" && filters.status !== "all" ? `: ${ORDER_STATES[filters.status]}` : ""} | ${filters.supplier === "all" ? "جميع الموردين" : filters.supplier}${filters.query ? ` | بحث: ${filters.query}` : ""}`;
 }
 
 export async function buildOrdersWorkbook(report: PhifOrdersReport, filters: OrdersFilters, now = Date.now()) {
@@ -21,9 +21,9 @@ export async function buildOrdersWorkbook(report: PhifOrdersReport, filters: Ord
     ["مصدر البيانات", "نسخة محفوظة من آخر مزامنة ناجحة، وليست تحققًا مباشرًا من PHIF الآن"],
     ["الفترة", ordersPeriodLabel(filters)], ["الفلاتر", ordersFilterLabel(filters)], ["عدد الطلبات ضمن الفترة والبحث والمورد", view.orderCount],
     ["بنود مستبعدة بكمية معتمدة صفر من المصدر لكل التاريخ قبل الفلاتر", report.excludedZero],
-    ...Object.entries(view.counts).map(([state, count]) => [ORDER_STATES[state as keyof typeof ORDER_STATES], count]),
+    ...Object.entries(filters.stage !== undefined ? view.stageCounts : view.counts).map(([state, count]) => [filters.stage !== undefined ? ORDER_STAGES[state as keyof typeof ORDER_STAGES] : ORDER_STATES[state as keyof typeof ORDER_STATES], count]),
     ["تاريخ إصدار التقرير", new Date(now)],
-    ["مرجع المدة", "لغير المستلم: من إنشاء الطلب حتى إصدار التقرير. للمستلم: حتى الاستلام الفعلي إن توفر، وإلا فلا تُحسب مدة. ليست مدة منذ موافقة المورد."],
+    ["مرجع المدة", filters.stage !== undefined ? "من موافقة المورد حتى الاستلام الفعلي للمستلم، وحتى إصدار التقرير للجاهز وقيد التوصيل. أيام تقويمية بتوقيت ليبيا؛ دون تعويض تواريخ مفقودة." : "لغير المستلم: من إنشاء الطلب حتى إصدار التقرير. للمستلم: حتى الاستلام الفعلي إن توفر، وإلا فلا تُحسب مدة. ليست مدة منذ موافقة المورد."],
   ]);
   const sheet = workbook.addWorksheet("أصناف الطلبات", { views: [{ rightToLeft: true, state: "frozen", ySplit: 1 }] });
   sheet.columns = [

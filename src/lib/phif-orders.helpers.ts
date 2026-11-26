@@ -8,6 +8,23 @@ export const ORDER_STATES = {
   review: "الحالة تحتاج مراجعة",
 } as const;
 export type OrderState = keyof typeof ORDER_STATES;
+export const ORDER_STAGES = {
+  ready: "تم تسليم المورد (جاهز للاستلام)",
+  in_delivery: "قيد التوصيل",
+  not_approved: "قيد الانتظار",
+  received: "تم الاستلام بنجاح",
+  review: "المرحلة غير مؤكدة",
+} as const;
+export type OrderStage = keyof typeof ORDER_STAGES;
+export function orderStage(line: Pick<OrderLine, "status" | "fulfillmentStage">): OrderStage {
+  if (line.status === "received") return "received";
+  if (line.fulfillmentStage === "received") return "review";
+  if ((line.fulfillmentStage === "ready" || line.fulfillmentStage === "in_delivery") && line.status !== "waiting") return "review";
+  return line.fulfillmentStage || (line.status === "not_approved" ? "not_approved" : "review");
+}
+export function supplierQuantity(line: OrderLine) {
+  return line.supplierQuantity === undefined ? line.approvedQuantity : line.supplierQuantity;
+}
 export type OrderLine = {
   id: string; medicine: string; batch: string | null; supplier: string | null;
   approval: string; approvedQuantity: number | null; quantityMissing: boolean;
@@ -24,17 +41,19 @@ export type PhifOrdersReport = {
   orders: PhifOrder[]; totalOrders: number; pages: number; excludedZero: number;
   complete: boolean; fetchedAt: string; pharmacy: string; canExport: boolean;
 };
-export const ORDER_TABS = { approved: "الأصناف المعتمدة", not_approved: "بانتظار الموافقة", review: "مراجعة الحالة", orders: "الطلبات" } as const;
+export const ORDER_TABS = { items: "الأصناف حسب المرحلة", approved: "الأصناف المعتمدة", not_approved: "بانتظار الموافقة", review: "مراجعة الحالة", orders: "الطلبات" } as const;
 export const ORDER_PERIODS = { this_month: "هذا الشهر", previous_month: "الشهر السابق", all: "كل التاريخ", custom: "نطاق مخصص" } as const;
 export const ORDER_DATE_BASES = { creation: "تاريخ إنشاء الطلب", receipt: "تاريخ الاستلام المؤكد", observation: "تاريخ أول رصد للاستلام (غير مؤكد)" } as const;
 export type OrdersFilters = {
   status: "all" | OrderState; supplier: string; query: string; tab: keyof typeof ORDER_TABS;
   period: keyof typeof ORDER_PERIODS; dateFrom: string; dateTo: string;
   dateBasis?: keyof typeof ORDER_DATE_BASES;
+  stage?: "all" | OrderStage;
 };
 export const defaultOrdersFilters: OrdersFilters = {
   status: "all", supplier: "all", query: "", tab: "approved", period: "all", dateFrom: "", dateTo: "",
 };
+export const defaultOperationalOrdersFilters: OrdersFilters = { ...defaultOrdersFilters, tab: "items", stage: "ready" };
 const dateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Africa/Tripoli", year: "numeric", month: "2-digit", day: "2-digit",
 });
@@ -87,15 +106,30 @@ export function orderDuration(row: Pick<OrderLine, "status" | "receivedAt" | "re
   const days = orderAgeDays(row.createdAt, now);
   return { days, label: days == null ? "مدة منذ إنشاء الطلب غير متوفرة" : `مدة منذ إنشاء الطلب: ${days} يومًا` };
 }
+export function orderStageDuration(row: OrderLine, now = Date.now()) {
+  const stage = orderStage(row);
+  const kind = stage === "received" ? "completed" : stage === "ready" || stage === "in_delivery" ? "ongoing" : null;
+  const label = kind === "completed" ? "مدة الاستلام الفعلية منذ موافقة المورد"
+    : kind === "ongoing" ? "مدة الانتظار المستمرة منذ موافقة المورد" : "لا توجد مدة استلام بعد الموافقة لهذه المرحلة";
+  // PHIF's timestamp takes priority over historical manual dates for this operational view.
+  const end = kind === "completed" ? row.receivedAt || confirmedReceiptDate(row) : new Date(now).toISOString();
+  const startTime = Date.parse(row.approvedAt || ""), endTime = Date.parse(end || "");
+  const startDay = orderCreatedDate(row.approvedAt), endDay = orderCreatedDate(end);
+  const dateOnlyEnd = !!end && /^\d{4}-\d{2}-\d{2}$/.test(end);
+  const valid = kind && startDay && endDay && Number.isFinite(startTime) && Number.isFinite(endTime)
+    && startTime <= now && endTime <= now && (dateOnlyEnd ? endDay >= startDay : endTime >= startTime);
+  const days = valid ? Math.round((Date.parse(endDay) - Date.parse(startDay)) / 86400000) : null;
+  return { days, label, kind };
+}
 export function ordersView(report: PhifOrdersReport, filters: OrdersFilters, now = Date.now()) {
   const query = filters.query.trim().toLocaleLowerCase();
   const periodError = ordersPeriodError(filters);
-  const matchesLine = (line: OrderLine, order: PhifOrder) => line.approvedQuantity !== 0
+  const matchesLine = (line: OrderLine, order: PhifOrder) => (filters.stage !== undefined || line.approvedQuantity !== 0)
     && (filters.supplier === "all" || line.supplier === filters.supplier)
     && (!query || `${order.number} ${line.medicine} ${line.batch || ""}`.toLocaleLowerCase().includes(query));
   const basis = filters.dateBasis || "creation";
   const lineDate = (line: OrderLine, order: PhifOrder) => basis === "creation" ? orderCreatedDate(order.createdAt)
-    : line.status !== "received" ? null : basis === "receipt" ? orderCreatedDate(confirmedReceiptDate(line))
+    : line.status !== "received" ? null : basis === "receipt" ? orderCreatedDate(filters.stage !== undefined ? line.receivedAt || confirmedReceiptDate(line) : confirmedReceiptDate(line))
       : orderCreatedDate(line.receipt?.first_received_observed_at || null);
   const inPeriod = (order: PhifOrder, line?: OrderLine) => {
     if (periodError) return false;
@@ -114,10 +148,13 @@ export function ordersView(report: PhifOrdersReport, filters: OrdersFilters, now
     && (basis === "creation" || (lineDate(line, order) != null && inPeriod(order, line)))).map(line => ({ ...line,
     orderId: order.id, orderNumber: order.number, createdAt: order.createdAt,
   })));
-  const rows = scopedRows.filter(line => filters.tab === "orders"
+  const rows = scopedRows.filter(line => filters.tab === "items"
+    ? (filters.stage === "all" || orderStage(line) === filters.stage)
+      && (filters.stage !== "ready" || supplierQuantity(line) !== 0)
+    : filters.tab === "orders"
     || (filters.tab === "approved" ? (line.status === "waiting" || line.status === "received")
       && (filters.status === "all" || line.status === filters.status) : line.status === filters.tab))
-    .map(row => ({ ...row, duration: orderDuration(row, now) }))
+    .map(row => ({ ...row, stage: orderStage(row), duration: filters.stage !== undefined ? orderStageDuration(row, now) : orderDuration(row, now) }))
     .sort((a, b) => {
       const rank = (s: OrderState) => s === "waiting" ? 0 : s === "not_approved" ? 1 : s === "review" ? 2 : 3;
       return rank(a.status) - rank(b.status)
@@ -126,19 +163,27 @@ export function ordersView(report: PhifOrdersReport, filters: OrdersFilters, now
     });
   const countsFor = (lines: OrderLine[]) => Object.fromEntries(Object.keys(ORDER_STATES).map(state =>
     [state, lines.filter(line => line.status === state).length])) as Record<OrderState, number>;
+  const stageCountsFor = (lines: OrderLine[]) => Object.fromEntries(Object.keys(ORDER_STAGES).map(stage =>
+    [stage, lines.filter(line => orderStage(line) === stage && (stage !== "ready" || supplierQuantity(line) !== 0)).length])) as Record<OrderStage, number>;
+  const durations = scopedRows.filter(line => supplierQuantity(line) !== 0).map(line => orderStageDuration(line, now));
+  const average = (kind: "completed" | "ongoing") => {
+    const values = durations.filter(d => d.kind === kind && d.days !== null);
+    return { count: values.length, days: values.length ? values.reduce((sum, d) => sum + d.days!, 0) / values.length : null };
+  };
   return { rows, orders: orders.map(order => ({ ...order,
+      stageCounts: stageCountsFor(scopedRows.filter(line => line.orderId === order.id)),
       counts: countsFor(scopedRows.filter(line => line.orderId === order.id)) })), orderCount: orders.length, periodError,
     undatedOrders: report.orders.filter(order => !orderCreatedDate(order.createdAt) && matchesOrder(order)).length,
-    counts: countsFor(scopedRows) };
+    counts: countsFor(scopedRows), stageCounts: stageCountsFor(scopedRows), averages: { completed: average("completed"), ongoing: average("ongoing") } };
 }
 
 export function ordersExportRows(report: PhifOrdersReport, filters: OrdersFilters, pendingOnly = false, now = Date.now()) {
   return ordersView(report, filters, now).rows.filter(row => !pendingOnly || row.status !== "received").map(row => ({
     orderNumber: row.orderNumber, createdAt: row.createdAt, medicine: row.medicine,
-    supplier: row.supplier, batch: row.batch, quantity: row.approvedQuantity,
-    status: ORDER_STATES[row.status], ageDays: row.duration.days, durationLabel: row.duration.label,
-    receivedAt: row.status === "received" ? confirmedReceiptDate(row) : null,
-    receiptSource: row.status === "received" ? receiptDateSource(row) : "غير مستلم",
+    supplier: row.supplier, batch: row.batch, quantity: supplierQuantity(row),
+    status: filters.stage !== undefined ? ORDER_STAGES[row.stage] : ORDER_STATES[row.status], ageDays: row.duration.days, durationLabel: row.duration.label,
+    receivedAt: row.status === "received" ? (filters.stage !== undefined ? row.receivedAt || confirmedReceiptDate(row) : confirmedReceiptDate(row)) : null,
+    receiptSource: row.status === "received" ? (filters.stage !== undefined && row.receivedAt ? "تاريخ فعلي من PHIF" : receiptDateSource(row)) : "غير مستلم",
     firstObservedAt: row.receipt?.first_received_observed_at || null,
   }));
 }

@@ -91,13 +91,11 @@ describe("PHIF order monitoring reads and exports", () => {
     expect(rows.find(row => row[1] === "ORD_242_266_10326" && row[7] === "بانتظار الاستلام")[8]).toBe(17);
     expect(JSON.stringify(report)).toBe(before);
   }, 30000);
-  it("renders the received-card unknown-date notice without a running duration", () => {
+  it("does not infer readiness from old approved states on the default page", () => {
     const c = cacheClient(); c.setQueryData(["phif_orders", itemsAnalyticsScope(session)], saved());
     const html = renderToStaticMarkup(<QueryClientProvider client={c}><OrdersPage /></QueryClientProvider>);
-    const receivedCard = html.match(/<article\b[^>]*>[\s\S]*?<\/article>/g)?.find(card => card.includes("تم الاستلام"))!;
-    expect(receivedCard).toContain("تاريخ الاستلام غير محدد");
-    expect(receivedCard).not.toContain("مدة منذ إنشاء الطلب:");
-    expect(receivedCard).not.toMatch(/\d+ يوم/);
+    expect(html).not.toContain("<article");
+    expect(html).toContain("لا توجد أصناف مطابقة للفلاتر");
   });
   it("uses current export permissions without requiring financial cost/profit permissions", () => {
     expect(ordersExportAllowed({ user_role: "admin", user_id: "a" })).toBe(true);
@@ -129,10 +127,11 @@ describe("PHIF order monitoring reads and exports", () => {
   it("renders compact stored order cards and a nonblocking expired PHIF notice without hiding data or exports", () => {
     const c = cacheClient();
     const key = ["phif_orders", itemsAnalyticsScope(session)];
-    c.setQueryData(key, saved());
+    const data = ordersFixture(); data.orders[0].lines[0].fulfillmentStage = "ready";
+    c.setQueryData(key, saved(data));
     const render = () => renderToStaticMarkup(<QueryClientProvider client={c}><OrdersPage /></QueryClientProvider>);
     const html = render();
-    for (const text of ["متابعة طلبيات PHIF", "بانتظار موافقة المورد", "بانتظار الاستلام", "تم الاستلام", "00123", "مدة الانتظار حتى اليوم", "غير موثقة"])
+    for (const text of ["متابعة طلبيات PHIF", "قيد الانتظار", "جاهزة للاستلام", "أصناف مستلمة", "00123", "مدة الانتظار المستمرة منذ موافقة المورد", "غير موثقة"])
       expect(html).toContain(text);
     expect(html).not.toContain("جارٍ قراءة الطلبات وتفاصيلها");
     expect(html).toContain("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
@@ -142,8 +141,9 @@ describe("PHIF order monitoring reads and exports", () => {
   });
   it("shows the shared Cloud report and exports after PHIF expiry without implying a device-only copy", () => {
     const c = cacheClient(), scope = itemsAnalyticsScope(session);
-    c.setQueryData(["phif_orders", scope], saved());
-    c.setQueryData(["phif_orders_access", scope], (previous: any) => ({ ...previous, cloudReady: true, cloudSnapshot: saved() }));
+    const data = ordersFixture(); data.orders[0].lines[0].fulfillmentStage = "ready";
+    c.setQueryData(["phif_orders", scope], saved(data));
+    c.setQueryData(["phif_orders_access", scope], (previous: any) => ({ ...previous, cloudReady: true, cloudSnapshot: saved(data) }));
     const html = renderToStaticMarkup(<QueryClientProvider client={c}><OrdersPage /></QueryClientProvider>);
     expect(html).toContain("نسخة مشتركة محفوظة في Cloud");
     expect(html).toContain("انتهت جلسة PHIF، البيانات المعروضة من آخر مزامنة");
