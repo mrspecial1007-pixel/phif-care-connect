@@ -20,6 +20,7 @@ import { Route as QualityRouteImport } from './routes/quality'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ManagementAnalyticsRouteImport } from './routes/management.analytics'
 import { Route as ManagementAuditRouteImport } from './routes/management.audit'
+import { Route as ManagementCockpitRouteImport } from './routes/management.cockpit'
 import { Route as ManagementInventoryRouteImport } from './routes/management.inventory'
 import { Route as ManagementOrdersRouteImport } from './routes/management.orders'
 import { Route as ManagementReportsRouteImport } from './routes/management.reports'
@@ -97,6 +98,11 @@ const ManagementAnalyticsRoute = ManagementAnalyticsRouteImport.update({
 const ManagementAuditRoute = ManagementAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => ManagementRoute,
+} as any)
+const ManagementCockpitRoute = ManagementCockpitRouteImport.update({
+  id: '/cockpit',
+  path: '/cockpit',
   getParentRoute: () => ManagementRoute,
 } as any)
 const ManagementInventoryRoute = ManagementInventoryRouteImport.update({
@@ -236,6 +242,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteWithChildren
   '/management/analytics': typeof ManagementAnalyticsRoute
   '/management/audit': typeof ManagementAuditRoute
+  '/management/cockpit': typeof ManagementCockpitRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/orders': typeof ManagementOrdersRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
@@ -272,6 +279,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRouteWithChildren
   '/management/analytics': typeof ManagementAnalyticsRoute
   '/management/audit': typeof ManagementAuditRoute
+  '/management/cockpit': typeof ManagementCockpitRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/orders': typeof ManagementOrdersRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
@@ -309,6 +317,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteWithChildren
   '/management/analytics': typeof ManagementAnalyticsRoute
   '/management/audit': typeof ManagementAuditRoute
+  '/management/cockpit': typeof ManagementCockpitRoute
   '/management/inventory': typeof ManagementInventoryRoute
   '/management/orders': typeof ManagementOrdersRoute
   '/management/reports': typeof ManagementReportsRouteWithChildren
@@ -347,6 +356,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/management/analytics'
     | '/management/audit'
+    | '/management/cockpit'
     | '/management/inventory'
     | '/management/orders'
     | '/management/reports'
@@ -383,6 +393,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/management/analytics'
     | '/management/audit'
+    | '/management/cockpit'
     | '/management/inventory'
     | '/management/orders'
     | '/management/reports'
@@ -419,6 +430,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/management/analytics'
     | '/management/audit'
+    | '/management/cockpit'
     | '/management/inventory'
     | '/management/orders'
     | '/management/reports'
@@ -541,6 +553,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/management/audit'
       preLoaderRoute: typeof ManagementAuditRouteImport
+      parentRoute: typeof ManagementRoute
+    }
+    '/management/cockpit': {
+      id: '/management/cockpit'
+      path: '/cockpit'
+      fullPath: '/management/cockpit'
+      preLoaderRoute: typeof ManagementCockpitRouteImport
       parentRoute: typeof ManagementRoute
     }
     '/management/inventory': {
@@ -751,6 +770,7 @@ const ManagementReportsRouteWithChildren =
 interface ManagementRouteChildren {
   ManagementAnalyticsRoute: typeof ManagementAnalyticsRoute
   ManagementAuditRoute: typeof ManagementAuditRoute
+  ManagementCockpitRoute: typeof ManagementCockpitRoute
   ManagementInventoryRoute: typeof ManagementInventoryRoute
   ManagementOrdersRoute: typeof ManagementOrdersRoute
   ManagementReportsRoute: typeof ManagementReportsRouteWithChildren
@@ -760,6 +780,7 @@ interface ManagementRouteChildren {
 const ManagementRouteChildren: ManagementRouteChildren = {
   ManagementAnalyticsRoute: ManagementAnalyticsRoute,
   ManagementAuditRoute: ManagementAuditRoute,
+  ManagementCockpitRoute: ManagementCockpitRoute,
   ManagementInventoryRoute: ManagementInventoryRoute,
   ManagementOrdersRoute: ManagementOrdersRoute,
   ManagementReportsRoute: ManagementReportsRouteWithChildren,
